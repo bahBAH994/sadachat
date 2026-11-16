@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowRight,
   Coins,
+  Gamepad2,
   Gift,
   Headphones,
   Lock,
@@ -37,6 +38,7 @@ import type {
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { LuckyWheelModal } from '../components/LuckyWheelModal';
+import { RoomGamesModal } from '../components/RoomGamesModal';
 
 export const RoomPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -52,6 +54,7 @@ export const RoomPage: React.FC = () => {
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [giftTab, setGiftTab] = useState<'fixed' | 'lucky' | 'history'>('fixed');
   const [showWheelModal, setShowWheelModal] = useState(false);
+  const [showGamesOverlay, setShowGamesOverlay] = useState(false);
   const [wheelSegments, setWheelSegments] = useState<LuckyWheelSegment[]>([]);
   const [wheelCost, setWheelCost] = useState<number>(200);
   const [wheelBanner, setWheelBanner] = useState<{
@@ -545,28 +548,39 @@ export const RoomPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {micActive && !mySeat?.isMuted && (
-            <span className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-emerald-300">
+            <span className="hidden md:flex items-center gap-1.5 text-xs font-bold text-emerald-300">
               <Radio className="w-3.5 h-3.5" />
               <span>بث حي</span>
             </span>
           )}
           <button
             type="button"
+            onClick={() => setShowGamesOverlay(true)}
+            className="royal-capsule min-h-[40px] rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#FCE9A6] hover:border-[#F3D37A]/90 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-[0_0_16px_rgba(212,175,55,0.28)]"
+            title="فتح الألعاب والمسابقات داخل الغرفة"
+          >
+            <Gamepad2 className="w-4 h-4 text-[#FCE9A6]" />
+            <span>الألعاب</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setShowWheelModal(true)}
-            className="royal-capsule min-h-[40px] rounded-xl px-3 py-1.5 text-xs font-bold text-[#FCE9A6] hover:border-[#F3D37A]/80 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-[0_0_16px_rgba(212,175,55,0.28)]"
+            className="royal-capsule min-h-[40px] rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#FCE9A6] hover:border-[#F3D37A]/80 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-[0_0_16px_rgba(212,175,55,0.28)]"
           >
             <Sparkles className="w-4 h-4 text-[#F3D37A]" />
-            <span>دولاب الحظ</span>
+            <span className="hidden sm:inline">دولاب الحظ</span>
+            <span className="sm:hidden">الدولاب</span>
           </button>
           <button
             type="button"
             onClick={() => setShowGiftModal(true)}
-            className="gold-btn min-h-[40px] rounded-xl px-3.5 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            className="gold-btn min-h-[40px] rounded-xl px-3 sm:px-3.5 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
           >
             <Gift className="w-4 h-4" />
-            <span>إرسال هدية</span>
+            <span className="hidden sm:inline">إرسال هدية</span>
+            <span className="sm:hidden">هدية</span>
           </button>
         </div>
       </div>
@@ -874,18 +888,28 @@ export const RoomPage: React.FC = () => {
 
         {/* Live Text Chat */}
         <section className="lg:col-span-5 royal-glass rounded-3xl p-4 sm:p-5 flex flex-col h-[420px] lg:h-[540px]">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 gap-2">
             <h2 className="text-sm font-bold text-[#F3D37A]">
               دردشة المجلس المباشرة
             </h2>
-            <button
-              type="button"
-              onClick={() => setShowWheelModal(true)}
-              className="text-xs font-bold text-[#FCE9A6] hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>جرّب دولاب الحظ</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowGamesOverlay(true)}
+                className="text-xs font-bold text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Gamepad2 className="w-3.5 h-3.5" />
+                <span>ألعاب ومسابقات</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowWheelModal(true)}
+                className="text-xs font-bold text-[#FCE9A6] hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>دولاب الحظ</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto no-scrollbar space-y-2.5 pl-1">
@@ -1152,6 +1176,19 @@ export const RoomPage: React.FC = () => {
           }}
         />
       )}
+
+      <AnimatePresence>
+        {showGamesOverlay && (
+          <RoomGamesModal
+            roomTitle={room.title}
+            mySeat={mySeat}
+            micActive={micActive}
+            userCoins={user?.coins ?? 0}
+            onToggleMute={handleToggleMute}
+            onClose={() => setShowGamesOverlay(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

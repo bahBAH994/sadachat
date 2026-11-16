@@ -52,9 +52,17 @@ const WHEEL_COLORS = [
 
 const OPTION_LETTERS = ['أ', 'ب', 'ج', 'د'];
 
-export const CompetitionsPage: React.FC = () => {
+interface CompetitionsPageProps {
+  embedded?: boolean;
+  initialTab?: CompTab;
+}
+
+export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
+  embedded = false,
+  initialTab = 'cultural',
+}) => {
   const { user, updateLocalUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<CompTab>('cultural');
+  const [activeTab, setActiveTab] = useState<CompTab>(initialTab);
 
   // Voice competitions state
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -340,16 +348,24 @@ export const CompetitionsPage: React.FC = () => {
   const timerPercent = Math.max(0, Math.min(100, (quizTimeLeftMs / 8000) * 100));
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6">
+    <div
+      className={
+        embedded
+          ? 'space-y-4 sm:space-y-5'
+          : 'max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6'
+      }
+    >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
-            ساحة المسابقات والبطولات الثقافية
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-300 mt-1">
-            تحديات ثقافية حية بمؤقت 8 ثوانٍ لرفع مستواك (XP)، دولاب حظ الدعوات، والبطولات الصوتية
-          </p>
-        </div>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
+              ساحة المسابقات والبطولات الثقافية
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-300 mt-1">
+              تحديات ثقافية حية بمؤقت 8 ثوانٍ لرفع مستواك (XP)، دولاب حظ الدعوات، والبطولات الصوتية
+            </p>
+          </div>
+        )}
 
         {/* Section Tabs */}
         <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25 overflow-x-auto no-scrollbar shrink-0">
@@ -985,7 +1001,7 @@ export const CompetitionsPage: React.FC = () => {
 
       {joinTarget && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
           onClick={() => setJoinTarget(null)}
         >
           <div

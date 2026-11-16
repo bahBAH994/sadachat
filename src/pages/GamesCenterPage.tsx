@@ -481,9 +481,17 @@ const RoyalDieFace: React.FC<{ value: number; rolling?: boolean; accent?: string
   );
 };
 
-export const GamesCenterPage: React.FC = () => {
+interface GamesCenterPageProps {
+  embedded?: boolean;
+  initialCategory?: CenterCategory;
+}
+
+export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
+  embedded = false,
+  initialCategory = 'slots',
+}) => {
   const { user, updateLocalUser } = useAuth();
-  const [category, setCategory] = useState<CenterCategory>('slots');
+  const [category, setCategory] = useState<CenterCategory>(initialCategory);
 
   // Common wallet & session states
   const [bet, setBet] = useState<number>(250);
@@ -834,55 +842,86 @@ export const GamesCenterPage: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6">
+    <div
+      className={
+        embedded
+          ? 'space-y-4 sm:space-y-5'
+          : 'max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6'
+      }
+    >
       {/* Header + Live Wallet Sync Strip */}
-      <section className="royal-glass rounded-3xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border border-[#D4AF37]/30">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#FCE9A6]/25 to-[#D4AF37]/10 border border-[#D4AF37]/45 flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.28)]">
-              <Gamepad2 className="w-5 h-5 text-[#FCE9A6]" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
-                مركز الألعاب الملكي — صَدَى
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-300">
-                14 لعبة حصرية (8 ماكينات سلوت + 4 ألعاب نرد + الروليت الملكية + صناديق الحظ) مرتبطة برصيدك فوراً
-              </p>
-            </div>
+      {embedded ? (
+        <section className="rounded-2xl bg-[#070913]/75 border border-[#D4AF37]/25 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Gamepad2 className="w-4 h-4 text-[#FCE9A6]" />
+            <span className="text-xs sm:text-sm font-extrabold text-[#FCE9A6]">
+              14 لعبة حصرية مرتبطة بمحفظتك مباشرة
+            </span>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/35 px-4 py-2.5 flex items-center gap-2.5">
-            <Coins className="w-4 h-4 text-[#D4AF37]" />
-            <div>
-              <span className="block text-[10px] text-slate-400">رصيد المحفظة</span>
-              <span className="text-sm sm:text-base font-extrabold font-mono-num text-[#FCE9A6]">
+          <div className="flex items-center gap-2">
+            <div className="rounded-xl bg-[#0B0F20]/90 border border-[#D4AF37]/30 px-3 py-1.5 flex items-center gap-1.5 text-xs">
+              <Coins className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span className="font-mono-num font-extrabold text-[#FCE9A6]">
                 {user.coins.toLocaleString('en-US')}
               </span>
             </div>
-          </div>
-
-          <div className="rounded-2xl bg-[#070913]/85 border border-emerald-400/30 px-4 py-2.5 flex items-center gap-2.5">
-            <Trophy className="w-4 h-4 text-emerald-300" />
-            <div>
-              <span className="block text-[10px] text-slate-400">أرباح الجلسة</span>
-              <span className="text-sm sm:text-base font-extrabold font-mono-num text-emerald-300">
+            <div className="rounded-xl bg-[#0B0F20]/90 border border-emerald-400/30 px-3 py-1.5 flex items-center gap-1.5 text-xs">
+              <Trophy className="w-3.5 h-3.5 text-emerald-300" />
+              <span className="font-mono-num font-extrabold text-emerald-300">
                 +{sessionTotalWon.toLocaleString('en-US')}
               </span>
             </div>
           </div>
+        </section>
+      ) : (
+        <section className="royal-glass rounded-3xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border border-[#D4AF37]/30">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#FCE9A6]/25 to-[#D4AF37]/10 border border-[#D4AF37]/45 flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.28)]">
+                <Gamepad2 className="w-5 h-5 text-[#FCE9A6]" />
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
+                  مركز الألعاب الملكي — صَدَى
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-300">
+                  14 لعبة حصرية (8 ماكينات سلوت + 4 ألعاب نرد + الروليت الملكية + صناديق الحظ) مرتبطة برصيدك فوراً
+                </p>
+              </div>
+            </div>
+          </div>
 
-          <Link
-            to="/wallet"
-            className="min-h-[44px] rounded-2xl bg-white/5 hover:bg-[#D4AF37]/15 border border-[#D4AF37]/30 px-4 py-2 text-xs font-bold text-[#FCE9A6] flex items-center gap-1.5 transition"
-          >
-            <Wallet className="w-4 h-4" />
-            <span>شحن المحفظة</span>
-          </Link>
-        </div>
-      </section>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/35 px-4 py-2.5 flex items-center gap-2.5">
+              <Coins className="w-4 h-4 text-[#D4AF37]" />
+              <div>
+                <span className="block text-[10px] text-slate-400">رصيد المحفظة</span>
+                <span className="text-sm sm:text-base font-extrabold font-mono-num text-[#FCE9A6]">
+                  {user.coins.toLocaleString('en-US')}
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-[#070913]/85 border border-emerald-400/30 px-4 py-2.5 flex items-center gap-2.5">
+              <Trophy className="w-4 h-4 text-emerald-300" />
+              <div>
+                <span className="block text-[10px] text-slate-400">أرباح الجلسة</span>
+                <span className="text-sm sm:text-base font-extrabold font-mono-num text-emerald-300">
+                  +{sessionTotalWon.toLocaleString('en-US')}
+                </span>
+              </div>
+            </div>
+
+            <Link
+              to="/wallet"
+              className="min-h-[44px] rounded-2xl bg-white/5 hover:bg-[#D4AF37]/15 border border-[#D4AF37]/30 px-4 py-2 text-xs font-bold text-[#FCE9A6] flex items-center gap-1.5 transition"
+            >
+              <Wallet className="w-4 h-4" />
+              <span>شحن المحفظة</span>
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* Main Category Switcher */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
