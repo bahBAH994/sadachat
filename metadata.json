@@ -1,0 +1,6 @@
+{
+  "name": "صَدَى - SADA",
+  "description": "منصة صَدَى الملكية للدردشة الصوتية المباشرة والمسابقات — تجربة صوتية عربية فاخرة بتصميم ليلي ملكي.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
