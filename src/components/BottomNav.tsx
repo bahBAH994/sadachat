@@ -33,7 +33,7 @@ export const BottomNav: React.FC = () => {
   return (
     <nav
       aria-label="التنقل الرئيسي"
-      className="fixed bottom-3 left-2 right-2 z-40 pointer-events-none pb-safe"
+      className="fixed bottom-6 sm:bottom-4 left-2 right-2 z-40 pointer-events-none pb-safe"
     >
       <div className="max-w-3xl mx-auto royal-glass rounded-2xl px-1.5 py-1.5 pointer-events-auto flex items-center justify-around gap-0.5 overflow-x-auto no-scrollbar shadow-[0_12px_40px_rgba(0,0,0,0.75)]">
         {items.map((item) => {

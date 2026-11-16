@@ -94,6 +94,32 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Auto-hide Netlify Drawer / Powered by Netlify floating badge */
+netlify-drawer,
+#netlify-drawer,
+.netlify-drawer,
+[id*="netlify-drawer"],
+[class*="netlify-drawer"],
+[data-netlify-deploy-preview],
+iframe[id*="netlify"],
+iframe[name*="netlify"],
+iframe[src*="netlify"],
+iframe[title*="Netlify" i],
+a[href*="netlify.com"][aria-label*="Netlify" i] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  position: fixed !important;
+  left: -9999px !important;
+  z-index: -1 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
