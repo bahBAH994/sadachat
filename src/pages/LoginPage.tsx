@@ -207,7 +207,7 @@ export const LoginPage: React.FC = () => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
-                  minLength={4}
+                  minLength={6}
                   dir="ltr"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

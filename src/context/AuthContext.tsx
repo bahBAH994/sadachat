@@ -1,6 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { apiFetch, getStoredToken, getWsUrl, setStoredToken } from '../lib/api';
 import { getOrCreateDeviceUuid } from '../lib/device';
+import {
+  fetchCurrentUserFromSupabaseSession,
+  loginOrRegisterWithSupabase,
+  logoutFromSupabase,
+} from '../lib/sadaAuth';
 import { supabase } from '../lib/supabase';
 import type { User } from '../types';
 
@@ -31,43 +35,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [deviceUuid] = useState(() => getOrCreateDeviceUuid());
 
   const refreshUser = useCallback(async () => {
-    const token = getStoredToken();
-    if (!token) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
     try {
-      const data = await apiFetch<{ user: User }>('/api/auth/me');
-      setUser(data.user);
+      const profile = await fetchCurrentUserFromSupabaseSession(deviceUuid);
+      setUser(profile);
     } catch {
-      setStoredToken(null);
       setUser(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [deviceUuid]);
 
   useEffect(() => {
-    refreshUser();
+    void refreshUser();
+
+    const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setLoading(false);
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        void refreshUser();
+      }
+    });
+
+    return () => {
+      authSub.subscription.unsubscribe();
+    };
   }, [refreshUser]);
 
   useEffect(() => {
     if (!user?.id) return;
-    const ws = new WebSocket(getWsUrl());
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'user:auth', userId: user.id }));
-    };
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as { event: string; payload: User };
-        if (msg.event === 'wallet:updated' && msg.payload?.id === user.id) {
-          setUser(msg.payload);
-        }
-      } catch {
-        // ignore
-      }
-    };
 
     const sbChannel = supabase
       .channel(`sada-user-${user.id}`)
@@ -86,37 +82,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .subscribe();
 
     return () => {
-      ws.close();
       void supabase.removeChannel(sbChannel);
     };
   }, [user?.id, refreshUser]);
 
   const loginOrRegister = useCallback(
     async (payload: AuthPayload) => {
-      const data = await apiFetch<{ token: string; user: User; redirectTo: string }>(
-        '/api/auth/login-or-register',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            ...payload,
-            device_uuid: deviceUuid,
-          }),
-        }
-      );
-      setStoredToken(data.token);
-      setUser(data.user);
-      return { user: data.user, redirectTo: data.redirectTo };
+      const result = await loginOrRegisterWithSupabase({
+        ...payload,
+        deviceUuid,
+      });
+      setUser(result.user);
+      return result;
     },
     [deviceUuid]
   );
 
   const logout = useCallback(async () => {
     try {
-      await apiFetch('/api/auth/logout', { method: 'POST' });
+      await logoutFromSupabase();
     } catch {
-      // ignore network error on logout
+      // ignore
     }
-    setStoredToken(null);
     setUser(null);
   }, []);
 

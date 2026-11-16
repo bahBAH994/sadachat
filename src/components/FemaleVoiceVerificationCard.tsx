@@ -11,8 +11,11 @@ import {
   Square,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch } from '../lib/api';
-import type { FemaleVoiceVerificationRequest, User } from '../types';
+import {
+  getFemaleVoiceStatusFromSupabase,
+  submitFemaleVoiceVerificationInSupabase,
+} from '../lib/sadaWalletService';
+import type { FemaleVoiceVerificationRequest } from '../types';
 
 const REQUIRED_PHRASE = 'أهلاً بكم في تطبيق صَدَى';
 const RECORD_DURATION_MS = 5000;
@@ -55,15 +58,12 @@ export const FemaleVoiceVerificationCard: React.FC = () => {
     if (!user || user.gender !== 'female' || user.is_admin || user.femaleVoiceStatus === 'verified') {
       return;
     }
-    apiFetch<{
-      status: User['femaleVoiceStatus'];
-      latestRequest: FemaleVoiceVerificationRequest | null;
-    }>('/api/verification/female-voice/status')
+    getFemaleVoiceStatusFromSupabase(user)
       .then((res) => {
         setLatestReq(res.latestRequest);
       })
       .catch(() => {});
-  }, [user?.id, user?.femaleVoiceStatus, user?.gender, user?.is_admin]);
+  }, [user, user?.id, user?.femaleVoiceStatus, user?.gender, user?.is_admin]);
 
   const cleanupRecording = () => {
     if (timerRef.current !== null) {
@@ -174,20 +174,14 @@ export const FemaleVoiceVerificationCard: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (!recordedDataUrl) return;
+    if (!recordedDataUrl || !user) return;
     setSubmitting(true);
     setError(null);
     try {
-      const res = await apiFetch<{
-        request: FemaleVoiceVerificationRequest;
-        user: User;
-      }>('/api/verification/female-voice', {
-        method: 'POST',
-        body: JSON.stringify({
-          audioDataUrl: recordedDataUrl,
-          durationSeconds: recordedSeconds,
-          phrase: REQUIRED_PHRASE,
-        }),
+      const res = await submitFemaleVoiceVerificationInSupabase(user, {
+        audioDataUrl: recordedDataUrl,
+        durationSeconds: recordedSeconds,
+        phrase: REQUIRED_PHRASE,
       });
       updateLocalUser(res.user);
       setLatestReq(res.request);

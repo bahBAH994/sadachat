@@ -25,7 +25,28 @@ import {
   Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch } from '../lib/api';
+import {
+  approveFemaleVoiceInSupabase,
+  approveUsdtDepositInSupabase,
+  approveUsdtWithdrawalInSupabase,
+  blockDeviceInSupabase,
+  buildQuestionsCsvText,
+  closeRoomInSupabase,
+  createCompetitionInSupabase,
+  deleteQuestionInSupabase,
+  finishCompetitionInSupabase,
+  getAdminOverviewFromSupabase,
+  importQuestionsInSupabase,
+  rejectFemaleVoiceInSupabase,
+  rejectUsdtDepositInSupabase,
+  rejectUsdtWithdrawalInSupabase,
+  savePlatformSettingsInSupabase,
+  unlockDeviceInSupabase,
+  updateAdminUserInSupabase,
+  updateAgencyInSupabase,
+  updateHostApprovalInSupabase,
+  updatePrizePoolInSupabase,
+} from '../lib/sadaAdminService';
 import type {
   Agency,
   Competition,
@@ -108,7 +129,7 @@ export const AdminPage: React.FC = () => {
 
   const loadOverview = useCallback(async () => {
     try {
-      const res = await apiFetch<AdminOverview>('/api/admin/overview');
+      const res = await getAdminOverviewFromSupabase();
       setData(res);
       setSettingsDraft(res.settings);
       const rates: Record<string, string> = {};
@@ -145,10 +166,7 @@ export const AdminPage: React.FC = () => {
   // --- USERS & DEVICES ---
   const handleGrantCoins = async (targetId: string, delta: number) => {
     try {
-      await apiFetch(`/api/admin/users/${targetId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ coinsDelta: delta }),
-      });
+      await updateAdminUserInSupabase(targetId, { coinsDelta: delta });
       showOk(`تم تعديل رصيد الكوينز بمقدار ${delta > 0 ? `+${delta.toLocaleString('en-US')}` : delta}.`);
       await Promise.all([loadOverview(), refreshUser()]);
     } catch (err) {
@@ -158,10 +176,7 @@ export const AdminPage: React.FC = () => {
 
   const handleToggleBan = async (target: User) => {
     try {
-      await apiFetch(`/api/admin/users/${target.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ is_banned: !target.is_banned }),
-      });
+      await updateAdminUserInSupabase(target.id, { is_banned: !target.is_banned });
       showOk(target.is_banned ? 'تم رفع الحظر عن العضو.' : 'تم تعليق حساب العضو.');
       await loadOverview();
     } catch (err) {
@@ -171,10 +186,7 @@ export const AdminPage: React.FC = () => {
 
   const handleToggleAdmin = async (target: User) => {
     try {
-      await apiFetch(`/api/admin/users/${target.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ is_admin: !target.is_admin }),
-      });
+      await updateAdminUserInSupabase(target.id, { is_admin: !target.is_admin });
       showOk('تم تحديث صلاحيات الإدارة للعضو.');
       await loadOverview();
     } catch (err) {
@@ -184,9 +196,7 @@ export const AdminPage: React.FC = () => {
 
   const handleUnlockDevice = async (uuid: string) => {
     try {
-      await apiFetch(`/api/admin/devices/${encodeURIComponent(uuid)}`, {
-        method: 'DELETE',
-      });
+      await unlockDeviceInSupabase(uuid);
       showOk('تم فك ارتباط الجهاز بنجاح.');
       await loadOverview();
     } catch (err) {
@@ -196,13 +206,7 @@ export const AdminPage: React.FC = () => {
 
   const handleBlockDevice = async (lock: DeviceLock) => {
     try {
-      await apiFetch(`/api/admin/devices/${encodeURIComponent(lock.device_uuid)}/block`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          isBlocked: !lock.isBlocked,
-          reason: 'قرار من الإدارة العليا',
-        }),
-      });
+      await blockDeviceInSupabase(lock.device_uuid, !lock.isBlocked, 'قرار من الإدارة العليا');
       showOk(lock.isBlocked ? 'تم إلغاء حظر الجهاز.' : 'تم حظر الجهاز بالكامل.');
       await loadOverview();
     } catch (err) {
@@ -212,7 +216,7 @@ export const AdminPage: React.FC = () => {
 
   const handleCloseRoom = async (roomId: string) => {
     try {
-      await apiFetch(`/api/admin/rooms/${roomId}`, { method: 'DELETE' });
+      await closeRoomInSupabase(roomId);
       showOk('تم إغلاق المجلس الصوتي.');
       await loadOverview();
     } catch (err) {
@@ -223,14 +227,11 @@ export const AdminPage: React.FC = () => {
   const handleCreateCompetition = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await apiFetch('/api/admin/competitions', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: compTitle,
-          subtitle: compSub,
-          prizeCoins: Number(compCoins),
-          prizeDiamonds: Number(compDiamonds),
-        }),
+      await createCompetitionInSupabase({
+        title: compTitle,
+        subtitle: compSub,
+        prizeCoins: Number(compCoins),
+        prizeDiamonds: Number(compDiamonds),
       });
       setCompTitle('');
       setCompSub('');
@@ -243,7 +244,7 @@ export const AdminPage: React.FC = () => {
 
   const handleFinishCompetition = async (compId: string) => {
     try {
-      await apiFetch(`/api/admin/competitions/${compId}/finish`, { method: 'POST' });
+      await finishCompetitionInSupabase(compId);
       showOk('تم تتويج الفائز وتوزيع الجوائز تلقائياً!');
       await loadOverview();
     } catch (err) {
@@ -255,14 +256,11 @@ export const AdminPage: React.FC = () => {
   const handlePrizePoolUpdate = async (mode: 'add' | 'set', explicitAmount?: number) => {
     try {
       const amount = explicitAmount ?? Math.floor(Number(poolInput) || 0);
-      const res = await apiFetch<{ appPrizePoolCoins: number }>('/api/admin/prize-pool', {
-        method: 'POST',
-        body: JSON.stringify({ amount, mode }),
-      });
+      const appPrizePoolCoins = await updatePrizePoolInSupabase(amount, mode);
       showOk(
         mode === 'set'
-          ? `تم تعيين مخزون جوائز دولاب الدعوات إلى ${res.appPrizePoolCoins.toLocaleString('en-US')} كوينز.`
-          : `تمت تعبئة المخزون بمقدار +${amount.toLocaleString('en-US')} كوينز ليصبح ${res.appPrizePoolCoins.toLocaleString('en-US')} كوينز.`
+          ? `تم تعيين مخزون جوائز دولاب الدعوات إلى ${appPrizePoolCoins.toLocaleString('en-US')} كوينز.`
+          : `تمت تعبئة المخزون بمقدار +${amount.toLocaleString('en-US')} كوينز ليصبح ${appPrizePoolCoins.toLocaleString('en-US')} كوينز.`
       );
       await loadOverview();
     } catch (err) {
@@ -273,7 +271,7 @@ export const AdminPage: React.FC = () => {
   // --- USDT DEPOSITS & WITHDRAWALS ---
   const handleApproveDeposit = async (depositId: string) => {
     try {
-      await apiFetch(`/api/admin/usdt/deposits/${depositId}/approve`, { method: 'POST' });
+      await approveUsdtDepositInSupabase(depositId);
       showOk('تم تأكيد إيداع USDT ومنح الكوينز والإطار/الدخولية المؤقتة للعضو تلقائياً!');
       await Promise.all([loadOverview(), refreshUser()]);
     } catch (err) {
@@ -283,10 +281,7 @@ export const AdminPage: React.FC = () => {
 
   const handleRejectDeposit = async (depositId: string) => {
     try {
-      await apiFetch(`/api/admin/usdt/deposits/${depositId}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({ reason: 'لم يتم التحقق من الحوالة على شبكة TRC20' }),
-      });
+      await rejectUsdtDepositInSupabase(depositId, 'لم يتم التحقق من الحوالة على شبكة TRC20');
       showOk('تم رفض طلب الإيداع.');
       await loadOverview();
     } catch (err) {
@@ -296,7 +291,7 @@ export const AdminPage: React.FC = () => {
 
   const handleApproveWithdrawal = async (wdId: string) => {
     try {
-      await apiFetch(`/api/admin/usdt/withdrawals/${wdId}/approve`, { method: 'POST' });
+      await approveUsdtWithdrawalInSupabase(wdId);
       showOk('تم تأكيد تحويل أرباح USDT بنجاح!');
       await loadOverview();
     } catch (err) {
@@ -306,10 +301,7 @@ export const AdminPage: React.FC = () => {
 
   const handleRejectWithdrawal = async (wdId: string) => {
     try {
-      await apiFetch(`/api/admin/usdt/withdrawals/${wdId}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({ reason: 'بيانات محفظة TRC20 غير مكتملة' }),
-      });
+      await rejectUsdtWithdrawalInSupabase(wdId, 'بيانات محفظة TRC20 غير مكتملة');
       showOk('تم رفض طلب السحب وإرجاع الرصيد إلى محفظة العضو.');
       await loadOverview();
     } catch (err) {
@@ -320,7 +312,7 @@ export const AdminPage: React.FC = () => {
   // --- FEMALE VOICE VERIFICATION ---
   const handleApproveFemaleVoice = async (requestId: string) => {
     try {
-      await apiFetch(`/api/admin/female-voice/${requestId}/approve`, { method: 'POST' });
+      await approveFemaleVoiceInSupabase(requestId);
       showOk('تم قبول وتوثيق الحساب النسائي! تم تفعيل الألماس والرسائل المدفوعة ومنح شارة التوثيق الوردية الذهبية.');
       await loadOverview();
     } catch (err) {
@@ -330,12 +322,10 @@ export const AdminPage: React.FC = () => {
 
   const handleRejectFemaleVoice = async (requestId: string) => {
     try {
-      await apiFetch(`/api/admin/female-voice/${requestId}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({
-          reason: 'الصوت غير واضح أو لم يطابق العبارة المطلوبة — يرجى إعادة تسجيل بصمة صوتية جديدة.',
-        }),
-      });
+      await rejectFemaleVoiceInSupabase(
+        requestId,
+        'الصوت غير واضح أو لم يطابق العبارة المطلوبة — يرجى إعادة تسجيل بصمة صوتية جديدة.'
+      );
       showOk('تم رفض طلب التوثيق الصوتي وإبقاء الألماس مقفلاً مع السماح بإعادة التسجيل.');
       await loadOverview();
     } catch (err) {
@@ -349,10 +339,7 @@ export const AdminPage: React.FC = () => {
     payload: { status?: 'approved' | 'pending' | 'suspended'; commissionRate?: number }
   ) => {
     try {
-      await apiFetch(`/api/admin/agencies/${agencyId}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      });
+      await updateAgencyInSupabase(agencyId, payload);
       showOk('تم تحديث بيانات الوكالة ونسبة العمولة بنجاح.');
       await Promise.all([loadOverview(), refreshUser()]);
     } catch (err) {
@@ -365,10 +352,7 @@ export const AdminPage: React.FC = () => {
     payload: { isHost?: boolean; isAgent?: boolean; agencyId?: string | null }
   ) => {
     try {
-      await apiFetch(`/api/admin/users/${targetId}/host-approval`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      await updateHostApprovalInSupabase(targetId, payload);
       showOk('تم تحديث اعتماد المضيف/الوكيل بنجاح.');
       await Promise.all([loadOverview(), refreshUser()]);
     } catch (err) {
@@ -400,12 +384,8 @@ export const AdminPage: React.FC = () => {
 
   const handleExportCsv = async () => {
     try {
-      const token = localStorage.getItem('sada_auth_token');
-      const res = await fetch('/api/admin/questions/export', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error('تعذّر تصدير ملف CSV.');
-      const blob = await res.blob();
+      const csvText = buildQuestionsCsvText(data?.culturalQuestions || []);
+      const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -479,13 +459,7 @@ export const AdminPage: React.FC = () => {
         coinsReward: cols[8] ?? 350,
       }));
 
-      const res = await apiFetch<{ importedCount: number; totalCount: number }>(
-        '/api/admin/questions/import',
-        {
-          method: 'POST',
-          body: JSON.stringify({ rows: dataRows, mode: importMode }),
-        }
-      );
+      const res = await importQuestionsInSupabase({ rows: dataRows, mode: importMode });
       showOk(
         `تم استيراد ${res.importedCount} سؤالاً بنجاح (${importMode === 'replace' ? 'استبدال' : 'إضافة'}). إجمالي بنك الأسئلة الآن: ${res.totalCount}.`
       );
@@ -503,13 +477,7 @@ export const AdminPage: React.FC = () => {
     if (!csvPaste.trim()) return;
     setImportingQuestions(true);
     try {
-      const res = await apiFetch<{ importedCount: number; totalCount: number }>(
-        '/api/admin/questions/import',
-        {
-          method: 'POST',
-          body: JSON.stringify({ csvText: csvPaste, mode: importMode }),
-        }
-      );
+      const res = await importQuestionsInSupabase({ csvText: csvPaste, mode: importMode });
       setCsvPaste('');
       showOk(
         `تم استيراد ${res.importedCount} سؤالاً من النص بنجاح! إجمالي الأسئلة: ${res.totalCount}.`
@@ -524,13 +492,8 @@ export const AdminPage: React.FC = () => {
 
   const handleDeleteQuestion = async (qId: string) => {
     try {
-      const res = await apiFetch<{ culturalQuestions: CulturalQuestionAdminItem[] }>(
-        `/api/admin/questions/${qId}`,
-        {
-          method: 'DELETE',
-        }
-      );
-      showOk(`تم حذف السؤال. المتبقي في البنك: ${res.culturalQuestions.length} سؤالاً.`);
+      const remaining = await deleteQuestionInSupabase(qId);
+      showOk(`تم حذف السؤال. المتبقي في البنك: ${remaining.length} سؤالاً.`);
       await loadOverview();
     } catch (err) {
       showErr(err, 'تعذّر حذف السؤال.');
@@ -543,11 +506,8 @@ export const AdminPage: React.FC = () => {
     if (!settingsDraft) return;
     setSavingSettings(true);
     try {
-      const res = await apiFetch<{ settings: PlatformSettings }>('/api/admin/settings', {
-        method: 'PATCH',
-        body: JSON.stringify(settingsDraft),
-      });
-      setSettingsDraft(res.settings);
+      const saved = await savePlatformSettingsInSupabase(settingsDraft);
+      setSettingsDraft(saved);
       showOk('تم حفظ وتطبيق كافة الإعدادات الاقتصادية والمكافآت فورياً على المنصة!');
       await loadOverview();
     } catch (err) {

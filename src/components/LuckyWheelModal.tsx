@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Sparkles, Trophy, X } from 'lucide-react';
-import { apiFetch } from '../lib/api';
-import type { LuckyWheelResult, LuckyWheelSegment, Room, User } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { spinRoomLuckyWheelInSupabase } from '../lib/sadaRoomsService';
+import type { LuckyWheelSegment, Room, User } from '../types';
 
 interface LuckyWheelModalProps {
   roomId: string;
@@ -20,6 +21,7 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
   onClose,
   onSpinComplete,
 }) => {
+  const { user } = useAuth();
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [wonSegment, setWonSegment] = useState<LuckyWheelSegment | null>(null);
@@ -29,16 +31,13 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
   const sliceAngle = 360 / count;
 
   const handleSpin = async () => {
-    if (spinning) return;
+    if (spinning || !user) return;
     setError(null);
     setWonSegment(null);
     setSpinning(true);
 
     try {
-      const result = await apiFetch<LuckyWheelResult>(
-        `/api/rooms/${roomId}/lucky-wheel`,
-        { method: 'POST' }
-      );
+      const result = await spinRoomLuckyWheelInSupabase(roomId, user);
 
       // Compute exact rotation so segmentIndex lands under top pointer (0 deg)
       const centerAngle = result.segmentIndex * sliceAngle + sliceAngle / 2;

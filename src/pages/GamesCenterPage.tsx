@@ -18,7 +18,14 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch } from '../lib/api';
+import {
+  getLadderStateFromSupabase,
+  openMysteryBoxInSupabase,
+  playLadderActionInSupabase,
+  playStandardDiceInSupabase,
+  spinRouletteInSupabase,
+  spinSlotMachineInSupabase,
+} from '../lib/sadaGamesService';
 import type { User } from '../types';
 
 type CenterCategory = 'slots' | 'dice' | 'roulette' | 'mystery';
@@ -544,8 +551,8 @@ export const GamesCenterPage: React.FC = () => {
 
   useEffect(() => {
     if (!user) return;
-    apiFetch<{ session: LadderSession | null }>('/api/games/ladder-state')
-      .then((res) => setLadderSession(res.session))
+    getLadderStateFromSupabase(user.id)
+      .then((session) => setLadderSession(session))
       .catch(() => {});
   }, [user]);
 
@@ -611,10 +618,7 @@ export const GamesCenterPage: React.FC = () => {
     }, 65);
 
     try {
-      const result = await apiFetch<SpinResultPayload>('/api/games/slot-spin', {
-        method: 'POST',
-        body: JSON.stringify({ gameId: machine.id, bet }),
-      });
+      const result = await spinSlotMachineInSupabase(user.id, machine.id, bet);
 
       const strikesMap: Record<string, number> = {};
       for (const st of result.lightningStrikes || []) {
@@ -699,10 +703,7 @@ export const GamesCenterPage: React.FC = () => {
     }, 80);
 
     try {
-      const res = await apiFetch<DicePlayResponse>('/api/games/dice-play', {
-        method: 'POST',
-        body: JSON.stringify({ gameId: diceGame, bet, pick }),
-      });
+      const res = await playStandardDiceInSupabase(user.id, diceGame, bet, pick);
 
       const t = window.setTimeout(() => {
         window.clearInterval(rollInterval);
@@ -735,10 +736,7 @@ export const GamesCenterPage: React.FC = () => {
     setErrorMsg(null);
     setIsDiceRolling(true);
     try {
-      const res = await apiFetch<LadderActionResponse>('/api/games/ladder-action', {
-        method: 'POST',
-        body: JSON.stringify({ action, bet }),
-      });
+      const res = await playLadderActionInSupabase(user.id, action, bet);
       const delay = action === 'roll' ? 520 : 120;
       const t = window.setTimeout(() => {
         setIsDiceRolling(false);
@@ -774,14 +772,12 @@ export const GamesCenterPage: React.FC = () => {
     setIsRouletteSpinning(true);
 
     try {
-      const res = await apiFetch<RouletteSpinResponse>('/api/games/roulette-spin', {
-        method: 'POST',
-        body: JSON.stringify({
-          bet,
-          betType: rouletteBetType,
-          targetNumber: rouletteBetType === 'straight' ? rouletteStraightNum : undefined,
-        }),
-      });
+      const res = await spinRouletteInSupabase(
+        user.id,
+        bet,
+        rouletteBetType,
+        rouletteBetType === 'straight' ? rouletteStraightNum : undefined
+      );
 
       const sliceAngle = 360 / 37;
       // Align pocket center with top pointer (0deg) while always rotating forward >= 5 turns
@@ -822,10 +818,7 @@ export const GamesCenterPage: React.FC = () => {
     setErrorMsg(null);
     setIsOpeningBox(true);
     try {
-      const res = await apiFetch<MysteryBoxResponse>('/api/games/mystery-box', {
-        method: 'POST',
-        body: JSON.stringify({ bet, boxIndex }),
-      });
+      const res = await openMysteryBoxInSupabase(user.id, bet, boxIndex);
       setMysteryResult(res);
       updateLocalUser(res.user);
       pushHistory('صناديق الحظ الملكية', res.bet, res.payout, res.multiplier);

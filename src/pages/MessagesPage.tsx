@@ -12,29 +12,21 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch, getWsUrl } from '../lib/api';
+import {
+  getPmOverviewFromSupabase,
+  sendPrivateMessageInSupabase,
+} from '../lib/sadaSocialService';
+import { supabase } from '../lib/supabase';
 import type {
   GiftItem,
   PrivateConversation,
   PrivateConversationPeer,
-  PrivateMessage,
-  User,
 } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import {
   FemaleVerifiedBadge,
   FemaleVoiceVerificationCard,
 } from '../components/FemaleVoiceVerificationCard';
-
-interface PmOverviewResponse {
-  conversations: PrivateConversation[];
-  recipients: PrivateConversationPeer[];
-  gifts: GiftItem[];
-  pmMessageCost: number;
-  pmReplyDiamonds: number;
-  pendingDiamondsTotal: number;
-  canReceivePaidPm: boolean;
-}
 
 export const MessagesPage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
@@ -64,8 +56,9 @@ export const MessagesPage: React.FC = () => {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const loadOverview = useCallback(async () => {
+    if (!user) return;
     try {
-      const data = await apiFetch<PmOverviewResponse>('/api/pm/overview');
+      const data = await getPmOverviewFromSupabase(user);
       setConversations(data.conversations);
       setRecipients(data.recipients);
       setGifts(data.gifts);
@@ -76,7 +69,7 @@ export const MessagesPage: React.FC = () => {
 
       const queryTarget = searchParams.get('to');
       setSelectedPeerId((prev) => {
-        if (queryTarget && queryTarget !== user?.id) return queryTarget;
+        if (queryTarget && queryTarget !== user.id) return queryTarget;
         if (prev) return prev;
         if (data.conversations[0]?.peer.id) return data.conversations[0].peer.id;
         return data.recipients[0]?.id || '';
@@ -86,39 +79,27 @@ export const MessagesPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchParams, user?.id]);
+  }, [searchParams, user]);
 
   useEffect(() => {
-    loadOverview();
+    void loadOverview();
   }, [loadOverview]);
 
   useEffect(() => {
-    if (!user) return;
-    const ws = new WebSocket(getWsUrl());
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'user:auth', userId: user.id }));
-    };
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as {
-          event: string;
-          payload: { diamondsAdded?: number };
-        };
-        if (msg.event === 'pm:message' || msg.event === 'pm:diamonds') {
-          loadOverview();
-          if (msg.payload?.diamondsAdded && msg.payload.diamondsAdded > 0) {
-            setCelebration({
-              title: '💎 رصيد ألماس جديد في محفظتك!',
-              subtitle: `أُضيفت +${msg.payload.diamondsAdded.toLocaleString('en-US')} ألماسة تلقائياً إلى رصيدك.`,
-            });
-            setTimeout(() => setCelebration(null), 4500);
-          }
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`sada-pm-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_private_messages' },
+        () => {
+          void loadOverview();
         }
-      } catch {
-        // ignore
-      }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
     };
-    return () => ws.close();
   }, [user?.id, loadOverview]);
 
   const activeConversation = useMemo(
@@ -152,26 +133,16 @@ export const MessagesPage: React.FC = () => {
 
   const handleSend = async (e?: React.FormEvent, giftId?: string) => {
     if (e) e.preventDefault();
-    if (!selectedPeerId) return;
+    if (!user || !selectedPeerId) return;
     if (!giftId && !text.trim()) return;
 
     setSending(true);
     setError(null);
     try {
-      const res = await apiFetch<{
-        user: User;
-        message: PrivateMessage;
-        unlockedReplyDiamonds: number;
-        giftDiamondsAwarded: number;
-        luckyMultiplier?: number | null;
-        luckyBonusCoins?: number;
-      }>('/api/pm/send', {
-        method: 'POST',
-        body: JSON.stringify({
-          recipientId: selectedPeerId,
-          text: giftId ? '' : text.trim(),
-          giftId,
-        }),
+      const res = await sendPrivateMessageInSupabase(user, {
+        recipientId: selectedPeerId,
+        text: giftId ? '' : text.trim(),
+        giftId,
       });
 
       updateLocalUser(res.user);

@@ -18,15 +18,22 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch, getWsUrl } from '../lib/api';
 import { resolveAsset } from '../lib/assets';
+import {
+  answerCulturalQuizInSupabase,
+  getCompetitionsFromSupabase,
+  getReferralWheelOverviewFromSupabase,
+  joinCompetitionInSupabase,
+  spinReferralWheelInSupabase,
+  startCulturalQuizInSupabase,
+  voteCompetitionInSupabase,
+} from '../lib/sadaSocialService';
+import { supabase } from '../lib/supabase';
 import type {
   Competition,
   CulturalQuizResult,
   CulturalQuizRound,
-  ReferralWheelResult,
   ReferralWheelSegment,
-  User,
 } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 
@@ -82,22 +89,17 @@ export const CompetitionsPage: React.FC = () => {
 
   const loadCompetitions = useCallback(async () => {
     try {
-      const data = await apiFetch<{ competitions: Competition[] }>('/api/competitions');
-      setCompetitions(data.competitions);
+      const list = await getCompetitionsFromSupabase();
+      setCompetitions(list);
     } finally {
       setLoading(false);
     }
   }, []);
 
   const loadReferralOverview = useCallback(async () => {
+    if (!user) return;
     try {
-      const data = await apiFetch<{
-        referralCode: string;
-        referralCount: number;
-        referralSpins: number;
-        appPrizePoolCoins: number;
-        segments: ReferralWheelSegment[];
-      }>('/api/competitions/referral-wheel/overview');
+      const data = await getReferralWheelOverviewFromSupabase(user);
       setReferralCode(data.referralCode);
       setReferralCount(data.referralCount);
       setReferralSpins(data.referralSpins);
@@ -106,41 +108,38 @@ export const CompetitionsPage: React.FC = () => {
     } catch {
       // handled silently on init
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    loadCompetitions();
-    loadReferralOverview();
+    void loadCompetitions();
+    void loadReferralOverview();
 
-    const ws = new WebSocket(getWsUrl());
-    ws.onopen = () => {
-      if (user?.id) {
-        ws.send(JSON.stringify({ type: 'user:auth', userId: user.id }));
-      }
-    };
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as { event: string; payload: unknown };
-        if (msg.event === 'competition:updated') {
-          const updated = msg.payload as Competition;
-          setCompetitions((prev) => {
-            const exists = prev.some((c) => c.id === updated.id);
-            if (!exists) return [updated, ...prev];
-            return prev.map((c) => (c.id === updated.id ? updated : c));
-          });
-        } else if (msg.event === 'referral:spin-earned') {
-          loadReferralOverview();
+    const channel = supabase
+      .channel(`sada-competitions-${user?.id || 'guest'}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_competitions' },
+        () => {
+          void loadCompetitions();
         }
-      } catch {
-        // ignore
-      }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'sada_platform_state' },
+        () => {
+          void loadReferralOverview();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
     };
-    return () => ws.close();
   }, [loadCompetitions, loadReferralOverview, user?.id]);
 
   // 8-second live countdown & automatic anti-cheat lock
   useEffect(() => {
-    if (!quizRound || quizResult || quizLocked) return;
+    if (!quizRound || quizResult || quizLocked || !user) return;
 
     const interval = setInterval(() => {
       const remaining = Math.max(0, quizRound.expiresAt - Date.now());
@@ -150,10 +149,7 @@ export const CompetitionsPage: React.FC = () => {
         clearInterval(interval);
         if (autoTimeoutSubmittedRef.current !== quizRound.roundId) {
           autoTimeoutSubmittedRef.current = quizRound.roundId;
-          apiFetch<CulturalQuizResult>('/api/competitions/quiz/answer', {
-            method: 'POST',
-            body: JSON.stringify({ roundId: quizRound.roundId }),
-          })
+          answerCulturalQuizInSupabase(user, quizRound.roundId)
             .then((res) => {
               setQuizResult(res);
               setQuizStreak(0);
@@ -165,9 +161,10 @@ export const CompetitionsPage: React.FC = () => {
     }, 80);
 
     return () => clearInterval(interval);
-  }, [quizRound, quizResult, quizLocked, updateLocalUser]);
+  }, [quizRound, quizResult, quizLocked, updateLocalUser, user]);
 
   const handleStartQuiz = async () => {
+    if (!user) return;
     setQuizLoading(true);
     setFeedback(null);
     setQuizResult(null);
@@ -175,9 +172,7 @@ export const CompetitionsPage: React.FC = () => {
     setQuizLocked(false);
     autoTimeoutSubmittedRef.current = null;
     try {
-      const round = await apiFetch<CulturalQuizRound>('/api/competitions/quiz/start', {
-        method: 'POST',
-      });
+      const round = await startCulturalQuizInSupabase(user);
       setQuizRound(round);
       setQuizTimeLeftMs(round.timeLimitSeconds * 1000);
     } catch (err) {
@@ -191,15 +186,12 @@ export const CompetitionsPage: React.FC = () => {
   };
 
   const handleAnswerQuiz = async (idx: number) => {
-    if (!quizRound || quizLocked || quizResult || quizTimeLeftMs <= 0) return;
+    if (!user || !quizRound || quizLocked || quizResult || quizTimeLeftMs <= 0) return;
     setQuizLocked(true);
     setQuizSelected(idx);
     autoTimeoutSubmittedRef.current = quizRound.roundId;
     try {
-      const res = await apiFetch<CulturalQuizResult>('/api/competitions/quiz/answer', {
-        method: 'POST',
-        body: JSON.stringify({ roundId: quizRound.roundId, selectedIndex: idx }),
-      });
+      const res = await answerCulturalQuizInSupabase(user, quizRound.roundId, idx);
       setQuizResult(res);
       updateLocalUser(res.user);
       setQuizStreak((prev) => (res.isCorrect ? prev + 1 : 0));
@@ -212,15 +204,12 @@ export const CompetitionsPage: React.FC = () => {
   };
 
   const handleSpinReferralWheel = async () => {
-    if (refSpinning || referralSpins < 1 || refSegments.length === 0) return;
+    if (!user || refSpinning || referralSpins < 1 || refSegments.length === 0) return;
     setRefSpinning(true);
     setRefWinBanner(null);
     setFeedback(null);
     try {
-      const res = await apiFetch<ReferralWheelResult>(
-        '/api/competitions/referral-wheel/spin',
-        { method: 'POST' }
-      );
+      const res = await spinReferralWheelInSupabase(user);
       const count = refSegments.length;
       const sliceDeg = 360 / count;
       const targetCenter = res.segmentIndex * sliceDeg + sliceDeg / 2;
@@ -258,15 +247,10 @@ export const CompetitionsPage: React.FC = () => {
     contestantId: string,
     boost: boolean
   ) => {
+    if (!user) return;
     setFeedback(null);
     try {
-      const data = await apiFetch<{ competition: Competition; user: User }>(
-        `/api/competitions/${compId}/vote`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ contestantId, boost }),
-        }
-      );
+      const data = await voteCompetitionInSupabase(user, compId, contestantId, boost);
       updateLocalUser(data.user);
       setCompetitions((prev) =>
         prev.map((c) => (c.id === data.competition.id ? data.competition : c))
@@ -287,19 +271,17 @@ export const CompetitionsPage: React.FC = () => {
 
   const handleJoinCompetition = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!joinTarget) return;
+    if (!user || !joinTarget) return;
     setSubmitting(true);
     setFeedback(null);
     try {
-      const data = await apiFetch<{ competition: Competition }>(
-        `/api/competitions/${joinTarget.id}/join`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ performanceTitle }),
-        }
+      const updated = await joinCompetitionInSupabase(
+        user,
+        joinTarget.id,
+        performanceTitle
       );
       setCompetitions((prev) =>
-        prev.map((c) => (c.id === data.competition.id ? data.competition : c))
+        prev.map((c) => (c.id === updated.id ? updated : c))
       );
       setJoinTarget(null);
       setPerformanceTitle('');

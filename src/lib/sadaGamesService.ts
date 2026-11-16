@@ -1,0 +1,1193 @@
+import type { Transaction, User } from '../types';
+import { computeLevelFromXp, genId } from './sadaCatalog';
+import {
+  getPlatformState,
+  recordTransaction,
+  rowToUser,
+  savePlatformState,
+} from './sadaMappers';
+import { supabase } from './supabase';
+
+export type SlotGameId =
+  | 'classic_fruits'
+  | 'pharaoh_treasures'
+  | 'neon_galaxy'
+  | 'crown_jewels'
+  | 'olympus_gates'
+  | 'sea_pirates'
+  | 'turbo_racing'
+  | 'desert_gold';
+
+export type DiceGameId = 'double_dice' | 'prediction_dice' | 'ladder_dice' | 'speed_dice';
+
+export type RouletteBetType =
+  | 'red'
+  | 'black'
+  | 'even'
+  | 'odd'
+  | 'dozen_1'
+  | 'dozen_2'
+  | 'dozen_3'
+  | 'zero'
+  | 'straight';
+
+export interface LightningStrike {
+  row: number;
+  col: number;
+  mult: number;
+}
+
+export interface SpinResultPayload {
+  gameId: SlotGameId;
+  bet: number;
+  grid: string[][];
+  cols: number;
+  rows: number;
+  multiplier: number;
+  payout: number;
+  netDelta: number;
+  xpGain: number;
+  winningCells: Array<[number, number]>;
+  rulesTriggered: string[];
+  lightningStrikes?: LightningStrike[];
+  jackpotHit: boolean;
+  user: User;
+}
+
+export interface DicePlayResponse {
+  gameId: 'double_dice' | 'prediction_dice' | 'speed_dice';
+  bet: number;
+  dice: number[];
+  won: boolean;
+  multiplier: number;
+  payout: number;
+  xpGain: number;
+  label: string;
+  user: User;
+}
+
+export interface LadderSession {
+  bet: number;
+  step: number;
+  currentMultiplier: number;
+}
+
+export interface LadderActionResponse {
+  status: 'climbed' | 'summit' | 'fell' | 'cashed_out';
+  payout: number;
+  multiplier: number;
+  step: number;
+  die: number;
+  session: LadderSession | null;
+  message: string;
+  user: User;
+}
+
+export interface RouletteSpinResponse {
+  winningNumber: number;
+  winningColor: 'red' | 'black' | 'green';
+  wheelIndex: number;
+  won: boolean;
+  multiplier: number;
+  payout: number;
+  bet: number;
+  xpGain: number;
+  user: User;
+}
+
+export interface MysteryBoxItem {
+  index: number;
+  multiplier: number;
+  coins: number;
+  label: string;
+  glyph: string;
+  isChosen: boolean;
+}
+
+export interface MysteryBoxResponse {
+  chosenIndex: number;
+  boxes: MysteryBoxItem[];
+  won: boolean;
+  multiplier: number;
+  payout: number;
+  bet: number;
+  xpGain: number;
+  user: User;
+}
+
+const ROULETTE_WHEEL_ORDER = [
+  0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16,
+  33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26,
+];
+
+const ROULETTE_REDS = new Set([
+  1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36,
+]);
+
+const LADDER_MULTIPLIERS: Record<number, number> = {
+  1: 1.4,
+  2: 2.2,
+  3: 3.6,
+  4: 6.5,
+  5: 12.0,
+};
+
+interface SlotMachineSpec {
+  id: SlotGameId;
+  title: string;
+  cols: number;
+  rows: number;
+  symbols: string[];
+  weights: number[];
+}
+
+const SLOT_SPECS: Record<SlotGameId, SlotMachineSpec> = {
+  classic_fruits: {
+    id: 'classic_fruits',
+    title: 'سلوت الفواكه الكلاسيكي',
+    cols: 3,
+    rows: 3,
+    symbols: ['🍒', '🍋', '🍇', '🔔', '⭐', '7️⃣'],
+    weights: [28, 24, 20, 14, 9, 5],
+  },
+  pharaoh_treasures: {
+    id: 'pharaoh_treasures',
+    title: 'كنوز الفراعنة',
+    cols: 3,
+    rows: 3,
+    symbols: ['🏺', '🐍', '⚱️', '☀️', '👁️', '🪲'],
+    weights: [26, 22, 18, 13, 8, 13],
+  },
+  neon_galaxy: {
+    id: 'neon_galaxy',
+    title: 'مجرة النيون',
+    cols: 5,
+    rows: 3,
+    symbols: ['👾', '☄️', '🌌', '🪐', '🛸', '⚡'],
+    weights: [26, 22, 18, 14, 10, 10],
+  },
+  crown_jewels: {
+    id: 'crown_jewels',
+    title: 'جواهر التاج',
+    cols: 4,
+    rows: 3,
+    symbols: ['🔮', '⚜️', '💍', '🏆', '💎', '👑'],
+    weights: [26, 22, 18, 15, 11, 8],
+  },
+  olympus_gates: {
+    id: 'olympus_gates',
+    title: 'بوابات الأوليمبوس',
+    cols: 5,
+    rows: 4,
+    symbols: ['🏛️', '⏳', '💍', '🏆', '👑', '⚡'],
+    weights: [25, 22, 18, 14, 10, 11],
+  },
+  sea_pirates: {
+    id: 'sea_pirates',
+    title: 'قراصنة البحار',
+    cols: 5,
+    rows: 3,
+    symbols: ['⚓', '🧭', '🦜', '🏴‍☠️', '💣', '💰'],
+    weights: [25, 21, 18, 14, 12, 10],
+  },
+  turbo_racing: {
+    id: 'turbo_racing',
+    title: 'سباق السيارات',
+    cols: 4,
+    rows: 3,
+    symbols: ['🛞', '⛽', '🏁', '🏆', '🔥', '🏎️'],
+    weights: [26, 22, 18, 14, 11, 9],
+  },
+  desert_gold: {
+    id: 'desert_gold',
+    title: 'ذهب الصحراء',
+    cols: 3,
+    rows: 3,
+    symbols: ['🌴', '🐪', '🗡️', '🏜️', '🪔', '🪙'],
+    weights: [26, 22, 18, 14, 10, 10],
+  },
+};
+
+function pickWeightedSymbol(symbols: string[], weights: number[]): string {
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < symbols.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return symbols[i];
+  }
+  return symbols[0];
+}
+
+function generateGrid(spec: SlotMachineSpec): string[][] {
+  return Array.from({ length: spec.rows }, () =>
+    Array.from({ length: spec.cols }, () => pickWeightedSymbol(spec.symbols, spec.weights))
+  );
+}
+
+interface SlotEval {
+  multiplier: number;
+  winningCells: Array<[number, number]>;
+  rulesTriggered: string[];
+  lightningStrikes?: LightningStrike[];
+  jackpotHit: boolean;
+}
+
+function addCells(target: Set<string>, coords: Array<[number, number]>) {
+  for (const [r, c] of coords) target.add(`${r}-${c}`);
+}
+
+function parseCells(set: Set<string>): Array<[number, number]> {
+  return Array.from(set).map((k) => {
+    const [r, c] = k.split('-').map(Number);
+    return [r, c];
+  });
+}
+
+function evaluateSlotGrid(gameId: SlotGameId, grid: string[][]): SlotEval {
+  const winSet = new Set<string>();
+  const rulesTriggered: string[] = [];
+  let multiplier = 0;
+  let jackpotHit = false;
+  let lightningStrikes: LightningStrike[] | undefined;
+
+  if (gameId === 'classic_fruits') {
+    const lineMult: Record<string, number> = {
+      '🍒': 3,
+      '🍋': 4,
+      '🍇': 6,
+      '🔔': 10,
+      '⭐': 15,
+      '7️⃣': 30,
+    };
+    const lines: Array<Array<[number, number]>> = [
+      [[0, 0], [0, 1], [0, 2]],
+      [[1, 0], [1, 1], [1, 2]],
+      [[2, 0], [2, 1], [2, 2]],
+      [[0, 0], [1, 1], [2, 2]],
+      [[2, 0], [1, 1], [0, 2]],
+    ];
+    for (const line of lines) {
+      const a = grid[line[0][0]][line[0][1]];
+      const b = grid[line[1][0]][line[1][1]];
+      const c = grid[line[2][0]][line[2][1]];
+      if (a === b && b === c) {
+        multiplier += lineMult[a] || 3;
+        addCells(winSet, line);
+        if (a === '7️⃣') jackpotHit = true;
+      }
+    }
+    const midCherries: Array<[number, number]> = [];
+    for (let c = 0; c < 3; c++) {
+      if (grid[1][c] === '🍒') midCherries.push([1, c]);
+    }
+    if (midCherries.length === 2) {
+      multiplier += 1.5;
+      addCells(winSet, midCherries);
+      rulesTriggered.push('ثنائي الكرز الذهبي (×1.5)');
+    }
+  } else if (gameId === 'pharaoh_treasures') {
+    const lineMult: Record<string, number> = {
+      '🏺': 3,
+      '🐍': 6,
+      '⚱️': 9,
+      '☀️': 18,
+      '👁️': 32,
+      '🪲': 15,
+    };
+    const lines: Array<Array<[number, number]>> = [
+      [[0, 0], [0, 1], [0, 2]],
+      [[1, 0], [1, 1], [1, 2]],
+      [[2, 0], [2, 1], [2, 2]],
+      [[0, 0], [1, 1], [2, 2]],
+      [[2, 0], [1, 1], [0, 2]],
+    ];
+    for (const line of lines) {
+      const a = grid[line[0][0]][line[0][1]];
+      const b = grid[line[1][0]][line[1][1]];
+      const c = grid[line[2][0]][line[2][1]];
+      if (a === b && b === c) {
+        multiplier += lineMult[a] || 4;
+        addCells(winSet, line);
+        if (a === '👁️') jackpotHit = true;
+      }
+    }
+    const scarabs: Array<[number, number]> = [];
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        if (grid[r][c] === '🪲') scarabs.push([r, c]);
+      }
+    }
+    if (scarabs.length >= 2) {
+      const bonus = scarabs.length >= 4 ? 25 : scarabs.length === 3 ? 12 : 2.5;
+      multiplier += bonus;
+      addCells(winSet, scarabs);
+      rulesTriggered.push(`جعران متناثر ×${scarabs.length} (+×${bonus})`);
+    }
+  } else if (gameId === 'neon_galaxy') {
+    const sym3: Record<string, number> = { '👾': 2, '☄️': 3, '🌌': 4, '🪐': 6, '🛸': 10, '⚡': 12 };
+    const sym4: Record<string, number> = { '👾': 5, '☄️': 8, '🌌': 11, '🪐': 16, '🛸': 25, '⚡': 30 };
+    const sym5: Record<string, number> = { '👾': 12, '☄️': 20, '🌌': 28, '🪐': 36, '🛸': 50, '⚡': 60 };
+    const lines: Array<Array<[number, number]>> = [
+      [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]],
+      [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]],
+      [[2, 0], [2, 1], [2, 2], [2, 3], [2, 4]],
+      [[0, 0], [1, 1], [2, 2], [1, 3], [0, 4]],
+    ];
+    for (const line of lines) {
+      const syms = line.map(([r, c]) => grid[r][c]);
+      const baseSym = syms.find((s) => s !== '⚡') || '⚡';
+      let matchLen = 0;
+      let hasWild = false;
+      for (const s of syms) {
+        if (s === baseSym || s === '⚡') {
+          matchLen++;
+          if (s === '⚡') hasWild = true;
+        } else {
+          break;
+        }
+      }
+      if (matchLen >= 3) {
+        let m =
+          matchLen === 5
+            ? sym5[baseSym] || 15
+            : matchLen === 4
+            ? sym4[baseSym] || 6
+            : sym3[baseSym] || 2.5;
+        if (hasWild) {
+          m *= 2;
+          rulesTriggered.push('مضاعف البرق الكوني ⚡ ×2');
+        }
+        multiplier += m;
+        addCells(winSet, line.slice(0, matchLen));
+        if (matchLen === 5 && baseSym === '🛸') jackpotHit = true;
+      }
+    }
+  } else if (gameId === 'crown_jewels') {
+    const sym3: Record<string, number> = { '🔮': 2, '⚜️': 3.5, '💍': 5, '🏆': 8, '💎': 14, '👑': 22 };
+    const sym4: Record<string, number> = { '🔮': 7, '⚜️': 12, '💍': 18, '🏆': 26, '💎': 38, '👑': 55 };
+    for (let r = 0; r < 3; r++) {
+      const row = grid[r];
+      let len = 1;
+      for (let c = 1; c < 4; c++) {
+        if (row[c] === row[0]) len++;
+        else break;
+      }
+      if (len >= 3) {
+        multiplier += len === 4 ? sym4[row[0]] || 10 : sym3[row[0]] || 3;
+        addCells(winSet, Array.from({ length: len }, (_, c) => [r, c] as [number, number]));
+        if (len === 4 && row[0] === '👑') jackpotHit = true;
+      }
+    }
+    for (let c = 0; c < 4; c++) {
+      if (grid[0][c] === grid[1][c] && grid[1][c] === grid[2][c]) {
+        const bonus = grid[0][c] === '👑' ? 15 : 4;
+        multiplier += bonus;
+        addCells(winSet, [[0, c], [1, c], [2, c]]);
+        rulesTriggered.push(`عمود إمبراطوري مكتمل (+×${bonus})`);
+      }
+    }
+  } else if (gameId === 'olympus_gates') {
+    const counts = new Map<string, Array<[number, number]>>();
+    const bolts: Array<[number, number]> = [];
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 5; c++) {
+        const s = grid[r][c];
+        if (s === '⚡') {
+          bolts.push([r, c]);
+        } else {
+          const list = counts.get(s) || [];
+          list.push([r, c]);
+          counts.set(s, list);
+        }
+      }
+    }
+    const base5: Record<string, number> = { '🏛️': 1.5, '⏳': 2, '💍': 2.5, '🏆': 3.5, '👑': 5 };
+    const base7: Record<string, number> = { '🏛️': 4, '⏳': 6, '💍': 8, '🏆': 11, '👑': 16 };
+    const base9: Record<string, number> = { '🏛️': 12, '⏳': 16, '💍': 22, '🏆': 30, '👑': 45 };
+    let baseWin = 0;
+    for (const [sym, coords] of counts.entries()) {
+      if (coords.length >= 5) {
+        const m =
+          coords.length >= 9
+            ? base9[sym] || 15
+            : coords.length >= 7
+            ? base7[sym] || 6
+            : base5[sym] || 2;
+        baseWin += m;
+        addCells(winSet, coords);
+        if (coords.length >= 9 && sym === '👑') jackpotHit = true;
+      }
+    }
+    if (baseWin > 0) {
+      if (bolts.length > 0) {
+        const strikeList: LightningStrike[] = bolts.map(([row, col]) => {
+          const choices = [2, 3, 5, 8, 12, 15, 25];
+          const mult = choices[Math.floor(Math.random() * choices.length)];
+          return { row, col, mult };
+        });
+        const totalLightning = strikeList.reduce((sum, s) => sum + s.mult, 0);
+        multiplier = baseWin * totalLightning;
+        lightningStrikes = strikeList;
+        addCells(winSet, bolts);
+        rulesTriggered.push(`صواعق زيوس ×${totalLightning}`);
+      } else {
+        multiplier = baseWin;
+      }
+    }
+  } else if (gameId === 'sea_pirates') {
+    const sym3: Record<string, number> = { '⚓': 2, '🧭': 3, '🦜': 4, '🏴‍☠️': 6, '💣': 5, '💰': 10 };
+    const sym4: Record<string, number> = { '⚓': 5, '🧭': 8, '🦜': 11, '🏴‍☠️': 18, '💣': 12, '💰': 24 };
+    const sym5: Record<string, number> = { '⚓': 14, '🧭': 20, '🦜': 28, '🏴‍☠️': 42, '💣': 30, '💰': 60 };
+    const lines: Array<Array<[number, number]>> = [
+      [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]],
+      [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]],
+      [[2, 0], [2, 1], [2, 2], [2, 3], [2, 4]],
+      [[0, 0], [1, 1], [2, 2], [1, 3], [0, 4]],
+      [[2, 0], [1, 1], [0, 2], [1, 3], [2, 4]],
+    ];
+    for (const line of lines) {
+      const syms = line.map(([r, c]) => grid[r][c]);
+      const baseSym = syms.find((s) => s !== '💰') || '💰';
+      let matchLen = 0;
+      for (const s of syms) {
+        if (s === baseSym || s === '💰') matchLen++;
+        else break;
+      }
+      if (matchLen >= 3) {
+        multiplier +=
+          matchLen === 5
+            ? sym5[baseSym] || 18
+            : matchLen === 4
+            ? sym4[baseSym] || 8
+            : sym3[baseSym] || 3;
+        addCells(winSet, line.slice(0, matchLen));
+        if (matchLen === 5 && baseSym === '💰') jackpotHit = true;
+      }
+    }
+    const bombs: Array<[number, number]> = [];
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 5; c++) {
+        if (grid[r][c] === '💣') bombs.push([r, c]);
+      }
+    }
+    if (bombs.length >= 3) {
+      const bonus = bombs.length >= 5 ? 18 : bombs.length === 4 ? 9 : 4;
+      multiplier += bonus;
+      addCells(winSet, bombs);
+      rulesTriggered.push(`قصف المدافع ×${bombs.length} (+×${bonus})`);
+    }
+  } else if (gameId === 'turbo_racing') {
+    const sym3: Record<string, number> = { '🛞': 2.5, '⛽': 3.5, '🏁': 5, '🏆': 8, '🔥': 6, '🏎️': 14 };
+    const sym4: Record<string, number> = { '🛞': 7, '⛽': 10, '🏁': 16, '🏆': 26, '🔥': 18, '🏎️': 50 };
+    for (let r = 0; r < 3; r++) {
+      const row = grid[r];
+      let len = 1;
+      for (let c = 1; c < 4; c++) {
+        if (row[c] === row[0]) len++;
+        else break;
+      }
+      if (len >= 3) {
+        let rowMult = len === 4 ? sym4[row[0]] || 10 : sym3[row[0]] || 3;
+        const nitros = row.filter((s) => s === '🔥').length;
+        if (nitros > 0) {
+          rowMult = rowMult * (1 + nitros * 0.5);
+          rulesTriggered.push(`شعلة نايترو 🔥 +${nitros * 50}%`);
+        }
+        multiplier += rowMult;
+        addCells(winSet, Array.from({ length: len }, (_, c) => [r, c] as [number, number]));
+        if (len === 4 && row[0] === '🏎️') jackpotHit = true;
+      }
+    }
+    const cars: Array<[number, number]> = [];
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 4; c++) {
+        if (grid[r][c] === '🏎️') cars.push([r, c]);
+      }
+    }
+    if (cars.length >= 3) {
+      const bonus = cars.length >= 4 ? 14 : 5;
+      multiplier += bonus;
+      addCells(winSet, cars);
+      rulesTriggered.push(`انطلاقة سيارات متناثرة (+×${bonus})`);
+    }
+  } else if (gameId === 'desert_gold') {
+    const lineMult: Record<string, number> = {
+      '🌴': 3,
+      '🐪': 5,
+      '🗡️': 9,
+      '🏜️': 16,
+      '🪔': 24,
+      '🪙': 32,
+    };
+    const lines: Array<Array<[number, number]>> = [
+      [[0, 0], [0, 1], [0, 2]],
+      [[1, 0], [1, 1], [1, 2]],
+      [[2, 0], [2, 1], [2, 2]],
+      [[0, 0], [1, 1], [2, 2]],
+      [[2, 0], [1, 1], [0, 2]],
+    ];
+    for (const line of lines) {
+      const a = grid[line[0][0]][line[0][1]];
+      const b = grid[line[1][0]][line[1][1]];
+      const c = grid[line[2][0]][line[2][1]];
+      if (a === b && b === c) {
+        multiplier += lineMult[a] || 4;
+        addCells(winSet, line);
+        if (a === '🪙') jackpotHit = true;
+      }
+    }
+    const coins: Array<[number, number]> = [];
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        if (grid[r][c] === '🪙') coins.push([r, c]);
+      }
+    }
+    if (coins.length >= 3) {
+      const bonus = coins.length >= 4 ? 12 : 3.5;
+      multiplier += bonus;
+      addCells(winSet, coins);
+      rulesTriggered.push(`كنز الدنانير المتناثر (+×${bonus})`);
+    }
+    if (multiplier > 0 && grid[1][1] === '🪔') {
+      multiplier *= 2;
+      winSet.add('1-1');
+      rulesTriggered.push('مصباح الواحة الأوسط (×2)');
+    }
+  }
+
+  return {
+    multiplier: Math.round(multiplier * 100) / 100,
+    winningCells: parseCells(winSet),
+    rulesTriggered,
+    lightningStrikes,
+    jackpotHit,
+  };
+}
+
+function forceWinningGrid(gameId: SlotGameId, spec: SlotMachineSpec): string[][] {
+  const g = generateGrid(spec);
+  const sym = spec.symbols[Math.floor(Math.random() * Math.min(4, spec.symbols.length))];
+  if (gameId === 'olympus_gates') {
+    for (let c = 0; c < 5; c++) g[1][c] = sym;
+  } else {
+    for (let c = 0; c < spec.cols; c++) g[1][c] = sym;
+  }
+  return g;
+}
+
+function forceLosingGrid(gameId: SlotGameId, spec: SlotMachineSpec): string[][] {
+  const syms = spec.symbols.filter((s) => s !== '🪲' && s !== '💣' && s !== '🪙' && s !== '🏎️' && s !== '⚡' && s !== '💰');
+  const pool = syms.length >= 3 ? syms : spec.symbols;
+  return Array.from({ length: spec.rows }, (_, r) =>
+    Array.from({ length: spec.cols }, (__, c) => pool[(r * 3 + c * 2 + (r === c ? 1 : 0)) % pool.length])
+  );
+}
+
+async function fetchFreshUser(userId: string): Promise<User> {
+  const { data, error } = await supabase
+    .from('sada_users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error || !data) throw new Error('تعذّر تحميل رصيد العضو من Supabase.');
+  return rowToUser(data);
+}
+
+async function applyGameBalance(
+  user: User,
+  bet: number,
+  payout: number,
+  xpGain: number,
+  betType: Transaction['type'],
+  winType: Transaction['type'],
+  betDesc: string,
+  winDesc: string
+): Promise<User> {
+  const nextCoins = Math.max(0, user.coins - bet + payout);
+  const nextXp = user.xp + xpGain;
+  const nextLevel = computeLevelFromXp(nextXp);
+  const now = new Date().toISOString();
+
+  const { data: updated, error } = await supabase
+    .from('sada_users')
+    .update({
+      coins: nextCoins,
+      xp: nextXp,
+      level: nextLevel,
+      last_seen: now,
+    })
+    .eq('id', user.id)
+    .select('*')
+    .single();
+
+  if (error || !updated) {
+    throw new Error('تعذّر تحديث رصيدك في قاعدة البيانات.');
+  }
+
+  await recordTransaction({
+    userId: user.id,
+    type: betType,
+    amount: -bet,
+    currency: 'coins',
+    description: betDesc,
+    timestamp: now,
+  });
+
+  if (payout > 0) {
+    await recordTransaction({
+      userId: user.id,
+      type: winType,
+      amount: payout,
+      currency: 'coins',
+      description: winDesc,
+      timestamp: now,
+    });
+  }
+
+  return rowToUser(updated);
+}
+
+export async function spinSlotMachineInSupabase(
+  userId: string,
+  gameId: SlotGameId,
+  betInput: number
+): Promise<SpinResultPayload> {
+  const bet = Math.floor(Number(betInput) || 0);
+  if (bet < 10) throw new Error('الحد الأدنى للرهان 10 كوينز.');
+
+  const spec = SLOT_SPECS[gameId];
+  if (!spec) throw new Error('لعبة السلوت المطلوبة غير موجودة.');
+
+  const [freshUser, state] = await Promise.all([
+    fetchFreshUser(userId),
+    getPlatformState(),
+  ]);
+  if (freshUser.coins < bet) {
+    throw new Error('رصيد الكوينز غير كافٍ لهذه الدورة.');
+  }
+
+  const winRatePct = Math.max(
+    5,
+    Math.min(95, Number(state.settings.gameRates?.slotsWinRate ?? 38))
+  );
+  const wantWin = Math.random() * 100 < winRatePct;
+
+  let chosenGrid: string[][] | null = null;
+  let chosenEval: SlotEval | null = null;
+
+  for (let i = 0; i < 65; i++) {
+    const g = generateGrid(spec);
+    const ev = evaluateSlotGrid(gameId, g);
+    if (wantWin && ev.multiplier > 0) {
+      chosenGrid = g;
+      chosenEval = ev;
+      break;
+    }
+    if (!wantWin && ev.multiplier === 0) {
+      chosenGrid = g;
+      chosenEval = ev;
+      break;
+    }
+  }
+
+  if (!chosenGrid || !chosenEval) {
+    chosenGrid = wantWin ? forceWinningGrid(gameId, spec) : forceLosingGrid(gameId, spec);
+    chosenEval = evaluateSlotGrid(gameId, chosenGrid);
+  }
+
+  const payout = Math.round(bet * chosenEval.multiplier);
+  const xpGain = Math.max(10, Math.round(bet * 0.08) + (payout > 0 ? 25 : 0));
+
+  const updatedUser = await applyGameBalance(
+    freshUser,
+    bet,
+    payout,
+    xpGain,
+    'slot_spin',
+    'slot_win',
+    `رهان ${spec.title}`,
+    `ربح ${spec.title} (×${chosenEval.multiplier})`
+  );
+
+  return {
+    gameId,
+    bet,
+    grid: chosenGrid,
+    cols: spec.cols,
+    rows: spec.rows,
+    multiplier: chosenEval.multiplier,
+    payout,
+    netDelta: payout - bet,
+    xpGain,
+    winningCells: chosenEval.winningCells,
+    rulesTriggered: chosenEval.rulesTriggered,
+    lightningStrikes: chosenEval.lightningStrikes,
+    jackpotHit: chosenEval.jackpotHit,
+    user: updatedUser,
+  };
+}
+
+export async function playStandardDiceInSupabase(
+  userId: string,
+  gameId: 'double_dice' | 'prediction_dice' | 'speed_dice',
+  betInput: number,
+  pick: string
+): Promise<DicePlayResponse> {
+  const bet = Math.floor(Number(betInput) || 0);
+  if (bet < 10) throw new Error('الحد الأدنى للرهان 10 كوينز.');
+
+  const [freshUser, state] = await Promise.all([
+    fetchFreshUser(userId),
+    getPlatformState(),
+  ]);
+  if (freshUser.coins < bet) throw new Error('رصيد الكوينز غير كافٍ.');
+
+  const rates = state.settings.gameRates;
+  const winRatePct =
+    gameId === 'double_dice'
+      ? Number(rates?.doubleDiceWinRate ?? 42)
+      : gameId === 'prediction_dice'
+      ? Number(rates?.predictionDiceWinRate ?? 40)
+      : Number(rates?.speedDiceWinRate ?? 44);
+  const wantWin = Math.random() * 100 < Math.max(5, Math.min(95, winRatePct));
+
+  const diceCount = gameId === 'double_dice' ? 2 : gameId === 'prediction_dice' ? 1 : 3;
+
+  const evalDice = (dice: number[]): { won: boolean; multiplier: number; label: string } => {
+    const sum = dice.reduce((a, b) => a + b, 0);
+    if (gameId === 'double_dice') {
+      if (pick === 'high') {
+        const won = sum >= 8;
+        return { won, multiplier: won ? 1.95 : 0, label: `مجموع النردين ${sum} (${won ? 'عالي ✓' : 'أقل من 8'})` };
+      }
+      if (pick === 'low') {
+        const won = sum <= 6;
+        return { won, multiplier: won ? 1.95 : 0, label: `مجموع النردين ${sum} (${won ? 'منخفض ✓' : 'أعلى من 6'})` };
+      }
+      if (pick === 'seven') {
+        const won = sum === 7;
+        return { won, multiplier: won ? 4.2 : 0, label: `مجموع النردين ${sum} (${won ? 'السبعة الذهبية ✓' : 'لم تصب 7'})` };
+      }
+      const won = dice[0] === dice[1];
+      return { won, multiplier: won ? 4.8 : 0, label: won ? `تطابق رائع (${dice[0]}-${dice[1]})!` : `النردان (${dice[0]}-${dice[1]})` };
+    }
+    if (gameId === 'prediction_dice') {
+      const val = dice[0];
+      if (pick === 'even') {
+        const won = val % 2 === 0;
+        return { won, multiplier: won ? 1.92 : 0, label: `النتيجة ${val} (${val % 2 === 0 ? 'زوجي' : 'فردي'})` };
+      }
+      if (pick === 'odd') {
+        const won = val % 2 === 1;
+        return { won, multiplier: won ? 1.92 : 0, label: `النتيجة ${val} (${val % 2 === 1 ? 'فردي' : 'زوجي'})` };
+      }
+      const target = Number(pick.replace('exact_', '')) || 6;
+      const won = val === target;
+      return { won, multiplier: won ? 5.2 : 0, label: `ظهر الرقم ${val} (توقعك: ${target})` };
+    }
+    // speed_dice
+    if (pick === 'under_10') {
+      const won = sum <= 10;
+      return { won, multiplier: won ? 1.9 : 0, label: `مجموع السرعة ${sum}` };
+    }
+    if (pick === 'over_11') {
+      const won = sum >= 11;
+      return { won, multiplier: won ? 1.9 : 0, label: `مجموع السرعة ${sum}` };
+    }
+    if (pick === 'lucky_16') {
+      const won = sum >= 16;
+      return { won, multiplier: won ? 4.5 : 0, label: `مجموع السرعة ${sum}` };
+    }
+    const won = dice[0] === dice[1] && dice[1] === dice[2];
+    return { won, multiplier: won ? 12 : 0, label: won ? `ثلاثية متطابقة (${dice[0]})!` : `النتائج ${dice.join(' - ')}` };
+  };
+
+  let chosenDice = Array.from({ length: diceCount }, () => 1 + Math.floor(Math.random() * 6));
+  let outcome = evalDice(chosenDice);
+
+  for (let i = 0; i < 120; i++) {
+    const candidate = Array.from({ length: diceCount }, () => 1 + Math.floor(Math.random() * 6));
+    const res = evalDice(candidate);
+    if (res.won === wantWin) {
+      chosenDice = candidate;
+      outcome = res;
+      break;
+    }
+  }
+
+  const payout = Math.round(bet * outcome.multiplier);
+  const xpGain = Math.max(8, Math.round(bet * 0.06) + (outcome.won ? 20 : 0));
+
+  const titleMap: Record<string, string> = {
+    double_dice: 'نرد الحظ المزدوج',
+    prediction_dice: 'نرد التوقعات',
+    speed_dice: 'نرد السرعة',
+  };
+
+  const updatedUser = await applyGameBalance(
+    freshUser,
+    bet,
+    payout,
+    xpGain,
+    'game_bet',
+    'game_win',
+    `رهان ${titleMap[gameId]}`,
+    `فوز ${titleMap[gameId]} (×${outcome.multiplier})`
+  );
+
+  return {
+    gameId,
+    bet,
+    dice: chosenDice,
+    won: outcome.won,
+    multiplier: outcome.multiplier,
+    payout,
+    xpGain,
+    label: outcome.label,
+    user: updatedUser,
+  };
+}
+
+export async function getLadderStateFromSupabase(
+  userId: string
+): Promise<LadderSession | null> {
+  const state = await getPlatformState();
+  return state.ladderSessions[userId] || null;
+}
+
+export async function playLadderActionInSupabase(
+  userId: string,
+  action: 'roll' | 'cashout',
+  betInput: number
+): Promise<LadderActionResponse> {
+  const [freshUser, state] = await Promise.all([
+    fetchFreshUser(userId),
+    getPlatformState(),
+  ]);
+  const ladderSessions = { ...(state.ladderSessions || {}) };
+  let session = ladderSessions[userId] || null;
+
+  if (action === 'cashout') {
+    if (!session || session.step <= 0) {
+      throw new Error('لا توجد جولة سلم نشطة لسحب أرباحها.');
+    }
+    const payout = Math.round(session.bet * session.currentMultiplier);
+    const mult = session.currentMultiplier;
+    const step = session.step;
+    delete ladderSessions[userId];
+    await savePlatformState({ ladderSessions });
+
+    const nextCoins = freshUser.coins + payout;
+    const nextXp = freshUser.xp + 25;
+    const { data: updated } = await supabase
+      .from('sada_users')
+      .update({
+        coins: nextCoins,
+        xp: nextXp,
+        level: computeLevelFromXp(nextXp),
+      })
+      .eq('id', userId)
+      .select('*')
+      .single();
+
+    await recordTransaction({
+      userId,
+      type: 'game_win',
+      amount: payout,
+      currency: 'coins',
+      description: `تأمين وسحب أرباح نرد السلم (الدرجة ${step} ×${mult})`,
+    });
+
+    return {
+      status: 'cashed_out',
+      payout,
+      multiplier: mult,
+      step,
+      die: 6,
+      session: null,
+      message: `تم تأمين أرباحك وسحب +${payout.toLocaleString('en-US')} كوينز بنجاح!`,
+      user: updated ? rowToUser(updated) : { ...freshUser, coins: nextCoins },
+    };
+  }
+
+  // Action === 'roll'
+  let workingUser = freshUser;
+  if (!session) {
+    const bet = Math.floor(Number(betInput) || 0);
+    if (bet < 10) throw new Error('الحد الأدنى للرهان 10 كوينز.');
+    if (freshUser.coins < bet) throw new Error('رصيد الكوينز غير كافٍ.');
+
+    const nextCoins = freshUser.coins - bet;
+    const { data: deducted } = await supabase
+      .from('sada_users')
+      .update({ coins: nextCoins })
+      .eq('id', userId)
+      .select('*')
+      .single();
+    if (deducted) workingUser = rowToUser(deducted);
+    await recordTransaction({
+      userId,
+      type: 'game_bet',
+      amount: -bet,
+      currency: 'coins',
+      description: 'بدء تحدي نرد السلم التفاعلي',
+    });
+    session = { bet, step: 0, currentMultiplier: 1 };
+  }
+
+  const winRate = Math.max(15, Math.min(92, Number(state.settings.gameRates?.ladderDiceWinRate ?? 58)));
+  const safeClimb = Math.random() * 100 < winRate;
+  const die = safeClimb ? 2 + Math.floor(Math.random() * 5) : 1;
+
+  if (die === 1) {
+    delete ladderSessions[userId];
+    await savePlatformState({ ladderSessions });
+    return {
+      status: 'fell',
+      payout: 0,
+      multiplier: 0,
+      step: 0,
+      die,
+      session: null,
+      message: 'ظهر الرقم 1! سقطت من السلم — يمكنك بدء جولة جديدة.',
+      user: workingUser,
+    };
+  }
+
+  const jump = die === 6 ? 2 : 1;
+  const nextStep = Math.min(5, session.step + jump);
+  const nextMult = LADDER_MULTIPLIERS[nextStep] || 12;
+
+  if (nextStep >= 5) {
+    const payout = Math.round(session.bet * 12);
+    delete ladderSessions[userId];
+    await savePlatformState({ ladderSessions });
+
+    const nextCoins = workingUser.coins + payout;
+    const nextXp = workingUser.xp + 60;
+    const { data: updated } = await supabase
+      .from('sada_users')
+      .update({
+        coins: nextCoins,
+        xp: nextXp,
+        level: computeLevelFromXp(nextXp),
+      })
+      .eq('id', userId)
+      .select('*')
+      .single();
+
+    await recordTransaction({
+      userId,
+      type: 'game_win',
+      amount: payout,
+      currency: 'coins',
+      description: 'بلوغ قمة نرد السلم التفاعلي (×12)',
+    });
+
+    return {
+      status: 'summit',
+      payout,
+      multiplier: 12,
+      step: 5,
+      die,
+      session: null,
+      message: `القمة الملكية! وصلت للدرجة 5 وربحت +${payout.toLocaleString('en-US')} كوينز!`,
+      user: updated ? rowToUser(updated) : { ...workingUser, coins: nextCoins },
+    };
+  }
+
+  const nextSession: LadderSession = {
+    bet: session.bet,
+    step: nextStep,
+    currentMultiplier: nextMult,
+  };
+  ladderSessions[userId] = nextSession;
+  await savePlatformState({ ladderSessions });
+
+  return {
+    status: 'climbed',
+    payout: 0,
+    multiplier: nextMult,
+    step: nextStep,
+    die,
+    session: nextSession,
+    message:
+      die === 6
+        ? `قفزة مزدوجة بالرقم 6! وصلت للدرجة ${nextStep} (×${nextMult}).`
+        : `صعدت للدرجة ${nextStep} بنجاح! المضاعف الحالي ×${nextMult}.`,
+    user: workingUser,
+  };
+}
+
+export async function spinRouletteInSupabase(
+  userId: string,
+  betInput: number,
+  betType: RouletteBetType,
+  targetNumber?: number
+): Promise<RouletteSpinResponse> {
+  const bet = Math.floor(Number(betInput) || 0);
+  if (bet < 10) throw new Error('الحد الأدنى للرهان 10 كوينز.');
+
+  const [freshUser, state] = await Promise.all([
+    fetchFreshUser(userId),
+    getPlatformState(),
+  ]);
+  if (freshUser.coins < bet) throw new Error('رصيد الكوينز غير كافٍ.');
+
+  const winRatePct = Math.max(
+    5,
+    Math.min(95, Number(state.settings.gameRates?.rouletteWinRate ?? 45))
+  );
+  const wantWin = Math.random() * 100 < winRatePct;
+
+  const doesWin = (n: number): { won: boolean; multiplier: number } => {
+    if (betType === 'zero') return { won: n === 0, multiplier: n === 0 ? 28 : 0 };
+    if (betType === 'straight') {
+      const target = Math.max(1, Math.min(36, Math.floor(Number(targetNumber) || 7)));
+      return { won: n === target, multiplier: n === target ? 32 : 0 };
+    }
+    if (n === 0) return { won: false, multiplier: 0 };
+    if (betType === 'red') {
+      const won = ROULETTE_REDS.has(n);
+      return { won, multiplier: won ? 2 : 0 };
+    }
+    if (betType === 'black') {
+      const won = !ROULETTE_REDS.has(n);
+      return { won, multiplier: won ? 2 : 0 };
+    }
+    if (betType === 'even') {
+      const won = n % 2 === 0;
+      return { won, multiplier: won ? 2 : 0 };
+    }
+    if (betType === 'odd') {
+      const won = n % 2 === 1;
+      return { won, multiplier: won ? 2 : 0 };
+    }
+    if (betType === 'dozen_1') return { won: n >= 1 && n <= 12, multiplier: n >= 1 && n <= 12 ? 3 : 0 };
+    if (betType === 'dozen_2') return { won: n >= 13 && n <= 24, multiplier: n >= 13 && n <= 24 ? 3 : 0 };
+    return { won: n >= 25 && n <= 36, multiplier: n >= 25 && n <= 36 ? 3 : 0 };
+  };
+
+  const candidates = ROULETTE_WHEEL_ORDER.filter((n) => doesWin(n).won === wantWin);
+  const pool = candidates.length > 0 ? candidates : ROULETTE_WHEEL_ORDER;
+  const winningNumber = pool[Math.floor(Math.random() * pool.length)];
+  const wheelIndex = ROULETTE_WHEEL_ORDER.indexOf(winningNumber);
+  const winningColor: 'red' | 'black' | 'green' =
+    winningNumber === 0 ? 'green' : ROULETTE_REDS.has(winningNumber) ? 'red' : 'black';
+
+  const evalRes = doesWin(winningNumber);
+  const payout = Math.round(bet * evalRes.multiplier);
+  const xpGain = Math.max(10, Math.round(bet * 0.07) + (evalRes.won ? 25 : 0));
+
+  const updatedUser = await applyGameBalance(
+    freshUser,
+    bet,
+    payout,
+    xpGain,
+    'game_bet',
+    'game_win',
+    `رهان الروليت الملكية (${betType})`,
+    `ربح الروليت الملكية #${winningNumber} (×${evalRes.multiplier})`
+  );
+
+  return {
+    winningNumber,
+    winningColor,
+    wheelIndex,
+    won: evalRes.won,
+    multiplier: evalRes.multiplier,
+    payout,
+    bet,
+    xpGain,
+    user: updatedUser,
+  };
+}
+
+export async function openMysteryBoxInSupabase(
+  userId: string,
+  betInput: number,
+  boxIndexInput: number
+): Promise<MysteryBoxResponse> {
+  const bet = Math.floor(Number(betInput) || 0);
+  const chosenIndex = Math.max(0, Math.min(8, Math.floor(Number(boxIndexInput) || 0)));
+  if (bet < 10) throw new Error('الحد الأدنى للرهان 10 كوينز.');
+
+  const [freshUser, state] = await Promise.all([
+    fetchFreshUser(userId),
+    getPlatformState(),
+  ]);
+  if (freshUser.coins < bet) throw new Error('رصيد الكوينز غير كافٍ.');
+
+  const winRatePct = Math.max(
+    5,
+    Math.min(95, Number(state.settings.gameRates?.mysteryBoxWinRate ?? 42))
+  );
+  const wantWin = Math.random() * 100 < winRatePct;
+
+  const prizeTiers = [
+    { multiplier: 12, label: 'التاج الأعظم', glyph: '👑' },
+    { multiplier: 5, label: 'جوهرة القصر', glyph: '💎' },
+    { multiplier: 3, label: 'سبائك الذهب', glyph: '🏆' },
+    { multiplier: 2, label: 'حقيبة الكوينز', glyph: '💰' },
+    { multiplier: 1.5, label: 'بريق السعد', glyph: '✨' },
+    { multiplier: 0, label: 'صندوق فارغ', glyph: '💨' },
+    { multiplier: 0, label: 'صندوق فارغ', glyph: '💨' },
+    { multiplier: 0, label: 'صندوق فارغ', glyph: '💨' },
+    { multiplier: 0, label: 'صندوق فارغ', glyph: '💨' },
+  ];
+
+  // Shuffle display items
+  const shuffled = [...prizeTiers].sort(() => Math.random() - 0.5);
+  const chosenSlot = shuffled[chosenIndex];
+  if (wantWin && chosenSlot.multiplier === 0) {
+    const winIdx = shuffled.findIndex((p) => p.multiplier > 0);
+    if (winIdx !== -1) {
+      [shuffled[chosenIndex], shuffled[winIdx]] = [shuffled[winIdx], shuffled[chosenIndex]];
+    }
+  } else if (!wantWin && chosenSlot.multiplier > 0) {
+    const loseIdx = shuffled.findIndex((p) => p.multiplier === 0);
+    if (loseIdx !== -1) {
+      [shuffled[chosenIndex], shuffled[loseIdx]] = [shuffled[loseIdx], shuffled[chosenIndex]];
+    }
+  }
+
+  const boxes: MysteryBoxItem[] = shuffled.map((p, idx) => ({
+    index: idx,
+    multiplier: p.multiplier,
+    coins: Math.round(bet * p.multiplier),
+    label: p.label,
+    glyph: p.glyph,
+    isChosen: idx === chosenIndex,
+  }));
+
+  const chosen = boxes[chosenIndex];
+  const won = chosen.multiplier > 0;
+  const payout = chosen.coins;
+  const xpGain = Math.max(8, Math.round(bet * 0.06) + (won ? 20 : 0));
+
+  const updatedUser = await applyGameBalance(
+    freshUser,
+    bet,
+    payout,
+    xpGain,
+    'game_bet',
+    'game_win',
+    `فتح صندوق الحظ #${chosenIndex + 1}`,
+    `كنز صندوق الحظ #${chosenIndex + 1} (×${chosen.multiplier})`
+  );
+
+  return {
+    chosenIndex,
+    boxes,
+    won,
+    multiplier: chosen.multiplier,
+    payout,
+    bet,
+    xpGain,
+    user: updatedUser,
+  };
+}
+
+export function genGameLogId(): string {
+  return genId('game');
+}

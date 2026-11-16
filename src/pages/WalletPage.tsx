@@ -21,13 +21,18 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch } from '../lib/api';
+import {
+  convertDiamondsToCoinsInSupabase,
+  getWalletOverviewFromSupabase,
+  purchaseOrEquipFrameInSupabase,
+  submitUsdtDepositInSupabase,
+  submitUsdtWithdrawalInSupabase,
+} from '../lib/sadaWalletService';
 import type {
   FrameItem,
   Transaction,
   UsdtDepositRequest,
   UsdtWithdrawalRequest,
-  User,
 } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import { FemaleVoiceVerificationCard } from '../components/FemaleVoiceVerificationCard';
@@ -42,25 +47,6 @@ interface RewardTierInfo {
   entryName: string | null;
   bonusRate: number;
   label: string;
-}
-
-interface WalletPayload {
-  user: User;
-  transactions: Transaction[];
-  frames: FrameItem[];
-  adminTrc20Address: string;
-  usdtToCoinsRate: number;
-  diamondToCoinsRate?: number;
-  rewardTiers: RewardTierInfo[];
-  usdtDeposits: UsdtDepositRequest[];
-  usdtWithdrawals: UsdtWithdrawalRequest[];
-  withdrawalEligibility: {
-    eligible: boolean;
-    roleLabel: string;
-    minUsdt: number;
-    diamondsPerUsdt: number;
-    coinsPerUsdt: number;
-  };
 }
 
 function formatCountdown(targetIso: string | null | undefined, nowMs: number) {
@@ -143,7 +129,8 @@ export const WalletPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadWallet = useCallback(async () => {
-    const data = await apiFetch<WalletPayload>('/api/wallet');
+    if (!user?.id) return;
+    const data = await getWalletOverviewFromSupabase(user.id);
     updateLocalUser(data.user);
     setTransactions(data.transactions);
     setFrames(data.frames);
@@ -154,10 +141,10 @@ export const WalletPage: React.FC = () => {
     setUsdtDeposits(data.usdtDeposits);
     setUsdtWithdrawals(data.usdtWithdrawals);
     setEligibility(data.withdrawalEligibility);
-  }, [updateLocalUser]);
+  }, [user?.id, updateLocalUser]);
 
   useEffect(() => {
-    loadWallet();
+    void loadWallet();
   }, [loadWallet]);
 
   // Live 1s countdown clock & auto-refresh when temporary visual rewards expire
@@ -236,16 +223,14 @@ export const WalletPage: React.FC = () => {
 
   const handleSubmitDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setBusyId('usdt_deposit');
     setFeedback(null);
     try {
-      await apiFetch('/api/wallet/usdt-deposit', {
-        method: 'POST',
-        body: JSON.stringify({
-          amountUsdt: Number(depositUsdt),
-          txId: txId.trim(),
-          proofImage,
-        }),
+      await submitUsdtDepositInSupabase(user, {
+        amountUsdt: Number(depositUsdt),
+        txId: txId.trim(),
+        proofImage,
       });
       setTxId('');
       setProofImage('');
@@ -267,20 +252,15 @@ export const WalletPage: React.FC = () => {
 
   const handleSubmitWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setBusyId('usdt_withdraw');
     setFeedback(null);
     try {
-      const res = await apiFetch<{ user: User; withdrawal: UsdtWithdrawalRequest }>(
-        '/api/wallet/usdt-withdraw',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            sourceCurrency: withdrawCurrency,
-            sourceAmount: Number(withdrawAmount),
-            trc20Address: withdrawAddress.trim(),
-          }),
-        }
-      );
+      const res = await submitUsdtWithdrawalInSupabase(user, {
+        sourceCurrency: withdrawCurrency,
+        sourceAmount: Number(withdrawAmount),
+        trc20Address: withdrawAddress.trim(),
+      });
       updateLocalUser(res.user);
       setWithdrawAddress('');
       await loadWallet();
@@ -300,14 +280,15 @@ export const WalletPage: React.FC = () => {
 
   const handleConvert = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setBusyId('convert');
     setFeedback(null);
     try {
-      const data = await apiFetch<{ user: User }>('/api/wallet/convert', {
-        method: 'POST',
-        body: JSON.stringify({ diamonds: Number(convertAmount) }),
-      });
-      updateLocalUser(data.user);
+      const updatedUser = await convertDiamondsToCoinsInSupabase(
+        user,
+        Number(convertAmount)
+      );
+      updateLocalUser(updatedUser);
       await loadWallet();
       setFeedback({ type: 'ok', text: 'تم تحويل الألماس إلى كوينز بنجاح!' });
     } catch (err) {
@@ -321,14 +302,12 @@ export const WalletPage: React.FC = () => {
   };
 
   const handleFrameAction = async (frameId: string) => {
+    if (!user) return;
     setBusyId(frameId);
     setFeedback(null);
     try {
-      const data = await apiFetch<{ user: User }>('/api/wallet/purchase-frame', {
-        method: 'POST',
-        body: JSON.stringify({ frameId }),
-      });
-      updateLocalUser(data.user);
+      const updatedUser = await purchaseOrEquipFrameInSupabase(user, frameId);
+      updateLocalUser(updatedUser);
       await loadWallet();
       setFeedback({ type: 'ok', text: 'تم تفعيل الإطار الملكي على حسابك!' });
     } catch (err) {

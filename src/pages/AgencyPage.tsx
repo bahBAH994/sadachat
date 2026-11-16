@@ -15,7 +15,13 @@ import {
   Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch, getWsUrl } from '../lib/api';
+import {
+  applyAsAgencyInSupabase,
+  getAgencyOverviewFromSupabase,
+  joinAgencyByCodeInSupabase,
+  leaveAgencyInSupabase,
+} from '../lib/sadaSocialService';
+import { supabase } from '../lib/supabase';
 import type { Agency, AgencyHostSummary, Transaction, User } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 
@@ -60,8 +66,9 @@ export const AgencyPage: React.FC = () => {
   const [copiedCode, setCopiedCode] = useState(false);
 
   const loadOverview = useCallback(async () => {
+    if (!user) return;
     try {
-      const res = await apiFetch<AgencyOverviewResponse>('/api/agency/overview');
+      const res = await getAgencyOverviewFromSupabase(user);
       setData(res);
       updateLocalUser(res.user);
     } catch (err) {
@@ -69,54 +76,52 @@ export const AgencyPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [updateLocalUser]);
+  }, [user, updateLocalUser]);
 
   useEffect(() => {
-    loadOverview();
+    void loadOverview();
   }, [loadOverview]);
 
   useEffect(() => {
-    if (!user) return;
-    const ws = new WebSocket(getWsUrl());
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'user:auth', userId: user.id }));
-    };
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as {
-          event: string;
-          payload: { diamondsAdded?: number; hostName?: string };
-        };
-        if (msg.event === 'agency:commission') {
-          loadOverview();
-          setFeedback(
-            `💎 نزلت عمولة وكالة تلقائية (+${(
-              msg.payload?.diamondsAdded || 0
-            ).toLocaleString('en-US')} ألماسة) في محفظتك من أرباح ${
-              msg.payload?.hostName || 'مضيفك'
-            }!`
-          );
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`sada-agency-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_agencies' },
+        () => {
+          void loadOverview();
         }
-      } catch {
-        // ignore
-      }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'sada_transactions',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          void loadOverview();
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
     };
-    return () => ws.close();
   }, [user?.id, loadOverview]);
 
   const handleApplyAgent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setApplying(true);
     setError(null);
     setFeedback(null);
     try {
-      const res = await apiFetch<{ user: User; agency: Agency }>('/api/agency/apply', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: agencyName,
-          description: agencyDesc,
-          commissionRate: Number(commissionRate),
-        }),
+      const res = await applyAsAgencyInSupabase(user, {
+        name: agencyName,
+        description: agencyDesc,
+        commissionRate: Number(commissionRate),
       });
       updateLocalUser(res.user);
       setAgencyName('');
@@ -134,14 +139,12 @@ export const AgencyPage: React.FC = () => {
 
   const handleJoinHost = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setJoining(true);
     setError(null);
     setFeedback(null);
     try {
-      const res = await apiFetch<{ user: User; agency: Agency }>('/api/agency/join', {
-        method: 'POST',
-        body: JSON.stringify({ code: joinCode }),
-      });
+      const res = await joinAgencyByCodeInSupabase(user, joinCode);
       updateLocalUser(res.user);
       setJoinCode('');
       await loadOverview();
@@ -156,13 +159,12 @@ export const AgencyPage: React.FC = () => {
   };
 
   const handleLeaveAgency = async () => {
+    if (!user) return;
     setError(null);
     setFeedback(null);
     try {
-      const res = await apiFetch<{ user: User }>('/api/agency/leave', {
-        method: 'POST',
-      });
-      updateLocalUser(res.user);
+      const nextUser = await leaveAgencyInSupabase(user);
+      updateLocalUser(nextUser);
       await loadOverview();
       setFeedback('تمت مغادرة الوكالة بنجاح.');
     } catch (err) {

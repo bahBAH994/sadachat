@@ -17,8 +17,15 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch, getWsUrl } from '../lib/api';
 import { resolveAsset } from '../lib/assets';
+import {
+  getRoomDetailsFromSupabase,
+  joinRoomInSupabase,
+  leaveRoomInSupabase,
+  sendRoomChatInSupabase,
+  sendRoomGiftInSupabase,
+  updateRoomSeatInSupabase,
+} from '../lib/sadaRoomsService';
 import { supabase } from '../lib/supabase';
 import type {
   GiftItem,
@@ -26,7 +33,6 @@ import type {
   Room,
   RoomEntryEvent,
   RoomMessage,
-  User,
 } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
@@ -67,7 +73,7 @@ export const RoomPage: React.FC = () => {
   const [micDenied, setMicDenied] = useState(false);
   const [manualSpeakPulse, setManualSpeakPulse] = useState(false);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -96,12 +102,7 @@ export const RoomPage: React.FC = () => {
   const loadRoom = useCallback(async () => {
     if (!id) return;
     try {
-      const data = await apiFetch<{
-        room: Room;
-        gifts: GiftItem[];
-        wheelSegments: LuckyWheelSegment[];
-        wheelCost: number;
-      }>(`/api/rooms/${id}`);
+      const data = await getRoomDetailsFromSupabase(id);
       setRoom(data.room);
       setGifts(data.gifts);
       setWheelSegments(data.wheelSegments || []);
@@ -115,77 +116,28 @@ export const RoomPage: React.FC = () => {
   }, [id]);
 
   useEffect(() => {
-    loadRoom();
+    void loadRoom();
   }, [loadRoom]);
 
   useEffect(() => {
     if (!id || !user) return;
-    const ws = new WebSocket(getWsUrl());
-    wsRef.current = ws;
+    let mounted = true;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'room:join', roomId: id, userId: user.id }));
-    };
-
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as {
-          event: string;
-          roomId?: string;
-          payload: unknown;
-        };
-        if (msg.roomId && msg.roomId !== id) return;
-
-        if (msg.event === 'room:state') {
-          setRoom(msg.payload as Room);
-        } else if (msg.event === 'room:message') {
-          const newMsg = msg.payload as RoomMessage;
-          setRoom((prev) => {
-            if (!prev) return prev;
-            if (prev.messages.some((m) => m.id === newMsg.id)) return prev;
-            return { ...prev, messages: [...prev.messages, newMsg].slice(-80) };
-          });
-        } else if (msg.event === 'room:gift') {
-          const giftData = msg.payload as {
-            gift: GiftItem;
-            luckyMultiplier?: number | null;
-            luckyBonusCoins?: number;
-            senderName: string;
-            recipientName: string;
-            room: Room;
-          };
-          setRoom(giftData.room);
-          setGiftBanner({
-            gift: giftData.gift,
-            luckyMultiplier: giftData.luckyMultiplier,
-            luckyBonusCoins: giftData.luckyBonusCoins,
-            senderName: giftData.senderName,
-            recipientName: giftData.recipientName,
-          });
-          setTimeout(() => setGiftBanner(null), 4800);
-        } else if (msg.event === 'room:wheel-win') {
-          const wheelData = msg.payload as {
-            winnerName: string;
-            segment: LuckyWheelSegment;
-            room: Room;
-          };
-          setRoom(wheelData.room);
-          setWheelBanner({
-            winnerName: wheelData.winnerName,
-            segment: wheelData.segment,
-          });
-          setTimeout(() => setWheelBanner(null), 4500);
-        } else if (msg.event === 'room:entry') {
-          const entryData = msg.payload as RoomEntryEvent;
-          setEntryBanner(entryData);
+    joinRoomInSupabase(id, user)
+      .then((res) => {
+        if (!mounted) return;
+        setRoom(res.room);
+        if (res.entryEvent) {
+          setEntryBanner(res.entryEvent);
           setTimeout(() => setEntryBanner(null), 5500);
-        } else if (msg.event === 'room:closed') {
-          navigate('/', { replace: true });
+          void channelRef.current?.send({
+            type: 'broadcast',
+            event: 'room:entry',
+            payload: res.entryEvent,
+          });
         }
-      } catch {
-        // ignore malformed frames
-      }
-    };
+      })
+      .catch(() => {});
 
     const sbRoomChannel = supabase
       .channel(`sada-room-${id}`)
@@ -231,11 +183,15 @@ export const RoomPage: React.FC = () => {
         (payload) => {
           const r = payload.new as Record<string, unknown> | undefined;
           if (!r) return;
+          if (r.is_active === false) {
+            navigate('/', { replace: true });
+            return;
+          }
           setRoom((prev) => {
             if (!prev) return prev;
             return {
               ...prev,
-              seats: Array.isArray(r.seats) ? r.seats : prev.seats,
+              seats: Array.isArray(r.seats) ? (r.seats as Room['seats']) : prev.seats,
               listenersCount:
                 typeof r.listeners_count === 'number' ? r.listeners_count : prev.listenersCount,
               totalGiftsCoins:
@@ -247,13 +203,45 @@ export const RoomPage: React.FC = () => {
           });
         }
       )
+      .on('broadcast', { event: 'room:gift' }, ({ payload }) => {
+        const giftData = payload as {
+          gift: GiftItem;
+          luckyMultiplier?: number | null;
+          luckyBonusCoins?: number;
+          senderName: string;
+          recipientName: string;
+        };
+        setGiftBanner(giftData);
+        setTimeout(() => setGiftBanner(null), 4800);
+      })
+      .on('broadcast', { event: 'room:entry' }, ({ payload }) => {
+        setEntryBanner(payload as RoomEntryEvent);
+        setTimeout(() => setEntryBanner(null), 5500);
+      })
+      .on('broadcast', { event: 'room:wheel-win' }, ({ payload }) => {
+        setWheelBanner(payload as { winnerName: string; segment: LuckyWheelSegment });
+        setTimeout(() => setWheelBanner(null), 4500);
+      })
+      .on('broadcast', { event: 'audio:speaking' }, ({ payload }) => {
+        const sp = payload as { userId: string; isSpeaking: boolean };
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            seats: prev.seats.map((s) =>
+              s.userId === sp.userId ? { ...s, isSpeaking: sp.isSpeaking } : s
+            ),
+          };
+        });
+      })
       .subscribe();
 
+    channelRef.current = sbRoomChannel;
+
     return () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'room:leave', roomId: id, userId: user.id }));
-      }
-      ws.close();
+      mounted = false;
+      channelRef.current = null;
+      void leaveRoomInSupabase(id, user.id);
       void supabase.removeChannel(sbRoomChannel);
     };
   }, [id, user?.id, navigate]);
@@ -312,16 +300,21 @@ export const RoomPage: React.FC = () => {
           const speaking = avg > 16;
           if (speaking !== lastSpeaking) {
             lastSpeaking = speaking;
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(
-                JSON.stringify({
-                  type: 'audio:speaking',
-                  roomId: id,
-                  userId: user.id,
-                  isSpeaking: speaking,
-                })
-              );
-            }
+            void channelRef.current?.send({
+              type: 'broadcast',
+              event: 'audio:speaking',
+              payload: { userId: user.id, isSpeaking: speaking },
+            });
+            setRoom((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    seats: prev.seats.map((s) =>
+                      s.userId === user.id ? { ...s, isSpeaking: speaking } : s
+                    ),
+                  }
+                : prev
+            );
           }
           rafRef.current = requestAnimationFrame(tick);
         };
@@ -339,62 +332,79 @@ export const RoomPage: React.FC = () => {
     };
   }, [mySeat?.seatIndex, mySeat?.isMuted, id, user?.id]);
 
-  const sendWs = (payload: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(payload));
-    }
-  };
-
-  const handleSeatClick = (seatIndex: number) => {
+  const handleSeatClick = async (seatIndex: number) => {
     if (!room || !user) return;
     const seat = room.seats.find((s) => s.seatIndex === seatIndex);
     if (!seat) return;
     if (seat.isLocked) return;
 
-    if (seat.userId === user.id) {
-      sendWs({ type: 'seat:leave', roomId: room.id, userId: user.id });
-      return;
-    }
-    if (!seat.userId) {
-      sendWs({ type: 'seat:take', roomId: room.id, userId: user.id, seatIndex });
-    } else {
-      setSelectedGiftTarget(seat.userId);
-      setShowGiftModal(true);
+    try {
+      if (seat.userId === user.id) {
+        const nextSeats = await updateRoomSeatInSupabase(room.id, user, { type: 'leave' });
+        setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
+        return;
+      }
+      if (!seat.userId) {
+        const nextSeats = await updateRoomSeatInSupabase(room.id, user, {
+          type: 'take',
+          seatIndex,
+        });
+        setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
+      } else {
+        setSelectedGiftTarget(seat.userId);
+        setShowGiftModal(true);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذّر تحديث المقعد.');
     }
   };
 
-  const handleToggleLock = (e: React.MouseEvent, seatIndex: number, isLocked: boolean) => {
+  const handleToggleLock = async (e: React.MouseEvent, seatIndex: number, isLocked: boolean) => {
     e.stopPropagation();
     if (!room || !user) return;
-    sendWs({
-      type: 'seat:lock',
-      roomId: room.id,
-      userId: user.id,
-      seatIndex,
-      isLocked: !isLocked,
-    });
+    try {
+      const nextSeats = await updateRoomSeatInSupabase(room.id, user, {
+        type: 'lock',
+        seatIndex,
+        isLocked: !isLocked,
+      });
+      setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
+    } catch {
+      // ignore
+    }
   };
 
-  const handleToggleMute = () => {
+  const handleToggleMute = async () => {
     if (!room || !user || !mySeat) return;
-    sendWs({
-      type: 'seat:toggle-mute',
-      roomId: room.id,
-      userId: user.id,
-      isMuted: !mySeat.isMuted,
-    });
+    try {
+      const nextSeats = await updateRoomSeatInSupabase(room.id, user, {
+        type: 'mute',
+        isMuted: !mySeat.isMuted,
+      });
+      setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
+    } catch {
+      // ignore
+    }
   };
 
-  const handleManualSpeakToggle = () => {
+  const handleManualSpeakToggle = async () => {
     if (!room || !user || !mySeat || mySeat.isMuted) return;
     const next = !manualSpeakPulse;
     setManualSpeakPulse(next);
-    sendWs({
-      type: 'audio:speaking',
-      roomId: room.id,
-      userId: user.id,
-      isSpeaking: next,
+    void channelRef.current?.send({
+      type: 'broadcast',
+      event: 'audio:speaking',
+      payload: { userId: user.id, isSpeaking: next },
     });
+    try {
+      const nextSeats = await updateRoomSeatInSupabase(room.id, user, {
+        type: 'speaking',
+        isSpeaking: next,
+      });
+      setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
+    } catch {
+      // ignore
+    }
   };
 
   const handleRequestMicAccess = async () => {
@@ -415,50 +425,54 @@ export const RoomPage: React.FC = () => {
     }
   };
 
-  const handleSendChat = (e: React.FormEvent) => {
+  const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!room || !user || !chatText.trim()) return;
-    sendWs({
-      type: 'chat:message',
-      roomId: room.id,
-      userId: user.id,
-      text: chatText.trim(),
-    });
+    const msgText = chatText.trim();
     setChatText('');
+    try {
+      const sent = await sendRoomChatInSupabase(room.id, user, msgText);
+      setRoom((prev) => {
+        if (!prev) return prev;
+        if (prev.messages.some((m) => m.id === sent.id)) return prev;
+        return { ...prev, messages: [...prev.messages, sent].slice(-80) };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذّر إرسال الرسالة.');
+    }
   };
 
   const handleSendGift = async (giftId: string) => {
-    if (!room) return;
+    if (!room || !user) return;
     setSendingGift(true);
     setError(null);
     try {
-      const data = await apiFetch<{
-        user: User;
-        room: Room;
-        gift: GiftItem;
-        luckyMultiplier?: number | null;
-        luckyBonusCoins?: number;
-      }>(`/api/rooms/${room.id}/gift`, {
-        method: 'POST',
-        body: JSON.stringify({
-          giftId,
-          targetUserId: selectedGiftTarget || room.hostId,
-        }),
-      });
+      const data = await sendRoomGiftInSupabase(
+        room.id,
+        user,
+        giftId,
+        selectedGiftTarget || room.hostId
+      );
       updateLocalUser(data.user);
       setRoom(data.room);
       if (data.gift) {
         const target =
           data.room.seats.find((s) => s.userId === (selectedGiftTarget || room.hostId))
             ?.displayName || data.room.hostName;
-        setGiftBanner({
+        const banner = {
           gift: data.gift,
           luckyMultiplier: data.luckyMultiplier,
           luckyBonusCoins: data.luckyBonusCoins,
           senderName: data.user.displayName,
           recipientName: target,
-        });
+        };
+        setGiftBanner(banner);
         setTimeout(() => setGiftBanner(null), 4800);
+        void channelRef.current?.send({
+          type: 'broadcast',
+          event: 'room:gift',
+          payload: banner,
+        });
       }
       setShowGiftModal(false);
     } catch (err) {
@@ -825,9 +839,9 @@ export const RoomPage: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() =>
-                    sendWs({ type: 'seat:leave', roomId: room.id, userId: user?.id })
-                  }
+                  onClick={() => {
+                    if (mySeat) void handleSeatClick(mySeat.seatIndex);
+                  }}
                   className="min-h-[42px] rounded-xl px-4 py-2 text-xs font-bold bg-white/5 hover:bg-rose-950/50 border border-white/10 hover:border-rose-500/40 text-slate-200 cursor-pointer"
                 >
                   نزول من المايك

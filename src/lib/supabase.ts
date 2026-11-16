@@ -14,6 +14,12 @@ const SUPABASE_KEY =
   FALLBACK_KEY;
 
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storageKey: 'sada_supabase_auth_v1',
+  },
   realtime: {
     params: {
       eventsPerSecond: 10,

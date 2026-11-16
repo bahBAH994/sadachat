@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Coins, Crown, Gem, LogOut, Save, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch } from '../lib/api';
 import { AVATAR_CHOICES } from '../lib/assets';
-import type { User } from '../types';
+import { updateProfileInSupabase } from '../lib/sadaAuth';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import {
   FemaleVerifiedBadge,
@@ -34,11 +33,14 @@ export const ProfilePage: React.FC = () => {
     setSaving(true);
     setMessage(null);
     try {
-      const data = await apiFetch<{ user: User }>('/api/profile', {
-        method: 'PATCH',
-        body: JSON.stringify({ displayName, bio, avatarUrl, gender, isHost }),
+      const updatedUser = await updateProfileInSupabase(user, {
+        displayName,
+        bio,
+        avatarUrl,
+        gender,
+        isHost,
       });
-      updateLocalUser(data.user);
+      updateLocalUser(updatedUser);
       setMessage('تم حفظ بيانات ملفك الملكي بنجاح.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'تعذّر حفظ التعديلات.');

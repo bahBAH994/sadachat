@@ -2,8 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Headphones, Lock, Mic, Mic2, Plus, Search, Unlock, Users, X } from 'lucide-react';
-import { apiFetch, getWsUrl } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { resolveAsset } from '../lib/assets';
+import {
+  createRoomInSupabase,
+  listActiveRooms,
+  verifyRoomPasswordInSupabase,
+} from '../lib/sadaRoomsService';
+import { supabase } from '../lib/supabase';
 import type { Room } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import { FemaleVoiceVerificationCard } from '../components/FemaleVoiceVerificationCard';
@@ -17,6 +23,7 @@ const CATEGORIES: Array<'الكل' | Room['category']> = [
 ];
 
 export const LobbyPage: React.FC = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,30 +61,28 @@ export const LobbyPage: React.FC = () => {
 
   const loadRooms = useCallback(async () => {
     try {
-      const data = await apiFetch<{ rooms: Room[] }>('/api/rooms');
-      setRooms(data.rooms);
+      const data = await listActiveRooms();
+      setRooms(data);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadRooms();
-    const ws = new WebSocket(getWsUrl());
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as { event: string; payload: Room };
-        if (msg.event === 'rooms:created') {
-          setRooms((prev) => {
-            if (prev.some((r) => r.id === msg.payload.id)) return prev;
-            return [msg.payload, ...prev];
-          });
+    void loadRooms();
+    const channel = supabase
+      .channel('sada-lobby-rooms')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_rooms' },
+        () => {
+          void loadRooms();
         }
-      } catch {
-        // ignore
-      }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
     };
-    return () => ws.close();
   }, [loadRooms]);
 
   const filteredRooms = useMemo(() => {
@@ -110,10 +115,7 @@ export const LobbyPage: React.FC = () => {
     if (!passwordPromptRoom) return;
     setRoomPasswordError(null);
     try {
-      await apiFetch(`/api/rooms/${passwordPromptRoom.id}/verify-password`, {
-        method: 'POST',
-        body: JSON.stringify({ password: roomPasswordInput }),
-      });
+      await verifyRoomPasswordInSupabase(passwordPromptRoom.id, roomPasswordInput);
       const targetId = passwordPromptRoom.id;
       setPasswordPromptRoom(null);
       navigate(`/room/${targetId}`);
@@ -126,22 +128,20 @@ export const LobbyPage: React.FC = () => {
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setCreateError(null);
     setCreating(true);
     try {
-      const data = await apiFetch<{ room: Room }>('/api/rooms', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: newTitle,
-          category: newCategory,
-          description: newDesc,
-          maxSeats: newSeats,
-          isPrivate: newPrivate,
-          password: newPrivate ? newPassword : '',
-        }),
+      const room = await createRoomInSupabase(user, {
+        title: newTitle,
+        category: newCategory,
+        description: newDesc,
+        maxSeats: newSeats,
+        isPrivate: newPrivate,
+        password: newPrivate ? newPassword : '',
       });
       setShowCreate(false);
-      navigate(`/room/${data.room.id}`);
+      navigate(`/room/${room.id}`);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'تعذّر إنشاء الغرفة.');
     } finally {
