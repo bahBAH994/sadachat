@@ -4,9 +4,11 @@ import {
   SUPER_ADMIN_EMAIL,
 } from './sadaCatalog';
 import {
+  getPlatformState,
   purgeExpiredRewardsOnUser,
   recordTransaction,
   rowToUser,
+  savePlatformState,
   userToRow,
 } from './sadaMappers';
 import { supabase } from './supabase';
@@ -153,7 +155,7 @@ async function createUserProfileRow(params: {
     displayName: params.displayName || (isSuperAdmin ? 'المدير العام — صَدَى' : 'عضو صَدَى'),
     bio: isSuperAdmin
       ? 'المدير العام ومؤسس منصة صَدَى الملكية.'
-      : 'عضو جديد في مجالس صَدَى الصوتية الفاخرة.',
+      : 'عضو جديد في وكالات صَدَى الصوتية الفاخرة.',
     avatarUrl: isSuperAdmin
       ? 'host_male'
       : userGender === 'female'
@@ -235,6 +237,8 @@ export async function loginOrRegisterWithSupabase(payload: {
   password: string;
   displayName?: string;
   gender?: 'female' | 'male';
+  age?: number;
+  country?: string;
   referralCode?: string;
   mode: 'login' | 'register';
   deviceUuid: string;
@@ -305,6 +309,29 @@ export async function loginOrRegisterWithSupabase(payload: {
       passwordHash: pwdHash,
       referralCodeInput: payload.referralCode,
     });
+
+    const cleanAge =
+      typeof payload.age === 'number' && payload.age >= 18 && payload.age <= 80
+        ? Math.round(payload.age)
+        : undefined;
+    const cleanCountry = (payload.country || '').trim() || undefined;
+    if (cleanAge || cleanCountry) {
+      createdUser.age = cleanAge;
+      createdUser.country = cleanCountry;
+      const st = await getPlatformState();
+      await savePlatformState({
+        settings: {
+          ...st.settings,
+          userMeta: {
+            ...(st.settings.userMeta || {}),
+            [createdUser.id]: {
+              age: cleanAge,
+              country: cleanCountry,
+            },
+          },
+        },
+      });
+    }
 
     if (!authData.session) {
       // Attempt immediate sign-in in case auto-confirm is active; otherwise prompt user
@@ -386,6 +413,12 @@ export async function loginOrRegisterWithSupabase(payload: {
   await supabase.from('sada_users').update(patch).eq('id', profile.id);
   await upsertDeviceLock(profile, deviceUuid);
   await purgeExpiredRewardsOnUser(profile);
+  const metaState = await getPlatformState().catch(() => null);
+  const meta = metaState?.settings?.userMeta?.[profile.id];
+  if (meta) {
+    profile.age = meta.age;
+    profile.country = meta.country;
+  }
 
   return {
     user: profile,
@@ -444,6 +477,12 @@ export async function fetchCurrentUserFromSupabaseSession(
   }
 
   await purgeExpiredRewardsOnUser(profile);
+  const metaState = await getPlatformState().catch(() => null);
+  const meta = metaState?.settings?.userMeta?.[profile.id];
+  if (meta) {
+    profile.age = meta.age;
+    profile.country = meta.country;
+  }
   return profile;
 }
 
@@ -512,5 +551,68 @@ export async function updateProfileInSupabase(
   if (error) {
     throw new Error('تعذّر حفظ تعديلات الملف الشخصي في Supabase.');
   }
+
+  await syncUserOnActiveRoomSeats(next);
   return next;
+}
+
+export async function syncUserOnActiveRoomSeats(
+  user: Pick<
+    User,
+    'id' | 'displayName' | 'avatarUrl' | 'frameId' | 'level' | 'femaleVerifiedBadge'
+  >
+): Promise<void> {
+  const { data: activeRooms } = await supabase
+    .from('sada_rooms')
+    .select('id, seats, host_id')
+    .eq('is_active', true);
+
+  for (const r of activeRooms || []) {
+    const seats = Array.isArray(r.seats) ? (r.seats as Array<Record<string, unknown>>) : [];
+    let dirty = false;
+    const nextSeats = seats.map((s) => {
+      if (s.userId === user.id) {
+        dirty = true;
+        return {
+          ...s,
+          displayName: user.displayName,
+          avatarUrl: user.avatarUrl,
+          frameId: user.frameId,
+          level: user.level,
+          femaleVerifiedBadge: user.femaleVerifiedBadge || null,
+        };
+      }
+      return s;
+    });
+    const hostPatch =
+      String(r.host_id) === user.id
+        ? { host_name: user.displayName, host_avatar: user.avatarUrl }
+        : {};
+    if (dirty || String(r.host_id) === user.id) {
+      await supabase
+        .from('sada_rooms')
+        .update({
+          ...(dirty ? { seats: nextSeats } : {}),
+          ...hostPatch,
+        })
+        .eq('id', r.id);
+    }
+  }
+}
+
+export async function getUserPublicProfileFromSupabase(userId: string): Promise<User | null> {
+  const { data } = await supabase
+    .from('sada_users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+  if (!data) return null;
+  const user = rowToUser(data);
+  const state = await getPlatformState().catch(() => null);
+  const meta = state?.settings?.userMeta?.[user.id];
+  if (meta) {
+    user.age = meta.age;
+    user.country = meta.country;
+  }
+  return user;
 }

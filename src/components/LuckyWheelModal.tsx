@@ -191,7 +191,7 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
               <span>مبارك! ربحت {wonSegment.glyph} {wonSegment.label}</span>
             </div>
             <p className="text-[11px] text-slate-300">
-              تمت إضافة جائزتك فوراً ونشر إعلان الفوز في دردشة المجلس!
+              تمت إضافة جائزتك فوراً ونشر إعلان الفوز في دردشة الوكالة!
             </p>
           </div>
         )}

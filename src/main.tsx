@@ -83,6 +83,24 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   } else {
     hideNetlifyDrawerBadge();
   }
+
+  // Strictly block pinch-zoom gestures on mobile devices
+  document.addEventListener(
+    'gesturestart',
+    (e) => {
+      e.preventDefault();
+    },
+    {passive: false}
+  );
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    },
+    {passive: false}
+  );
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

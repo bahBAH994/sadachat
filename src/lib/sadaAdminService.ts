@@ -14,6 +14,7 @@ import type {
 import {
   genId,
   getRechargeRewardTier,
+  STORE_3D_ITEMS,
   SUPER_ADMIN_EMAIL,
   TEMP_ONLY_FRAME_IDS,
 } from './sadaCatalog';
@@ -399,6 +400,36 @@ export async function approveUsdtDepositInSupabase(depositId: string): Promise<v
       nextEntryId = tier.entryId;
       nextEntryName = tier.entryName;
       nextTempEntryExpiresAt = expiresAt;
+    }
+  }
+
+  // Unlock 3D Store items reached by cumulative recharge
+  const [{ data: approvedDeps }, { data: rechargeTxs }] = await Promise.all([
+    supabase
+      .from('sada_usdt_deposits')
+      .select('coins_credited')
+      .eq('user_id', u.id)
+      .eq('status', 'approved'),
+    supabase
+      .from('sada_transactions')
+      .select('type, amount, description')
+      .eq('user_id', u.id)
+      .in('type', ['topup', 'admin_grant']),
+  ]);
+  const totalFromDeps = (approvedDeps || []).reduce(
+    (sum, d) => sum + Math.max(0, Number(d.coins_credited || 0)),
+    0
+  );
+  const totalFromTxs = (rechargeTxs || []).reduce((sum, t) => {
+    const amt = Number(t.amount || 0);
+    if (amt <= 0) return sum;
+    if (t.type === 'admin_grant' && String(t.description || '').includes('ترحيبي')) return sum;
+    return sum + amt;
+  }, 0);
+  const cumulativeCoins = totalFromDeps + totalFromTxs;
+  for (const item of STORE_3D_ITEMS) {
+    if (cumulativeCoins >= item.minRechargeCoins && !nextUnlocked.includes(item.id)) {
+      nextUnlocked.push(item.id);
     }
   }
 

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Eye, EyeOff, Gift, Lock, Mail, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { Eye, EyeOff, Gift, Globe2, Lock, Mail, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { resolveAsset } from '../lib/assets';
+import { ARAB_COUNTRIES } from '../lib/sadaCatalog';
 import { PWAInstallButton } from '../components/PWAInstallButton';
 
 export const LoginPage: React.FC = () => {
@@ -16,6 +17,8 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [gender, setGender] = useState<'male' | 'female'>('male');
+  const [age, setAge] = useState<string>('24');
+  const [country, setCountry] = useState<string>('SA');
   const [referralCode, setReferralCode] = useState(() => searchParams.get('ref') || '');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -26,11 +29,14 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setSubmitting(true);
     try {
+      const parsedAge = Math.max(18, Math.min(80, Math.floor(Number(age) || 24)));
       const { redirectTo } = await loginOrRegister({
         email,
         password,
         displayName,
         gender,
+        age: parsedAge,
+        country,
         referralCode,
         mode,
       });
@@ -68,7 +74,7 @@ export const LoginPage: React.FC = () => {
               صَدَى - SADA
             </h1>
             <p className="text-sm text-slate-300 mt-1">
-              المجالس الصوتية الفاخرة وساحة المسابقات الملكية
+              الوكالات الصوتية الفاخرة وساحة المسابقات الملكية
             </p>
           </div>
 
@@ -117,7 +123,7 @@ export const LoginPage: React.FC = () => {
               <>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    الاسم الظاهر في المجالس
+                    الاسم الظاهر في الوكالات
                   </label>
                   <div className="relative">
                     <UserIcon className="w-4 h-4 text-[#D4AF37] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -133,31 +139,69 @@ export const LoginPage: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    نوع الحساب
+                    تحديد الجنس
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setGender('male')}
-                      className={`min-h-[40px] rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      className={`min-h-[44px] rounded-xl px-2 py-2 text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
                         gender === 'male'
-                          ? 'bg-[#D4AF37]/20 border-[#D4AF37] text-[#FCE9A6]'
+                          ? 'bg-[#D4AF37]/20 border-[#D4AF37] text-[#FCE9A6] shadow-[0_0_16px_rgba(212,175,55,0.2)]'
                           : 'bg-[#070913]/80 border-white/10 text-slate-300'
                       }`}
                     >
-                      حساب عضو
+                      <span>👨</span>
+                      <span>ذكر (شاب)</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setGender('female')}
-                      className={`min-h-[40px] rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      className={`min-h-[44px] rounded-xl px-2 py-2 text-[11px] font-bold border transition cursor-pointer flex items-center justify-center gap-1 ${
                         gender === 'female'
-                          ? 'bg-[#D4AF37]/20 border-[#D4AF37] text-[#FCE9A6]'
+                          ? 'bg-pink-500/20 border-pink-400 text-pink-100 shadow-[0_0_16px_rgba(244,114,182,0.22)]'
                           : 'bg-[#070913]/80 border-white/10 text-slate-300'
                       }`}
                     >
-                      حساب نسائي (الألماس بعد التوثيق الصوتي)
+                      <span>👩</span>
+                      <span>أنثى (بنت · توثيق صوتي)</span>
                     </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      العمر
+                    </label>
+                    <input
+                      type="number"
+                      min={18}
+                      max={80}
+                      dir="ltr"
+                      value={age}
+                      onChange={(e) => setAge(e.target.value)}
+                      className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2.5 text-sm text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      الدولة
+                    </label>
+                    <div className="relative">
+                      <Globe2 className="w-3.5 h-3.5 text-[#D4AF37] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <select
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                        className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 pr-8 pl-2 py-2.5 text-xs font-semibold text-white focus:outline-none focus:border-[#D4AF37]"
+                      >
+                        {ARAB_COUNTRIES.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.flag} {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
 

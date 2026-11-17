@@ -15,6 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useMiniProfile } from '../context/MiniProfileContext';
 import {
   applyAsAgencyInSupabase,
   getAgencyOverviewFromSupabase,
@@ -47,6 +48,7 @@ interface AgencyOverviewResponse {
 
 export const AgencyPage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
+  const { openMiniProfile } = useMiniProfile();
   const navigate = useNavigate();
 
   const [data, setData] = useState<AgencyOverviewResponse | null>(null);
@@ -346,12 +348,33 @@ export const AgencyPage: React.FC = () => {
                           alt={host.displayName}
                           frameId={host.frameId}
                           size="sm"
+                          onClick={() =>
+                            openMiniProfile(host.id, {
+                              displayName: host.displayName,
+                              avatarUrl: host.avatarUrl,
+                              frameId: host.frameId,
+                              level: host.level,
+                              gender: host.gender,
+                            })
+                          }
                         />
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-sm font-bold text-white truncate">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openMiniProfile(host.id, {
+                                  displayName: host.displayName,
+                                  avatarUrl: host.avatarUrl,
+                                  frameId: host.frameId,
+                                  level: host.level,
+                                  gender: host.gender,
+                                })
+                              }
+                              className="text-sm font-bold text-white hover:text-[#FCE9A6] truncate cursor-pointer text-right"
+                            >
                               {host.displayName}
-                            </span>
+                            </button>
                             <span className="inline-flex items-center gap-1 rounded-full border border-[#F3D37A]/50 bg-[#D4AF37]/15 px-2 py-0.5 text-[10px] font-bold text-[#FCE9A6]">
                               <BadgeCheck className="w-3 h-3" />
                               {host.hostBadge}

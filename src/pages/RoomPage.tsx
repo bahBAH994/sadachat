@@ -1,1168 +1,1482 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  ArrowRight,
-  Coins,
+  Ban,
+  Crown,
   Gamepad2,
   Gift,
-  Headphones,
   Lock,
-  MessageCircleHeart,
   Mic,
   MicOff,
-  Radio,
+  Music,
+  Plus,
   Send,
+  Settings,
+  Shield,
+  Smile,
   Sparkles,
-  Unlock,
+  UserMinus,
+  Users,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useActiveRoom } from '../context/ActiveRoomContext';
+import { useMiniProfile } from '../context/MiniProfileContext';
 import { resolveAsset } from '../lib/assets';
 import {
-  getRoomDetailsFromSupabase,
-  joinRoomInSupabase,
-  leaveRoomInSupabase,
-  sendRoomChatInSupabase,
-  sendRoomGiftInSupabase,
-  updateRoomSeatInSupabase,
-} from '../lib/sadaRoomsService';
-import { supabase } from '../lib/supabase';
-import type {
-  GiftItem,
-  LuckyWheelSegment,
-  Room,
-  RoomEntryEvent,
-  RoomMessage,
-} from '../types';
+  ROOM_REACTION_EMOJIS,
+  formatCompactMetric,
+  formatShortNumericId,
+} from '../lib/sadaCatalog';
+import type { GiftItem, RoomSeat } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import { DragonStageBackdrop } from '../components/DragonStageBackdrop';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { LuckyWheelModal } from '../components/LuckyWheelModal';
+import { RoomExitModal } from '../components/RoomExitModal';
 import { RoomGamesModal } from '../components/RoomGamesModal';
+import { RoomGiftDrawer } from '../components/RoomGiftDrawer';
+import { RoomMusicModal } from '../components/RoomMusicModal';
+import { RoomSettingsModal } from '../components/RoomSettingsModal';
+
+const COMBO_DURATION_MS = 3000;
+const DICE_GLYPHS = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+
+interface ComboSession {
+  gift: GiftItem;
+  targetUserIds: string[];
+  quantity: number;
+  comboCount: number;
+  expiresAt: number;
+}
 
 export const RoomPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, updateLocalUser } = useAuth();
+  const { openMiniProfile } = useMiniProfile();
 
-  const [room, setRoom] = useState<Room | null>(null);
-  const [gifts, setGifts] = useState<GiftItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    activeRoomId,
+    room,
+    extras,
+    gifts,
+    wheelSegments,
+    wheelCost,
+    loading,
+    error,
+    clearError,
+    mySeat,
+    canManage,
+    isOwnerOrAdmin,
+    micActive,
+    micDenied,
+    manualSpeakPulse,
+    presenceMembers,
+    liveListenersCount,
+    topGifters,
+    totalVolumeCoins,
+    giftBanner,
+    wheelBanner,
+    entryBanner,
+    flyingGifts,
+    fullscreenGift,
+    seatEmojis,
+    musicState,
+    musicVolume,
+    musicMutedLocally,
+    setMusicVolume,
+    setMusicMutedLocally,
+    enterRoom,
+    minimizeRoom,
+    restoreRoom,
+    leaveActiveRoom,
+    handleSeatClick,
+    handleToggleLock,
+    handleToggleMute,
+    handleManualSpeakToggle,
+    handleRequestMicAccess,
+    sendChat,
+    sendGiftBatch,
+    sendSeatEmoji,
+    updateRoomFromWheel,
+    updateSettings,
+    runAdminAction,
+    playPresetMusic,
+    playUploadedMusic,
+    toggleMusicPlayPause,
+    stopRoomMusic,
+    addPlayVolume,
+  } = useActiveRoom();
 
   const [chatText, setChatText] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGiftModal, setShowGiftModal] = useState(false);
-  const [giftTab, setGiftTab] = useState<'fixed' | 'lucky' | 'history'>('fixed');
+  const [giftInitialTargets, setGiftInitialTargets] = useState<string[] | undefined>(
+    undefined
+  );
+  const [sendingGift, setSendingGift] = useState(false);
+
+  const [comboSession, setComboSession] = useState<ComboSession | null>(null);
+  const [comboRemainingMs, setComboRemainingMs] = useState<number>(0);
+
   const [showWheelModal, setShowWheelModal] = useState(false);
   const [showGamesOverlay, setShowGamesOverlay] = useState(false);
-  const [wheelSegments, setWheelSegments] = useState<LuckyWheelSegment[]>([]);
-  const [wheelCost, setWheelCost] = useState<number>(200);
-  const [wheelBanner, setWheelBanner] = useState<{
-    winnerName: string;
-    segment: LuckyWheelSegment;
-  } | null>(null);
-  const [selectedGiftTarget, setSelectedGiftTarget] = useState<string>('');
-  const [sendingGift, setSendingGift] = useState(false);
-  const [giftBanner, setGiftBanner] = useState<{
-    senderName: string;
-    recipientName: string;
-    gift: GiftItem;
-    luckyMultiplier?: number | null;
-    luckyBonusCoins?: number;
-  } | null>(null);
-  const [entryBanner, setEntryBanner] = useState<RoomEntryEvent | null>(null);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showMusicModal, setShowMusicModal] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [seatActionTarget, setSeatActionTarget] = useState<RoomSeat | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [isFollowingAgency, setIsFollowingAgency] = useState(false);
 
-  const [micActive, setMicActive] = useState(false);
-  const [micDenied, setMicDenied] = useState(false);
-  const [manualSpeakPulse, setManualSpeakPulse] = useState(false);
-
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
-  const audioStreamRef = useRef<MediaStream | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const rafRef = useRef<number | null>(null);
+  const giftBtnRef = useRef<HTMLButtonElement | null>(null);
+  const headerAnchorRef = useRef<HTMLDivElement | null>(null);
+  const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
-  const mySeat = useMemo(
-    () => room?.seats.find((s) => s.userId === user?.id) || null,
-    [room, user]
-  );
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 2600);
+  };
 
-  const seatedSpeakers = useMemo(
-    () => room?.seats.filter((s) => s.userId) || [],
-    [room]
-  );
-
-  const fixedGifts = useMemo(
-    () => gifts.filter((g) => g.category !== 'lucky'),
-    [gifts]
-  );
-
-  const luckyGifts = useMemo(
-    () => gifts.filter((g) => g.category === 'lucky'),
-    [gifts]
-  );
-
-  const loadRoom = useCallback(async () => {
-    if (!id) return;
-    try {
-      const data = await getRoomDetailsFromSupabase(id);
-      setRoom(data.room);
-      setGifts(data.gifts);
-      setWheelSegments(data.wheelSegments || []);
-      setWheelCost(data.wheelCost || 200);
-      setSelectedGiftTarget(data.room.hostId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'تعذّر تحميل الغرفة.');
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    void loadRoom();
-  }, [loadRoom]);
-
+  // Enter or restore room when route mounts
   useEffect(() => {
     if (!id || !user) return;
-    let mounted = true;
+    if (activeRoomId === id && room) {
+      restoreRoom();
+    } else {
+      void enterRoom(id);
+    }
+  }, [id, user?.id]);
 
-    joinRoomInSupabase(id, user)
-      .then((res) => {
-        if (!mounted) return;
-        setRoom(res.room);
-        if (res.entryEvent) {
-          setEntryBanner(res.entryEvent);
-          setTimeout(() => setEntryBanner(null), 5500);
-          void channelRef.current?.send({
-            type: 'broadcast',
-            event: 'room:entry',
-            payload: res.entryEvent,
-          });
-        }
-      })
-      .catch(() => {});
-
-    const sbRoomChannel = supabase
-      .channel(`sada-room-${id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'sada_room_messages',
-          filter: `room_id=eq.${id}`,
-        },
-        (payload) => {
-          const r = payload.new as Record<string, unknown> | undefined;
-          if (!r || !r.id) return;
-          const mapped: RoomMessage = {
-            id: String(r.id),
-            userId: String(r.user_id || ''),
-            displayName: String(r.display_name || ''),
-            level: Number(r.level || 1),
-            isAdmin: Boolean(r.is_admin),
-            vipTier: (r.vip_tier as string | undefined) || undefined,
-            hostBadge: (r.host_badge as string | null) || null,
-            femaleVerifiedBadge: (r.female_verified_badge as string | null) || null,
-            text: String(r.text || ''),
-            type: (r.type as RoomMessage['type']) || 'chat',
-            timestamp: String(r.timestamp || new Date().toISOString()),
-          };
-          setRoom((prev) => {
-            if (!prev) return prev;
-            if (prev.messages.some((m) => m.id === mapped.id)) return prev;
-            return { ...prev, messages: [...prev.messages, mapped].slice(-80) };
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'sada_rooms',
-          filter: `id=eq.${id}`,
-        },
-        (payload) => {
-          const r = payload.new as Record<string, unknown> | undefined;
-          if (!r) return;
-          if (r.is_active === false) {
-            navigate('/', { replace: true });
-            return;
-          }
-          setRoom((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              seats: Array.isArray(r.seats) ? (r.seats as Room['seats']) : prev.seats,
-              listenersCount:
-                typeof r.listeners_count === 'number' ? r.listeners_count : prev.listenersCount,
-              totalGiftsCoins:
-                typeof r.total_gifts_coins === 'number'
-                  ? r.total_gifts_coins
-                  : prev.totalGiftsCoins,
-              isActive: typeof r.is_active === 'boolean' ? r.is_active : prev.isActive,
-            };
-          });
-        }
-      )
-      .on('broadcast', { event: 'room:gift' }, ({ payload }) => {
-        const giftData = payload as {
-          gift: GiftItem;
-          luckyMultiplier?: number | null;
-          luckyBonusCoins?: number;
-          senderName: string;
-          recipientName: string;
-        };
-        setGiftBanner(giftData);
-        setTimeout(() => setGiftBanner(null), 4800);
-      })
-      .on('broadcast', { event: 'room:entry' }, ({ payload }) => {
-        setEntryBanner(payload as RoomEntryEvent);
-        setTimeout(() => setEntryBanner(null), 5500);
-      })
-      .on('broadcast', { event: 'room:wheel-win' }, ({ payload }) => {
-        setWheelBanner(payload as { winnerName: string; segment: LuckyWheelSegment });
-        setTimeout(() => setWheelBanner(null), 4500);
-      })
-      .on('broadcast', { event: 'audio:speaking' }, ({ payload }) => {
-        const sp = payload as { userId: string; isSpeaking: boolean };
-        setRoom((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            seats: prev.seats.map((s) =>
-              s.userId === sp.userId ? { ...s, isSpeaking: sp.isSpeaking } : s
-            ),
-          };
-        });
-      })
-      .subscribe();
-
-    channelRef.current = sbRoomChannel;
-
-    return () => {
-      mounted = false;
-      channelRef.current = null;
-      void leaveRoomInSupabase(id, user.id);
-      void supabase.removeChannel(sbRoomChannel);
-    };
-  }, [id, user?.id, navigate]);
-
+  // Scroll chat smoothly
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [room?.messages.length]);
 
-  // Real Web Audio API Mic Level Monitor when seated & unmuted
+  // Combo circular countdown ticker (3.0s)
   useEffect(() => {
-    const cleanupAudio = () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-      audioStreamRef.current?.getTracks().forEach((t) => t.stop());
-      audioStreamRef.current = null;
-      audioCtxRef.current?.close().catch(() => {});
-      audioCtxRef.current = null;
-      setMicActive(false);
-    };
-
-    if (!mySeat || mySeat.isMuted || !user || !id) {
-      cleanupAudio();
+    if (!comboSession) {
+      setComboRemainingMs(0);
       return;
     }
-
-    let cancelled = false;
-    let lastSpeaking = false;
-
-    const startMic = async () => {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setMicDenied(true);
-        return;
-      }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        audioStreamRef.current = stream;
-        setMicActive(true);
-        setMicDenied(false);
-
-        const ctx = new AudioContext();
-        audioCtxRef.current = ctx;
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-        const buffer = new Uint8Array(analyser.frequencyBinCount);
-
-        const tick = () => {
-          if (cancelled) return;
-          analyser.getByteFrequencyData(buffer);
-          const avg = buffer.reduce((a, b) => a + b, 0) / buffer.length;
-          const speaking = avg > 16;
-          if (speaking !== lastSpeaking) {
-            lastSpeaking = speaking;
-            void channelRef.current?.send({
-              type: 'broadcast',
-              event: 'audio:speaking',
-              payload: { userId: user.id, isSpeaking: speaking },
-            });
-            setRoom((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    seats: prev.seats.map((s) =>
-                      s.userId === user.id ? { ...s, isSpeaking: speaking } : s
-                    ),
-                  }
-                : prev
-            );
-          }
-          rafRef.current = requestAnimationFrame(tick);
-        };
-        tick();
-      } catch {
-        setMicDenied(true);
-      }
-    };
-
-    startMic();
-
-    return () => {
-      cancelled = true;
-      cleanupAudio();
-    };
-  }, [mySeat?.seatIndex, mySeat?.isMuted, id, user?.id]);
-
-  const handleSeatClick = async (seatIndex: number) => {
-    if (!room || !user) return;
-    const seat = room.seats.find((s) => s.seatIndex === seatIndex);
-    if (!seat) return;
-    if (seat.isLocked) return;
-
-    try {
-      if (seat.userId === user.id) {
-        const nextSeats = await updateRoomSeatInSupabase(room.id, user, { type: 'leave' });
-        setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
-        return;
-      }
-      if (!seat.userId) {
-        const nextSeats = await updateRoomSeatInSupabase(room.id, user, {
-          type: 'take',
-          seatIndex,
-        });
-        setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
+    const updateTicker = () => {
+      const left = comboSession.expiresAt - Date.now();
+      if (left <= 0) {
+        setComboSession(null);
+        setComboRemainingMs(0);
       } else {
-        setSelectedGiftTarget(seat.userId);
-        setShowGiftModal(true);
+        setComboRemainingMs(left);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'تعذّر تحديث المقعد.');
+    };
+    updateTicker();
+    const timer = window.setInterval(updateTicker, 50);
+    return () => window.clearInterval(timer);
+  }, [comboSession]);
+
+  // Intercept hardware Back button on mobile so user sees Keep vs Exit modal
+  useEffect(() => {
+    if (!room) return;
+    const handlePopState = () => {
+      setShowExitModal(true);
+      window.history.pushState({ sadaRoomGuard: true }, '', window.location.href);
+    };
+    window.history.pushState({ sadaRoomGuard: true }, '', window.location.href);
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [room?.id]);
+
+  const topSpeakerSeatIndex = useMemo(() => {
+    if (!room?.seats?.length) return -1;
+    let bestIdx = -1;
+    let bestVal = 0;
+    for (const s of room.seats) {
+      if (s.userId && (s.receivedDiamonds || 0) > bestVal) {
+        bestVal = s.receivedDiamonds || 0;
+        bestIdx = s.seatIndex;
+      }
     }
+    if (bestIdx === -1) {
+      const firstSeated = room.seats.find((s) => s.userId);
+      return firstSeated ? firstSeated.seatIndex : -1;
+    }
+    return bestIdx;
+  }, [room?.seats]);
+
+  const handleFollowAgency = () => {
+    if (!room) return;
+    setIsFollowingAgency((prev) => !prev);
+    const shortId = formatShortNumericId(room.id).slice(0, 6);
+    navigator.clipboard?.writeText(shortId).catch(() => {});
+    showToast(
+      !isFollowingAgency
+        ? `تمت إضافة "${room.title}" للمفضلة ونسخ رقم الوكالة (${shortId}) ✓`
+        : 'تمت إزالة الوكالة من المفضلة'
+    );
   };
 
-  const handleToggleLock = async (e: React.MouseEvent, seatIndex: number, isLocked: boolean) => {
-    e.stopPropagation();
-    if (!room || !user) return;
-    try {
-      const nextSeats = await updateRoomSeatInSupabase(room.id, user, {
-        type: 'lock',
-        seatIndex,
-        isLocked: !isLocked,
-      });
-      setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleToggleMute = async () => {
-    if (!room || !user || !mySeat) return;
-    try {
-      const nextSeats = await updateRoomSeatInSupabase(room.id, user, {
-        type: 'mute',
-        isMuted: !mySeat.isMuted,
-      });
-      setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleManualSpeakToggle = async () => {
-    if (!room || !user || !mySeat || mySeat.isMuted) return;
-    const next = !manualSpeakPulse;
-    setManualSpeakPulse(next);
-    void channelRef.current?.send({
-      type: 'broadcast',
-      event: 'audio:speaking',
-      payload: { userId: user.id, isSpeaking: next },
-    });
-    try {
-      const nextSeats = await updateRoomSeatInSupabase(room.id, user, {
-        type: 'speaking',
-        isSpeaking: next,
-      });
-      setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleRequestMicAccess = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setMicDenied(true);
-      setError('متصفحك الحالي لا يدعم الوصول إلى المايكروفون.');
+  const handleSeatInteraction = async (seat: RoomSeat) => {
+    if (!user || !room) return;
+    if (seat.isLocked) {
+      if (canManage) {
+        await handleToggleLock(seat.seatIndex, seat.isLocked);
+        showToast(`تم فتح المقعد ${seat.seatIndex + 1}`);
+      }
       return;
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop());
-      setMicDenied(false);
-      setMicActive(true);
-      setError(null);
-    } catch {
-      setMicDenied(true);
-      setError('يرجى السماح بإذن المايكروفون من إعدادات المتصفح أو الهاتف.');
+
+    if (!seat.userId) {
+      await handleSeatClick(seat.seatIndex);
+      return;
     }
+
+    if (seat.userId === user.id || canManage) {
+      setSeatActionTarget(seat);
+      return;
+    }
+
+    openMiniProfile(seat.userId, {
+      displayName: seat.displayName || undefined,
+      avatarUrl: seat.avatarUrl || undefined,
+      frameId: seat.frameId || undefined,
+      level: seat.level || 1,
+      femaleVerifiedBadge: seat.femaleVerifiedBadge || null,
+    });
   };
 
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!room || !user || !chatText.trim()) return;
-    const msgText = chatText.trim();
+    if (!chatText.trim()) return;
+    const text = chatText.trim();
     setChatText('');
-    try {
-      const sent = await sendRoomChatInSupabase(room.id, user, msgText);
-      setRoom((prev) => {
-        if (!prev) return prev;
-        if (prev.messages.some((m) => m.id === sent.id)) return prev;
-        return { ...prev, messages: [...prev.messages, sent].slice(-80) };
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'تعذّر إرسال الرسالة.');
-    }
+    setShowEmojiPicker(false);
+    await sendChat(text);
   };
 
-  const handleSendGift = async (giftId: string) => {
-    if (!room || !user) return;
+  const handleSendGiftBatch = async (
+    giftId: string,
+    targetUserIds: string[],
+    quantity: number
+  ) => {
+    if (!room) return;
+    const pickedGift = gifts.find((g) => g.id === giftId);
     setSendingGift(true);
-    setError(null);
     try {
-      const data = await sendRoomGiftInSupabase(
-        room.id,
-        user,
-        giftId,
-        selectedGiftTarget || room.hostId
-      );
-      updateLocalUser(data.user);
-      setRoom(data.room);
-      if (data.gift) {
-        const target =
-          data.room.seats.find((s) => s.userId === (selectedGiftTarget || room.hostId))
-            ?.displayName || data.room.hostName;
-        const banner = {
-          gift: data.gift,
-          luckyMultiplier: data.luckyMultiplier,
-          luckyBonusCoins: data.luckyBonusCoins,
-          senderName: data.user.displayName,
-          recipientName: target,
-        };
-        setGiftBanner(banner);
-        setTimeout(() => setGiftBanner(null), 4800);
-        void channelRef.current?.send({
-          type: 'broadcast',
-          event: 'room:gift',
-          payload: banner,
-        });
-      }
+      await sendGiftBatch(giftId, targetUserIds, quantity, 1);
       setShowGiftModal(false);
+      if (pickedGift) {
+        setComboSession({
+          gift: pickedGift,
+          targetUserIds,
+          quantity,
+          comboCount: 1,
+          expiresAt: Date.now() + COMBO_DURATION_MS,
+        });
+        setComboRemainingMs(COMBO_DURATION_MS);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'تعذّر إرسال الهدية.');
+      showToast(err instanceof Error ? err.message : 'تعذّر إرسال الهدية');
     } finally {
       setSendingGift(false);
     }
   };
 
-  if (loading) {
+  const handleComboTap = async () => {
+    if (!comboSession || !user) return;
+    const batchCost =
+      comboSession.gift.coinsCost *
+      comboSession.quantity *
+      Math.max(1, comboSession.targetUserIds.length);
+    if (user.coins < batchCost) {
+      setComboSession(null);
+      showToast('رصيد الكوينز لا يكفي للاستمرار في الـ Combo');
+      return;
+    }
+    const nextCombo = comboSession.comboCount + 1;
+    const snapshot = comboSession;
+    setComboSession({
+      ...snapshot,
+      comboCount: nextCombo,
+      expiresAt: Date.now() + COMBO_DURATION_MS,
+    });
+    setComboRemainingMs(COMBO_DURATION_MS);
+    try {
+      await sendGiftBatch(
+        snapshot.gift.id,
+        snapshot.targetUserIds,
+        snapshot.quantity,
+        nextCombo
+      );
+    } catch (err) {
+      setComboSession(null);
+      showToast(err instanceof Error ? err.message : 'تعذّر متابعة الـ Combo');
+    }
+  };
+
+  const handlePickSeatEmoji = (item: (typeof ROOM_REACTION_EMOJIS)[number]) => {
+    setShowEmojiPicker(false);
+    sendSeatEmoji({ emoji: item.emoji, label: item.label, isDice: item.isDice });
+    if (!mySeat) {
+      showToast(`${item.emoji} اصعد على المايك ليظهر التفاعل المتحرك فوق صورتك!`);
+    }
+  };
+
+  const handleKeepMinimized = () => {
+    setShowExitModal(false);
+    minimizeRoom();
+    navigate('/');
+  };
+
+  const handleConfirmLeave = async () => {
+    setShowExitModal(false);
+    await leaveActiveRoom();
+    navigate('/');
+  };
+
+  // Resolve exact viewport start & destination coordinates for flying gifts
+  const resolveFlyStartPoint = () => {
+    const rect = giftBtnRef.current?.getBoundingClientRect();
+    if (rect) {
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+    return {
+      x: typeof window !== 'undefined' ? window.innerWidth * 0.28 : 120,
+      y: typeof window !== 'undefined' ? window.innerHeight - 44 : 620,
+    };
+  };
+
+  const resolveRecipientPoint = (recipientId: string, idx: number) => {
+    const seat = room?.seats.find((s) => s.userId === recipientId);
+    if (seat) {
+      const seatRect = seatRefs.current[seat.seatIndex]?.getBoundingClientRect();
+      if (seatRect) {
+        return {
+          x: seatRect.left + seatRect.width / 2,
+          y: seatRect.top + seatRect.height / 2,
+        };
+      }
+    }
+    const headerRect = headerAnchorRef.current?.getBoundingClientRect();
+    if (headerRect) {
+      return {
+        x: headerRect.left + headerRect.width / 2,
+        y: headerRect.top + headerRect.height / 2,
+      };
+    }
+    return {
+      x:
+        (typeof window !== 'undefined' ? window.innerWidth / 2 : 180) +
+        (idx % 3 - 1) * 36,
+      y: 150,
+    };
+  };
+
+  if (loading && !room) {
     return (
-      <div className="max-w-5xl mx-auto p-6 text-center text-slate-300">
-        جارٍ دخول المجلس الصوتي...
+      <div className="min-h-[100dvh] bg-[#0A0805] flex items-center justify-center p-6 text-center">
+        <div className="royal-glass rounded-3xl px-7 py-5 text-sm font-extrabold text-[#FCE9A6]">
+          جارٍ دخول الوكالة الملكية...
+        </div>
       </div>
     );
   }
 
   if (!room) {
     return (
-      <div className="max-w-xl mx-auto p-6 text-center space-y-4">
-        <p className="text-rose-300">{error || 'الغرفة غير متوفرة.'}</p>
+      <div className="min-h-[100dvh] bg-[#0A0805] flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <p className="text-rose-400 font-bold text-sm">
+          {error || 'تعذّر فتح الوكالة الصوتية.'}
+        </p>
         <button
           type="button"
           onClick={() => navigate('/')}
-          className="gold-btn rounded-xl px-5 py-2.5 text-sm cursor-pointer"
+          className="gold-btn rounded-2xl px-6 py-2.5 text-sm cursor-pointer"
         >
-          العودة إلى المجالس
+          العودة إلى الوكالات
         </button>
       </div>
     );
   }
 
-  const canManageSeats = user?.id === room.hostId || user?.is_admin;
+  const roomNumericId = formatShortNumericId(room.id).slice(0, 6);
+  const comboProgress = Math.max(0, Math.min(1, comboRemainingMs / COMBO_DURATION_MS));
+  const comboCircleRadius = 31;
+  const comboCircumference = 2 * Math.PI * comboCircleRadius;
 
   return (
-    <div className="relative min-h-[calc(100vh-3.5rem)] flex flex-col max-w-6xl mx-auto px-3 sm:px-6 pt-3 pb-4">
-      <div
-        className="fixed inset-0 bg-cover bg-center opacity-10 pointer-events-none"
-        style={{ backgroundImage: `url(${resolveAsset(room.coverImage)})` }}
-      />
+    <div className="relative min-h-[100dvh] h-[100dvh] w-full flex flex-col overflow-hidden text-white">
+      {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
+      <DragonStageBackdrop coverImage={room.coverImage} />
 
-      {/* Room Top Bar */}
-      <div className="relative z-10 royal-glass rounded-2xl p-3 sm:p-4 flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 text-[#F3D37A] cursor-pointer shrink-0"
-            aria-label="العودة"
+      <div className="relative z-10 flex-1 flex flex-col max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2 min-h-0">
+        {/* 1. ROOM TOP BAR */}
+        <header className="flex items-center justify-between gap-2 shrink-0">
+          {/* Right Side (RTL start): Agency Square Avatar, Title, ID + Green (+) Button */}
+          <div
+            ref={headerAnchorRef}
+            className="flex items-center gap-2 min-w-0 bg-black/35 backdrop-blur-md border border-[#D4AF37]/30 rounded-2xl p-1 pl-2"
           >
-            <ArrowRight className="w-5 h-5" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="text-sm sm:text-base font-extrabold text-white truncate">
-              {room.title}
-            </h1>
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span className="text-[#F3D37A]">{room.category}</span>
-              <span aria-hidden="true">·</span>
-              <span className="flex items-center gap-1 font-mono-num">
-                <Headphones className="w-3 h-3" />
-                {room.listenersCount}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="flex items-center gap-1 font-mono-num text-amber-300">
-                <Coins className="w-3 h-3" />
-                {room.totalGiftsCoins.toLocaleString('en-US')}
-              </span>
+            <button
+              type="button"
+              onClick={() => (canManage ? setShowSettingsModal(true) : handleFollowAgency())}
+              className="relative w-10 h-10 rounded-xl overflow-hidden border border-[#F3D37A]/70 shrink-0 cursor-pointer"
+              title={canManage ? 'تغيير صورة أو إعدادات الوكالة' : room.title}
+            >
+              <img
+                src={resolveAsset(room.hostAvatar)}
+                alt={room.title}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover"
+              />
+            </button>
+
+            <div className="min-w-0">
+              <h1 className="text-xs sm:text-sm font-extrabold text-white truncate max-w-[115px] sm:max-w-[170px] leading-tight">
+                {room.title}
+              </h1>
+              <div className="flex items-center gap-1 text-[10px] text-amber-200/90 font-mono-num">
+                <span className="text-amber-400">🔥</span>
+                <span>{roomNumericId}</span>
+              </div>
             </div>
+
+            <button
+              type="button"
+              onClick={handleFollowAgency}
+              className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 cursor-pointer transition shadow ${
+                isFollowingAgency
+                  ? 'bg-[#D4AF37] text-[#070913]'
+                  : 'bg-gradient-to-br from-[#2CE376] to-[#0FA958] text-white'
+              }`}
+              aria-label="متابعة الوكالة ونسخ المعرف"
+              title="متابعة الوكالة"
+            >
+              <Plus
+                className={`w-4 h-4 transition-transform ${
+                  isFollowingAgency ? 'rotate-45' : ''
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Left Side (RTL end): Top 3 Gifters Circles + Live Member Counter + Minimize/Exit (X) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div className="flex items-center gap-1">
+              {[0, 1, 2].map((rankIdx) => {
+                const gifter = topGifters[rankIdx];
+                const rankBorder =
+                  rankIdx === 0
+                    ? 'border-amber-300 shadow-[0_0_10px_rgba(251,191,36,0.65)]'
+                    : rankIdx === 1
+                    ? 'border-slate-300'
+                    : 'border-amber-600';
+                const badgeBg =
+                  rankIdx === 0
+                    ? 'bg-gradient-to-r from-amber-400 to-yellow-600 text-[#070913]'
+                    : rankIdx === 1
+                    ? 'bg-slate-200 text-slate-900'
+                    : 'bg-amber-700 text-amber-100';
+
+                return (
+                  <button
+                    key={rankIdx}
+                    type="button"
+                    onClick={() => {
+                      if (gifter) {
+                        openMiniProfile(gifter.userId, {
+                          displayName: gifter.displayName,
+                          avatarUrl: gifter.avatarUrl,
+                          frameId: gifter.frameId,
+                        });
+                      } else {
+                        setGiftInitialTargets(undefined);
+                        setShowGiftModal(true);
+                      }
+                    }}
+                    className="relative flex flex-col items-center cursor-pointer group"
+                    title={
+                      gifter
+                        ? `${gifter.displayName}: ${gifter.totalCoins.toLocaleString('en-US')}`
+                        : 'قائمة كبار الداعمين'
+                    }
+                  >
+                    <div
+                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden border-2 bg-black/50 flex items-center justify-center ${rankBorder}`}
+                    >
+                      {gifter ? (
+                        <img
+                          src={resolveAsset(gifter.avatarUrl)}
+                          alt={gifter.displayName}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Crown className="w-3.5 h-3.5 text-[#D4AF37]/60" />
+                      )}
+                    </div>
+                    <span
+                      className={`-mt-1.5 px-1 rounded-full text-[8px] font-mono-num font-extrabold leading-tight shadow ${badgeBg}`}
+                    >
+                      {gifter ? formatCompactMetric(gifter.totalCoins, true) : '0'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => (canManage ? setShowSettingsModal(true) : undefined)}
+              className="flex items-center gap-0.5 bg-black/35 border border-white/15 rounded-full px-2 py-1 text-[11px] font-mono-num font-bold text-white cursor-pointer"
+              title="المتواجدون الآن داخل الوكالة"
+            >
+              <span>{liveListenersCount}</span>
+              <Users className="w-3.5 h-3.5 text-slate-200" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowExitModal(true)}
+              className="w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 border border-white/15 text-white flex items-center justify-center cursor-pointer"
+              aria-label="تصغير أو خروج"
+              title="احتفظ أو خروج"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </header>
+
+        {/* SUB-HEADER ROW: Live Volume Capsule + Quick Wheel + Music + Manager Settings */}
+        <div className="flex items-center justify-between gap-2 mt-1.5 mb-2 shrink-0">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowGamesOverlay(true)}
+              className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#2D2007]/90 to-[#141008]/90 border border-[#F3D37A]/55 px-2.5 py-1 shadow-[0_0_14px_rgba(212,175,55,0.28)] cursor-pointer"
+              title="إجمالي حجم اللعب والدعم داخل الوكالة"
+            >
+              <span className="text-[10px]">🏆</span>
+              <span className="text-[11px] font-mono-num font-extrabold text-[#FCE9A6]">
+                {formatCompactMetric(totalVolumeCoins)}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowWheelModal(true)}
+              className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-rose-700/80 to-amber-700/80 border border-amber-300/50 px-2 py-1 text-[10px] font-extrabold text-white cursor-pointer"
+            >
+              <Sparkles className="w-3 h-3 text-amber-200" />
+              <span>دولاب</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowMusicModal(true)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold max-w-[130px] cursor-pointer ${
+                musicState?.isPlaying
+                  ? 'bg-[#D4AF37]/25 border-[#FCE9A6]/75 text-[#FCE9A6]'
+                  : 'bg-black/50 border-white/20 text-slate-200 hover:border-[#D4AF37]/50'
+              }`}
+              title="موسيقى الغرفة"
+            >
+              <Music
+                className={`w-3 h-3 shrink-0 ${
+                  musicState?.isPlaying ? 'text-emerald-400 animate-pulse' : 'text-[#FCE9A6]'
+                }`}
+              />
+              <span className="truncate">
+                {musicState ? musicState.trackName : 'موسيقى'}
+              </span>
+            </button>
+
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setShowSettingsModal(true)}
+                className="inline-flex items-center gap-1 rounded-xl bg-black/50 border border-[#D4AF37]/50 px-2.5 py-1 text-[10px] font-extrabold text-[#FCE9A6] hover:bg-[#D4AF37]/20 cursor-pointer"
+              >
+                <Settings className="w-3 h-3" />
+                <span>إدارة الوكالة</span>
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {micActive && !mySeat?.isMuted && (
-            <span className="hidden md:flex items-center gap-1.5 text-xs font-bold text-emerald-300">
-              <Radio className="w-3.5 h-3.5" />
-              <span>بث حي</span>
-            </span>
+        {/* TOAST / ERROR FEEDBACK & CELEBRATION BANNERS */}
+        <AnimatePresence>
+          {(toastMsg || error) && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              onClick={clearError}
+              className={`mb-1.5 rounded-xl px-3 py-1.5 text-[11px] font-bold text-center shrink-0 cursor-pointer ${
+                error
+                  ? 'bg-rose-950/90 border border-rose-400/60 text-rose-100'
+                  : 'bg-emerald-950/90 border border-emerald-400/50 text-emerald-100'
+              }`}
+            >
+              {error || toastMsg}
+            </motion.div>
           )}
-          <button
-            type="button"
-            onClick={() => setShowGamesOverlay(true)}
-            className="royal-capsule min-h-[40px] rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#FCE9A6] hover:border-[#F3D37A]/90 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-[0_0_16px_rgba(212,175,55,0.28)]"
-            title="فتح الألعاب والمسابقات داخل الغرفة"
-          >
-            <Gamepad2 className="w-4 h-4 text-[#FCE9A6]" />
-            <span>الألعاب</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowWheelModal(true)}
-            className="royal-capsule min-h-[40px] rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#FCE9A6] hover:border-[#F3D37A]/80 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-[0_0_16px_rgba(212,175,55,0.28)]"
-          >
-            <Sparkles className="w-4 h-4 text-[#F3D37A]" />
-            <span className="hidden sm:inline">دولاب الحظ</span>
-            <span className="sm:hidden">الدولاب</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowGiftModal(true)}
-            className="gold-btn min-h-[40px] rounded-xl px-3 sm:px-3.5 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-          >
-            <Gift className="w-4 h-4" />
-            <span className="hidden sm:inline">إرسال هدية</span>
-            <span className="sm:hidden">هدية</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Royal Gift & Lucky Wheel Toast Banners */}
-      <AnimatePresence>
-        {giftBanner && (
-          <motion.div
-            initial={{ opacity: 0, y: -18, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -14, scale: 0.94 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-            className="relative z-30 mb-3 rounded-3xl border border-[#FCE9A6]/80 bg-gradient-to-r from-[#332206]/95 via-[#171B36]/95 to-[#332206]/95 px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[0_0_45px_rgba(243,211,122,0.55)] overflow-hidden"
-          >
-            <div className="flex items-center gap-3.5">
-              <motion.span
-                initial={{ scale: 0.5, rotate: -14 }}
-                animate={{ scale: [1, 1.25, 1], rotate: [0, 8, -6, 0] }}
-                transition={{ duration: 0.9 }}
-                className="text-4xl drop-shadow-[0_0_16px_rgba(243,211,122,0.9)]"
-              >
-                {giftBanner.gift.glyph}
-              </motion.span>
-              <div>
-                <p className="text-xs text-[#F3D37A] font-bold">
-                  {giftBanner.luckyMultiplier
-                    ? `احتفالية هدية الحظ المضاعفة (×${giftBanner.luckyMultiplier}) 🎰`
-                    : 'احتفالية إهداء ملكية ✨'}
-                </p>
-                <p className="text-sm sm:text-base font-extrabold text-white">
+          {giftBanner && (
+            <motion.div
+              initial={{ opacity: 0, y: -12, scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12 }}
+              className="mb-1.5 rounded-2xl border border-[#FCE9A6]/80 bg-gradient-to-r from-[#362205]/95 via-[#1A1308]/95 to-[#362205]/95 px-3.5 py-2 flex items-center justify-between gap-2 shadow-[0_0_26px_rgba(243,211,122,0.55)] shrink-0"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-2xl">{giftBanner.gift.glyph}</span>
+                <p className="text-[11px] font-extrabold text-white truncate">
                   أهدى <span className="text-[#FCE9A6]">{giftBanner.senderName}</span>{' '}
                   {giftBanner.gift.name} إلى{' '}
                   <span className="text-[#FCE9A6]">{giftBanner.recipientName}</span>
                 </p>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {giftBanner.luckyBonusCoins ? (
-                <span className="rounded-full border border-emerald-400/60 bg-emerald-500/20 px-3.5 py-1 text-xs font-mono-num font-extrabold text-emerald-200">
-                  مضاعف ×{giftBanner.luckyMultiplier} · +
-                  {giftBanner.luckyBonusCoins.toLocaleString('en-US')} كوينز للمرسل!
+              {giftBanner.luckyMultiplier ? (
+                <span className="rounded-full bg-emerald-500/25 border border-emerald-400/60 px-2 py-0.5 text-[10px] font-mono-num font-extrabold text-emerald-200 shrink-0">
+                  ×{giftBanner.luckyMultiplier}
                 </span>
               ) : null}
-              <span className="royal-capsule rounded-full px-3.5 py-1 text-xs font-mono-num font-extrabold text-[#FCE9A6]">
-                +{giftBanner.gift.coinsCost.toLocaleString('en-US')} كوينز
-              </span>
-            </div>
-          </motion.div>
-        )}
-        {wheelBanner && (
-          <motion.div
-            initial={{ opacity: 0, y: -12, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -12 }}
-            className="relative z-20 mb-3 rounded-2xl border border-[#FCE9A6]/75 bg-gradient-to-r from-[#382708]/95 via-[#1C1633]/95 to-[#382708]/95 px-4 py-3 flex items-center justify-center gap-3 shadow-[0_0_34px_rgba(243,211,122,0.55)]"
-          >
-            <span className="text-2xl">{wheelBanner.segment.glyph}</span>
-            <p className="text-xs sm:text-sm font-extrabold text-[#FCE9A6]">
-              مبارك! فاز <span className="text-white">{wheelBanner.winnerName}</span>{' '}
-              في دولاب الحظ بـ {wheelBanner.segment.label}
-            </p>
-          </motion.div>
-        )}
-        {entryBanner && (
-          <motion.div
-            initial={{ opacity: 0, x: 60, scale: 0.92 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -60, scale: 0.94 }}
-            transition={{ type: 'spring', stiffness: 220, damping: 18 }}
-            className={`relative z-30 mb-3 rounded-3xl px-5 py-4 flex items-center justify-between gap-4 overflow-hidden border ${
-              entryBanner.entryId === 'entry_legendary_30d'
-                ? 'border-amber-300 bg-gradient-to-r from-[#452406]/95 via-[#1F1238]/95 to-[#452406]/95 shadow-[0_0_48px_rgba(251,191,36,0.65)]'
-                : 'border-[#F3D37A]/80 bg-gradient-to-r from-[#2D2108]/95 via-[#121933]/95 to-[#2D2108]/95 shadow-[0_0_36px_rgba(243,211,122,0.48)]'
-            }`}
-          >
-            <div className="flex items-center gap-3.5 min-w-0">
-              <motion.div
-                initial={{ x: 24, scale: 0.8 }}
-                animate={{ x: [24, 0, 4, 0], scale: 1 }}
-                transition={{ duration: 0.85 }}
-                className="text-3xl sm:text-4xl shrink-0"
-              >
+            </motion.div>
+          )}
+          {wheelBanner && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mb-1.5 rounded-xl border border-[#FCE9A6]/70 bg-[#2C1E06]/95 px-3 py-1.5 text-center text-[11px] font-extrabold text-[#FCE9A6] shrink-0"
+            >
+              {wheelBanner.segment.glyph} فاز {wheelBanner.winnerName} بـ {wheelBanner.segment.label}
+            </motion.div>
+          )}
+          {entryBanner && (
+            <motion.div
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -40 }}
+              className="mb-1.5 rounded-2xl border border-amber-300/80 bg-gradient-to-r from-[#3E2405]/95 to-[#171209]/95 px-3 py-2 flex items-center gap-2.5 shadow-[0_0_25px_rgba(251,191,36,0.5)] shrink-0"
+            >
+              <span className="text-2xl">
                 {entryBanner.entryId === 'entry_legendary_30d' ? '🐉' : '🚘'}
-              </motion.div>
-              <AvatarWithFrame
-                src={entryBanner.avatarUrl}
-                alt={entryBanner.displayName}
-                frameId={entryBanner.frameId}
-                size="md"
-              />
-              <div className="min-w-0">
-                <p className="text-[11px] font-extrabold text-[#FCE9A6]">
-                  {entryBanner.entryId === 'entry_legendary_30d'
-                    ? 'الدخولية الأسطورية الملكية ✦'
-                    : 'دخولية السيارة الذهبية ✦'}
-                </p>
-                <p className="text-sm sm:text-base font-extrabold text-white truncate">
-                  شرّف <span className="text-[#FCE9A6]">{entryBanner.displayName}</span>{' '}
-                  المجلس بحضوره!
-                </p>
-              </div>
-            </div>
-            <span className="hidden sm:inline-flex rounded-xl border border-[#FCE9A6]/50 bg-[#070913]/70 px-3 py-1.5 text-xs font-mono-num font-bold text-[#FCE9A6] shrink-0">
-              Lv.{entryBanner.level}
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {error && (
-        <div className="relative z-10 mb-3 rounded-xl border border-rose-500/40 bg-rose-950/60 px-4 py-2 text-xs text-rose-200">
-          {error}
-        </div>
-      )}
-
-      {/* Main Content Split: Speaker Stage + Live Chat */}
-      <div className="relative z-10 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
-        {/* Speaker Stage */}
-        <section className="lg:col-span-7 royal-glass rounded-3xl p-4 sm:p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-bold text-[#F3D37A]">
-                منصة المتحدثين ({seatedSpeakers.length}/{room.maxSeats})
-              </h2>
-              <span className="text-xs text-slate-400">
-                اضغط على مقعد فارغ للصعود إلى المايك
               </span>
-            </div>
+              <p className="text-xs font-extrabold text-[#FCE9A6] truncate">
+                دخولية ملكية: شرّف {entryBanner.displayName} الوكالة!
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-              {room.seats.map((seat) => {
-                const isMe = seat.userId === user?.id;
-                const isActiveSpeaker = Boolean(seat.userId && seat.isSpeaking && !seat.isMuted);
-                return (
+        {/* 2. HORIZONTAL 5-COLUMN MIC GRID (5 x 6 = Up to 30 Circular Mics, 42px circles) */}
+        <section className="shrink-0 max-h-[46dvh] overflow-y-auto no-scrollbar py-0.5">
+          <div className="grid grid-cols-5 gap-[6px]">
+            {room.seats.map((seat) => {
+              const isMe = seat.userId === user?.id;
+              const isActiveSpeaker = Boolean(seat.userId && seat.isSpeaking && !seat.isMuted);
+              const isTop1 = Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex);
+              const seatEmoji = seat.userId ? seatEmojis[seat.userId] : undefined;
+
+              return (
+                <button
+                  key={seat.seatIndex}
+                  type="button"
+                  onClick={() => void handleSeatInteraction(seat)}
+                  className="flex flex-col items-center text-center cursor-pointer group focus:outline-none"
+                >
+                  {/* Charisma / Support Points Badge ABOVE circle */}
+                  <div className="h-[14px] flex items-center justify-center gap-0.5 mb-0.5">
+                    {seat.userId ? (
+                      <span
+                        className={`inline-flex items-center gap-0.5 px-1.5 rounded-full text-[9px] font-mono-num font-extrabold leading-tight ${
+                          isTop1
+                            ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-[#070913]'
+                            : (seat.receivedDiamonds || 0) > 0
+                            ? 'bg-black/55 text-[#FCE9A6] border border-[#D4AF37]/40'
+                            : 'bg-black/40 text-slate-300'
+                        }`}
+                      >
+                        <span>{formatCompactMetric(seat.receivedDiamonds || 0)}</span>
+                        <span className="text-[8px]">💎</span>
+                      </span>
+                    ) : (
+                      <span className="text-[8px] font-mono-num text-slate-400/75">
+                        {seat.seatIndex + 1}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Circular Seat Container (42px diameter) */}
                   <div
-                    key={seat.seatIndex}
-                    onClick={() => handleSeatClick(seat.seatIndex)}
-                    className={`relative rounded-2xl p-3 flex flex-col items-center justify-center text-center min-h-[130px] transition cursor-pointer border ${
-                      isActiveSpeaker
-                        ? 'bg-[#D4AF37]/18 border-[#FCE9A6]/80 shadow-[0_0_26px_rgba(243,211,122,0.4)]'
-                        : seat.userId
-                        ? isMe
-                          ? 'bg-[#D4AF37]/12 border-[#D4AF37]/50'
-                          : 'bg-[#070913]/65 border-[#D4AF37]/20 hover:border-[#D4AF37]/45'
-                        : seat.isLocked
-                        ? 'bg-[#070913]/40 border-slate-800/80 opacity-60 cursor-not-allowed'
-                        : 'bg-[#070913]/45 border-dashed border-[#D4AF37]/25 hover:border-[#D4AF37]/60 hover:bg-[#D4AF37]/5'
-                    }`}
+                    ref={(el) => {
+                      seatRefs.current[seat.seatIndex] = el;
+                    }}
+                    className="relative flex items-center justify-center"
                   >
-                    {canManageSeats && !seat.userId && (
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleLock(e, seat.seatIndex, seat.isLocked)}
-                        className="absolute top-2 left-2 p-1 rounded-lg bg-black/40 text-slate-400 hover:text-[#F3D37A] cursor-pointer"
-                        title={seat.isLocked ? 'فتح المقعد' : 'قفل المقعد'}
+                    {/* Golden Speaking Waves */}
+                    {isActiveSpeaker && (
+                      <>
+                        <span className="absolute -inset-1.5 rounded-full border-2 border-[#FCE9A6] animate-gold-wave pointer-events-none" />
+                        <span className="absolute -inset-0.5 rounded-full border border-amber-400/90 shadow-[0_0_16px_rgba(251,191,36,0.9)] pointer-events-none" />
+                      </>
+                    )}
+
+                    {/* TOP 1 Winged Golden Crown Aura */}
+                    {isTop1 && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute -inset-2 pointer-events-none flex items-center justify-between text-amber-300 text-xs animate-top1-shimmer"
+                      >
+                        <span className="-mr-1">🪽</span>
+                        <span className="-ml-1 scale-x-[-1]">🪽</span>
+                      </span>
+                    )}
+
+                    {seat.userId ? (
+                      <div
+                        className={`relative w-[42px] h-[42px] rounded-full overflow-hidden bg-[#14110B] ${
+                          isTop1
+                            ? 'ring-2 ring-amber-300 shadow-[0_0_16px_rgba(251,191,36,0.85)]'
+                            : isMe
+                            ? 'ring-2 ring-[#22E568] shadow-[0_0_12px_rgba(34,229,104,0.55)]'
+                            : 'ring-[1.5px] ring-[#D4AF37]/65'
+                        }`}
+                      >
+                        <img
+                          src={resolveAsset(seat.avatarUrl)}
+                          alt={seat.displayName || 'متحدث'}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className={`w-[42px] h-[42px] rounded-full flex items-center justify-center border transition ${
+                          seat.isLocked
+                            ? 'bg-black/50 border-slate-700/70 text-slate-500'
+                            : 'bg-black/40 border-[#D4AF37]/30 text-[#D4AF37]/85 group-hover:border-[#FCE9A6] group-hover:bg-[#D4AF37]/15'
+                        }`}
                       >
                         {seat.isLocked ? (
                           <Lock className="w-3.5 h-3.5" />
                         ) : (
-                          <Unlock className="w-3.5 h-3.5" />
+                          <Mic className="w-4 h-4" />
                         )}
-                      </button>
-                    )}
-
-                    {seat.userId ? (
-                      <>
-                        <div className="relative mb-2">
-                          <AvatarWithFrame
-                            src={seat.avatarUrl}
-                            alt={seat.displayName || 'متحدث'}
-                            frameId={seat.frameId}
-                            size="md"
-                            isSpeaking={isActiveSpeaker}
-                          />
-                          <span
-                            className={`absolute -bottom-1 -left-1 w-5 h-5 rounded-full flex items-center justify-center border border-[#070913] ${
-                              seat.isMuted ? 'bg-rose-600 text-white' : 'bg-[#D4AF37] text-[#070913]'
-                            }`}
-                          >
-                            {seat.isMuted ? (
-                              <MicOff className="w-3 h-3" />
-                            ) : (
-                              <Mic className="w-3 h-3" />
-                            )}
-                          </span>
-                        </div>
-                        <span className="text-xs font-bold text-white truncate max-w-full">
-                          {seat.displayName}
-                        </span>
-                        {seat.femaleVerifiedBadge && (
-                          <FemaleVerifiedBadge
-                            badge={seat.femaleVerifiedBadge}
-                            className="mt-0.5 scale-90"
-                          />
-                        )}
-                        <span className="text-[11px] text-sky-300 font-mono-num mt-0.5">
-                          💎 {seat.receivedDiamonds}
-                        </span>
-                      </>
-                    ) : (
-                      <div className="flex flex-col items-center gap-1.5 text-slate-400">
-                        <div className="w-11 h-11 rounded-full border border-[#D4AF37]/30 flex items-center justify-center bg-[#0D1122]/80">
-                          {seat.isLocked ? (
-                            <Lock className="w-4 h-4 text-slate-500" />
-                          ) : (
-                            <Mic className="w-4 h-4 text-[#D4AF37]" />
-                          )}
-                        </div>
-                        <span className="text-[11px] font-semibold">
-                          {seat.isLocked ? 'مقعد مقفل' : `مايك ${seat.seatIndex + 1}`}
-                        </span>
                       </div>
                     )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
 
-          {/* Seat Audio Controls */}
-          <div className="mt-5 pt-4 border-t border-[#D4AF37]/15 flex flex-wrap items-center justify-between gap-2">
-            {mySeat ? (
-              <>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleToggleMute}
-                    className={`min-h-[42px] rounded-xl px-4 py-2 text-xs font-bold flex items-center gap-2 cursor-pointer transition ${
-                      mySeat.isMuted
-                        ? 'bg-rose-600/25 border border-rose-500/40 text-rose-200'
-                        : 'gold-btn'
-                    }`}
-                  >
-                    {mySeat.isMuted ? (
-                      <>
-                        <MicOff className="w-4 h-4" />
-                        <span>إلغاء الكتم</span>
-                      </>
-                    ) : (
-                      <>
-                        <Mic className="w-4 h-4" />
-                        <span>كتم المايك</span>
-                      </>
-                    )}
-                  </button>
+                    {/* Animated Interactive Reaction / Dice Bubble (4 seconds) */}
+                    <AnimatePresence>
+                      {seatEmoji && (
+                        <motion.div
+                          key={seatEmoji.id}
+                          initial={{ scale: 0.2, opacity: 0, y: 8 }}
+                          animate={{
+                            scale: [0.3, 1.32, 1.05, 1.15, 1],
+                            opacity: 1,
+                            y: [-2, -7, -3, -6, -3],
+                            rotate: seatEmoji.diceValue ? [0, 360, 720] : [0, -8, 8, -4, 0],
+                          }}
+                          exit={{ scale: 0.4, opacity: 0, y: -12 }}
+                          transition={{ duration: 0.9, ease: 'easeOut' }}
+                          className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none"
+                        >
+                          <div className="w-[46px] h-[46px] rounded-full bg-black/70 backdrop-blur-[2px] border border-[#FCE9A6]/80 shadow-[0_0_18px_rgba(251,191,36,0.75)] flex flex-col items-center justify-center">
+                            <span className="text-2xl leading-none drop-shadow">
+                              {seatEmoji.diceValue
+                                ? DICE_GLYPHS[seatEmoji.diceValue - 1]
+                                : seatEmoji.emoji}
+                            </span>
+                            {seatEmoji.diceValue && (
+                              <span className="mt-0.5 px-1 rounded-full bg-[#FCE9A6] text-[#070913] text-[8px] font-mono-num font-extrabold leading-none">
+                                {seatEmoji.diceValue}
+                              </span>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
-                  {micDenied && !mySeat.isMuted && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={handleRequestMicAccess}
-                        className="min-h-[42px] rounded-xl px-3.5 py-2 text-xs font-bold border border-[#D4AF37]/45 bg-[#D4AF37]/15 text-[#FCE9A6] cursor-pointer transition"
-                      >
-                        تفعيل إذن المايكروفون
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleManualSpeakToggle}
-                        className={`min-h-[42px] rounded-xl px-3.5 py-2 text-xs font-bold border cursor-pointer transition ${
-                          manualSpeakPulse
-                            ? 'bg-[#D4AF37]/25 border-[#D4AF37] text-[#FCE9A6]'
-                            : 'bg-white/5 border-white/15 text-slate-300'
-                        }`}
-                      >
-                        {manualSpeakPulse ? 'إيقاف نبض الصوت' : 'تفعيل نبض المتحدث'}
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (mySeat) void handleSeatClick(mySeat.seatIndex);
-                  }}
-                  className="min-h-[42px] rounded-xl px-4 py-2 text-xs font-bold bg-white/5 hover:bg-rose-950/50 border border-white/10 hover:border-rose-500/40 text-slate-200 cursor-pointer"
-                >
-                  نزول من المايك
-                </button>
-              </>
-            ) : (
-              <div className="w-full flex flex-wrap items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={handleRequestMicAccess}
-                  className="min-h-[40px] rounded-xl px-3.5 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 border border-[#D4AF37]/30 text-[#FCE9A6] cursor-pointer flex items-center gap-1.5"
-                >
-                  <Mic className="w-3.5 h-3.5" />
-                  <span>{micActive ? 'المايكروفون جاهز ✓' : 'تفعيل إذن المايكروفون'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const free = room.seats.find((s) => !s.userId && !s.isLocked);
-                    if (free) handleSeatClick(free.seatIndex);
-                  }}
-                  className="gold-btn min-h-[42px] rounded-xl px-4 py-2 text-xs font-bold cursor-pointer"
-                >
-                  صعود لأول مايك متاح
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Live Text Chat */}
-        <section className="lg:col-span-5 royal-glass rounded-3xl p-4 sm:p-5 flex flex-col h-[420px] lg:h-[540px]">
-          <div className="flex items-center justify-between mb-3 gap-2">
-            <h2 className="text-sm font-bold text-[#F3D37A]">
-              دردشة المجلس المباشرة
-            </h2>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setShowGamesOverlay(true)}
-                className="text-xs font-bold text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <Gamepad2 className="w-3.5 h-3.5" />
-                <span>ألعاب ومسابقات</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowWheelModal(true)}
-                className="text-xs font-bold text-[#FCE9A6] hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>دولاب الحظ</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto no-scrollbar space-y-2.5 pl-1">
-            {room.messages.map((m) => (
-              <div
-                key={m.id}
-                className={`rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm ${
-                  m.type === 'entry'
-                    ? 'bg-gradient-to-r from-amber-500/25 via-[#D4AF37]/20 to-transparent border border-amber-300/60 text-[#FCE9A6] font-extrabold shadow-[0_0_20px_rgba(251,191,36,0.28)]'
-                    : m.type === 'wheel'
-                    ? 'bg-gradient-to-r from-[#F3D37A]/25 via-[#D4AF37]/15 to-transparent border border-[#F3D37A]/55 text-[#FCE9A6] font-bold shadow-[0_0_16px_rgba(212,175,55,0.2)]'
-                    : m.type === 'gift'
-                    ? 'bg-gradient-to-r from-[#D4AF37]/20 to-transparent border border-[#D4AF37]/35 text-[#FCE9A6]'
-                    : m.type === 'system'
-                    ? 'bg-white/5 text-slate-300'
-                    : 'bg-[#070913]/65 border border-white/5 text-slate-200'
-                }`}
-              >
-                {m.type === 'chat' && (
-                  <div className="flex flex-wrap items-center gap-1.5 mb-1 text-[11px]">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold whitespace-nowrap border ${
-                        m.isAdmin
-                          ? 'bg-gradient-to-r from-[#D4AF37]/35 to-amber-500/20 border-[#FCE9A6]/70 text-[#FCE9A6]'
-                          : m.level >= 15
-                          ? 'bg-sky-500/20 border-sky-400/50 text-sky-200'
-                          : m.level >= 8
-                          ? 'bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#F7E097]'
-                          : 'bg-white/10 border-white/20 text-slate-200'
-                      }`}
-                    >
-                      {m.vipTier ||
-                        (m.isAdmin
-                          ? 'VIP الإدارة العليا'
-                          : m.level >= 15
-                          ? 'VIP ماسي'
-                          : m.level >= 8
-                          ? 'VIP ذهبي'
-                          : 'VIP برونزي')}
-                    </span>
-                    {m.hostBadge && (
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-[#D4AF37]/18 border border-[#FCE9A6]/50 text-[#FCE9A6]">
-                        {m.hostBadge}
+                    {/* TOP 1 Crest Pill */}
+                    {isTop1 && (
+                      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 text-[#070913] text-[7px] font-extrabold leading-tight shadow z-10 whitespace-nowrap">
+                        TOP1
                       </span>
                     )}
-                    <FemaleVerifiedBadge badge={m.femaleVerifiedBadge} />
-                    <span className="font-bold text-[#F3D37A]">{m.displayName}</span>
-                    <span className="text-slate-500 font-mono-num">Lv.{m.level}</span>
+
+                    {/* Mic Muted Badge */}
+                    {seat.userId && seat.isMuted && (
+                      <span className="absolute -bottom-0.5 -left-0.5 w-4 h-4 rounded-full bg-rose-600 border border-[#0A0805] flex items-center justify-center text-white z-10">
+                        <MicOff className="w-2.5 h-2.5" />
+                      </span>
+                    )}
                   </div>
+
+                  {/* Speaker Name & Role Micro-Tag */}
+                  <div className="mt-1 flex items-center justify-center gap-0.5 max-w-[66px]">
+                    {seat.userId ? (
+                      <>
+                        {seat.userId === room.hostId && (
+                          <span className="text-[8px] text-amber-300 shrink-0">👑</span>
+                        )}
+                        <span className="text-[10px] font-bold text-white/95 truncate leading-tight">
+                          {seat.displayName}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[9px] font-semibold text-slate-400/90 truncate">
+                        {seat.isLocked ? 'مقفل' : 'مايك'}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* 3. PUBLIC CHAT & WELCOME ANNOUNCEMENT */}
+        <section className="flex-1 min-h-0 flex flex-col mt-1.5 overflow-hidden">
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-1.5 px-1 py-1">
+            <div className="rounded-2xl bg-black/30 backdrop-blur-[2px] border border-[#D4AF37]/25 px-3 py-2 text-xs leading-relaxed">
+              <div className="flex items-center justify-between gap-2 mb-0.5">
+                <span className="font-extrabold text-[#FCE9A6]">إعلان الوكالة</span>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSettingsModal(true)}
+                    className="text-[10px] font-bold text-amber-300/90 hover:underline cursor-pointer"
+                  >
+                    تعديل
+                  </button>
                 )}
-                <p className="leading-relaxed">{m.text}</p>
               </div>
-            ))}
+              <p className="text-[11px] sm:text-xs font-semibold text-amber-50/95 whitespace-pre-line">
+                {room.description || 'أهلاً بكم في الوكالة الملكية · نتمنى لكم أطيب الأوقات!'}
+              </p>
+            </div>
+
+            {room.messages.map((m) => {
+              const isJoinSystem =
+                m.type === 'system' && m.text.startsWith('دخل الغرفة');
+              if (isJoinSystem) {
+                return (
+                  <div key={m.id} className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#18B75D] to-[#0FA958] px-3 py-0.5 text-[11px] font-bold text-white shadow-sm">
+                      <span>🔔</span>
+                      <span>{m.text}</span>
+                    </span>
+                  </div>
+                );
+              }
+
+              if (m.type === 'system') {
+                return (
+                  <div
+                    key={m.id}
+                    className="inline-block rounded-xl bg-black/45 px-2.5 py-1 text-[11px] text-amber-100/90"
+                  >
+                    {m.text}
+                  </div>
+                );
+              }
+
+              if (m.type === 'gift' || m.type === 'wheel' || m.type === 'entry') {
+                return (
+                  <div
+                    key={m.id}
+                    className="rounded-xl border border-[#D4AF37]/45 bg-gradient-to-r from-[#362407]/75 to-[#151008]/75 px-3 py-1.5 text-[11px] font-bold text-[#FCE9A6] shadow-sm"
+                  >
+                    {m.text}
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={m.id}
+                  className="rounded-xl bg-black/35 backdrop-blur-[2px] px-2.5 py-1.5 text-xs leading-snug"
+                >
+                  <div className="inline-flex flex-wrap items-center gap-1 ml-1.5">
+                    <span
+                      className={`inline-flex items-center rounded-md px-1.5 py-0.2 text-[9px] font-mono-num font-extrabold ${
+                        m.isAdmin
+                          ? 'bg-amber-400 text-[#070913]'
+                          : m.level >= 15
+                          ? 'bg-sky-500/80 text-white'
+                          : 'bg-emerald-600/80 text-white'
+                      }`}
+                    >
+                      Lv.{m.level}
+                    </span>
+                    <FemaleVerifiedBadge badge={m.femaleVerifiedBadge} />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openMiniProfile(m.userId, {
+                          displayName: m.displayName,
+                          level: m.level,
+                          is_admin: m.isAdmin,
+                          femaleVerifiedBadge: m.femaleVerifiedBadge,
+                        })
+                      }
+                      className="font-extrabold text-[#FCE9A6] hover:underline cursor-pointer"
+                    >
+                      {m.displayName}:
+                    </button>
+                  </div>
+                  <span className="text-white/95">{m.text}</span>
+                </div>
+              );
+            })}
             <div ref={chatEndRef} />
           </div>
-
-          <form onSubmit={handleSendChat} className="mt-3 flex items-center gap-2">
-            <input
-              type="text"
-              value={chatText}
-              onChange={(e) => setChatText(e.target.value)}
-              placeholder="اكتب رسالة راقية للمجلس..."
-              className="flex-1 rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#D4AF37]"
-            />
-            <button
-              type="submit"
-              className="gold-btn min-h-[42px] min-w-[42px] rounded-xl flex items-center justify-center cursor-pointer shrink-0"
-              aria-label="إرسال"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
         </section>
+
+        {/* Interactive Animated Seat Emojis Drawer */}
+        <AnimatePresence>
+          {showEmojiPicker && (
+            <motion.div
+              initial={{ opacity: 0, y: 12, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.96 }}
+              className="mb-1.5 rounded-2xl bg-[#120E08]/95 backdrop-blur-md border border-[#F3D37A]/45 p-2.5 shadow-[0_0_24px_rgba(0,0,0,0.7)] shrink-0"
+            >
+              <div className="flex items-center justify-between px-1 mb-1.5">
+                <span className="text-[11px] font-extrabold text-[#FCE9A6]">
+                  سمايلات المايك التفاعلية (4 ثوانٍ)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(false)}
+                  className="text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-5 sm:grid-cols-9 gap-1.5">
+                {ROOM_REACTION_EMOJIS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handlePickSeatEmoji(item)}
+                    className="rounded-xl bg-white/5 hover:bg-[#D4AF37]/20 border border-white/10 hover:border-[#F3D37A]/60 py-1.5 px-1 flex flex-col items-center gap-0.5 transition cursor-pointer active:scale-95"
+                  >
+                    <span className="text-xl leading-none">{item.emoji}</span>
+                    <span className="text-[9px] font-bold text-slate-200 truncate max-w-full">
+                      {item.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 4. FIXED SINGLE-ROW BOTTOM ACTION BAR (Chat Input + 😊 + 🎁 + 🎮 + 🎙️) */}
+        <footer className="pt-1.5 pb-[max(env(safe-area-inset-bottom,0px),6px)] shrink-0">
+          <div className="flex items-center gap-1.5">
+            {/* 1. Public Chat Input Box */}
+            <form
+              onSubmit={handleSendChat}
+              className="flex-1 min-w-0 flex items-center gap-1 rounded-full bg-black/60 border border-white/20 px-3 py-1 backdrop-blur-md"
+            >
+              <input
+                type="text"
+                value={chatText}
+                onChange={(e) => setChatText(e.target.value)}
+                placeholder="أهلاً..."
+                className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none py-1"
+              />
+              {chatText.trim() && (
+                <button
+                  type="submit"
+                  className="w-7 h-7 rounded-full bg-gradient-to-br from-[#FDE047] to-[#D4AF37] text-[#070913] flex items-center justify-center cursor-pointer shrink-0"
+                  aria-label="إرسال"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </form>
+
+            {/* 2. Interactive Seat Emojis Button (😊) */}
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker((v) => !v)}
+              className={`w-10 h-10 rounded-full flex items-center justify-center border cursor-pointer shrink-0 transition ${
+                showEmojiPicker
+                  ? 'bg-[#D4AF37] border-[#FFF3C4] text-[#070913] shadow-[0_0_14px_rgba(243,211,122,0.7)]'
+                  : 'bg-black/60 border-white/20 text-[#FCE9A6] hover:border-[#F3D37A]/60'
+              }`}
+              aria-label="سمايلات تفاعلية"
+              title="السمايلات التفاعلية"
+            >
+              <Smile className="w-5 h-5" />
+            </button>
+
+            {/* 3. Prominent Glowing Gold Gift Box Button (🎁) */}
+            <button
+              ref={giftBtnRef}
+              type="button"
+              onClick={() => {
+                setGiftInitialTargets(undefined);
+                setShowGiftModal(true);
+              }}
+              className="relative w-11 h-11 rounded-full bg-gradient-to-br from-[#FEF08A] via-[#D4AF37] to-[#B45309] border-2 border-[#FFF8DC] text-[#070913] flex items-center justify-center shadow-[0_0_22px_rgba(243,211,122,0.85)] hover:scale-105 active:scale-95 transition cursor-pointer shrink-0"
+              aria-label="صندوق الهدايا"
+              title="صندوق الهدايا الملكية"
+            >
+              <span className="absolute -inset-0.5 rounded-full border border-[#FDE047]/60 animate-ping opacity-45 pointer-events-none" />
+              <Gift className="w-5 h-5 stroke-[2.4]" />
+            </button>
+
+            {/* 4. Games Button directly adjacent (🎮) */}
+            <button
+              type="button"
+              onClick={() => setShowGamesOverlay(true)}
+              className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500/35 to-teal-700/45 border border-emerald-400/60 text-emerald-100 flex items-center justify-center shadow-[0_0_12px_rgba(16,185,129,0.35)] hover:border-emerald-300 cursor-pointer shrink-0"
+              aria-label="الألعاب"
+              title="مركز الألعاب فوق الغرفة"
+            >
+              <Gamepad2 className="w-5 h-5" />
+            </button>
+
+            {/* 5. Mic Control Button (🎙️ / 🔇) */}
+            <button
+              type="button"
+              onClick={() => {
+                if (mySeat) {
+                  void handleToggleMute();
+                } else {
+                  const free = room.seats.find((s) => !s.userId && !s.isLocked);
+                  if (free) void handleSeatClick(free.seatIndex);
+                  else showToast('جميع المقاعد مشغولة حالياً');
+                }
+              }}
+              className={`w-10 h-10 rounded-full flex items-center justify-center border cursor-pointer shrink-0 transition ${
+                mySeat
+                  ? mySeat.isMuted
+                    ? 'bg-rose-600/85 border-rose-400 text-white'
+                    : 'bg-emerald-500/85 border-emerald-300 text-white shadow-[0_0_12px_rgba(16,185,129,0.55)]'
+                  : 'bg-black/60 border-white/20 text-[#FCE9A6]'
+              }`}
+              aria-label="التحكم بالمايك"
+              title={
+                mySeat
+                  ? mySeat.isMuted
+                    ? 'فتح المايك'
+                    : 'كتم المايك'
+                  : 'صعود للمايك'
+              }
+            >
+              {mySeat?.isMuted ? (
+                <MicOff className="w-4 h-4" />
+              ) : (
+                <Mic className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+
+          {mySeat && micDenied && !mySeat.isMuted && (
+            <div className="mt-1.5 flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleRequestMicAccess()}
+                className="rounded-full bg-[#D4AF37]/25 border border-[#D4AF37]/60 px-3 py-0.5 text-[10px] font-bold text-[#FCE9A6] cursor-pointer"
+              >
+                تفعيل إذن المايكروفون
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleManualSpeakToggle()}
+                className="rounded-full bg-white/10 border border-white/20 px-3 py-0.5 text-[10px] font-bold text-white cursor-pointer"
+              >
+                {manualSpeakPulse ? 'إيقاف نبض الصوت' : 'تجربة نبض المتحدث'}
+              </button>
+            </div>
+          )}
+        </footer>
       </div>
 
-      {/* Royal Gift Store Modal */}
-      {showGiftModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-md p-0 sm:p-4"
-          onClick={() => setShowGiftModal(false)}
-        >
-          <div
-            className="royal-glass w-full sm:max-w-2xl rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 space-y-4"
-            onClick={(e) => e.stopPropagation()}
+      {/* PULSING CIRCULAR COMBO CONTINUATION BUTTON (3.0s SVG Progress Ring) */}
+      <AnimatePresence>
+        {comboSession && comboRemainingMs > 0 && (
+          <motion.button
+            type="button"
+            initial={{ scale: 0.3, opacity: 0, y: 20 }}
+            animate={{ scale: [1, 1.06, 1], opacity: 1, y: 0 }}
+            exit={{ scale: 0.4, opacity: 0, y: 16 }}
+            transition={{ scale: { repeat: Infinity, duration: 1.1 } }}
+            onClick={() => void handleComboTap()}
+            className="fixed left-3.5 bottom-[74px] z-40 w-[74px] h-[74px] rounded-full flex items-center justify-center cursor-pointer active:scale-90 select-none"
+            title="اضغط للاستمرار في إرسال الهدية (Combo)"
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-extrabold gold-gradient-text">
-                  متجر الهدايا الملكية
-                </h3>
-                <p className="text-xs text-slate-400 font-mono-num">
-                  رصيدك الحالي: {(user?.coins ?? 0).toLocaleString('en-US')} كوينز
+            <svg
+              className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-[0_0_16px_rgba(251,191,36,0.9)]"
+              viewBox="0 0 74 74"
+            >
+              <circle
+                cx="37"
+                cy="37"
+                r={comboCircleRadius}
+                fill="rgba(22, 16, 8, 0.9)"
+                stroke="rgba(255,255,255,0.18)"
+                strokeWidth="5"
+              />
+              <circle
+                cx="37"
+                cy="37"
+                r={comboCircleRadius}
+                fill="none"
+                stroke="#FDE047"
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeDasharray={comboCircumference}
+                strokeDashoffset={comboCircumference * (1 - comboProgress)}
+              />
+            </svg>
+            <div className="relative flex flex-col items-center justify-center text-center leading-none">
+              <span className="text-xl drop-shadow">{comboSession.gift.glyph}</span>
+              <span className="mt-0.5 text-[10px] font-mono-num font-extrabold text-[#FDE047]">
+                Combo ×{comboSession.comboCount}
+              </span>
+              <span className="text-[8px] font-mono-num text-amber-200/85">
+                {(comboRemainingMs / 1000).toFixed(1)}s
+              </span>
+            </div>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* FLYING GIFT TRAJECTORIES TOWARD EXACT MIC COORDINATES (Non-blocking) */}
+      <div className="fixed inset-0 z-40 pointer-events-none overflow-hidden">
+        <AnimatePresence>
+          {flyingGifts.map((fly) => {
+            const start = resolveFlyStartPoint();
+            return fly.recipientIds.map((rid, idx) => {
+              const target = resolveRecipientPoint(rid, idx);
+              const midX = (start.x + target.x) / 2 + (idx % 2 === 0 ? -24 : 24);
+              const midY = Math.min(start.y, target.y) - 42;
+              return (
+                <React.Fragment key={`${fly.id}_${rid}_${idx}`}>
+                  {/* Flying 3D Gift Orb */}
+                  <motion.div
+                    initial={{
+                      x: start.x - 24,
+                      y: start.y - 24,
+                      scale: 0.45,
+                      opacity: 0.95,
+                    }}
+                    animate={{
+                      x: [start.x - 24, midX - 24, target.x - 24],
+                      y: [start.y - 24, midY - 24, target.y - 24],
+                      scale: [0.55, 1.45, 1.15, 0.75],
+                      opacity: [0.95, 1, 1, 0],
+                    }}
+                    transition={{
+                      duration: 1.05,
+                      delay: idx * 0.05,
+                      ease: 'easeInOut',
+                    }}
+                    className="fixed top-0 left-0 w-12 h-12 flex items-center justify-center"
+                  >
+                    <span className="absolute inset-0 rounded-full bg-amber-300/45 blur-md" />
+                    <span className="relative text-4xl drop-shadow-[0_4px_14px_rgba(251,191,36,0.9)]">
+                      {fly.gift.glyph}
+                    </span>
+                    {(fly.quantity > 1 || fly.comboCount > 1) && (
+                      <span className="absolute -bottom-1 -right-2 rounded-full bg-gradient-to-r from-[#FDE047] to-[#D4AF37] px-1.5 py-[1px] text-[9px] font-mono-num font-extrabold text-[#070913] shadow">
+                        ×{fly.quantity}
+                      </span>
+                    )}
+                  </motion.div>
+
+                  {/* Arrival Halo Burst on Target Mic */}
+                  <motion.div
+                    initial={{
+                      x: target.x - 28,
+                      y: target.y - 28,
+                      scale: 0.2,
+                      opacity: 0,
+                    }}
+                    animate={{
+                      scale: [0.2, 1.5, 1.9],
+                      opacity: [0, 0.95, 0],
+                    }}
+                    transition={{
+                      duration: 0.65,
+                      delay: 0.85 + idx * 0.05,
+                      ease: 'easeOut',
+                    }}
+                    className="fixed top-0 left-0 w-14 h-14 rounded-full border-2 border-[#FDE047] bg-amber-400/20 shadow-[0_0_24px_rgba(251,191,36,0.9)]"
+                  />
+                </React.Fragment>
+              );
+            });
+          })}
+        </AnimatePresence>
+      </div>
+
+      {/* FULLSCREEN LUXURY GIFT CELEBRATION OVERLAY (Non-blocking so Combo taps stay responsive) */}
+      <div className="fixed inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden">
+        <AnimatePresence>
+          {fullscreenGift && (
+            <motion.div
+              key={fullscreenGift.id}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.08 }}
+              transition={{ duration: 0.45 }}
+              className="relative flex flex-col items-center justify-center text-center px-6"
+            >
+              {/* Radial Golden Spotlight */}
+              <div className="absolute w-[320px] h-[320px] rounded-full bg-radial from-amber-300/35 via-amber-500/10 to-transparent blur-2xl" />
+
+              <motion.div
+                animate={{
+                  y: [0, -14, 0],
+                  scale: [1, 1.12, 1],
+                  rotate: [0, -4, 4, 0],
+                }}
+                transition={{ duration: 1.8, repeat: Infinity }}
+                className="relative text-[92px] sm:text-[110px] leading-none drop-shadow-[0_14px_32px_rgba(251,191,36,0.85)]"
+              >
+                {fullscreenGift.gift.glyph}
+              </motion.div>
+
+              <div className="mt-3 rounded-2xl border border-[#FCE9A6]/80 bg-gradient-to-r from-[#2D1D06]/90 via-[#161007]/90 to-[#2D1D06]/90 px-5 py-2 shadow-[0_0_32px_rgba(243,211,122,0.65)]">
+                <p className="text-xs sm:text-sm font-extrabold text-white">
+                  أهدى{' '}
+                  <span className="text-[#FCE9A6]">{fullscreenGift.senderName}</span>{' '}
+                  {fullscreenGift.gift.name}{' '}
+                  {fullscreenGift.quantity > 1 ? `×${fullscreenGift.quantity}` : ''}{' '}
+                  {fullscreenGift.comboCount > 1
+                    ? `· Combo ×${fullscreenGift.comboCount}`
+                    : ''}
+                </p>
+                <p className="text-[11px] font-bold text-amber-200/90 mt-0.5">
+                  إلى{' '}
+                  {fullscreenGift.recipientNames.length > 1
+                    ? `الجميع على المايكات (${fullscreenGift.recipientNames.length})`
+                    : fullscreenGift.recipientNames[0] || room.hostName}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowGiftModal(false)}
-                className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full text-slate-400 hover:text-white cursor-pointer"
-                aria-label="إغلاق"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
-            {/* Gift Store Tabs */}
-            <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/20">
-              <button
-                type="button"
-                onClick={() => setGiftTab('fixed')}
-                className={`flex-1 min-h-[40px] rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
-                  giftTab === 'fixed'
-                    ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                هدايا ثابتة ({fixedGifts.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setGiftTab('lucky')}
-                className={`flex-1 min-h-[40px] rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
-                  giftTab === 'lucky'
-                    ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                هدايا الحظ ({luckyGifts.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setGiftTab('history')}
-                className={`flex-1 min-h-[40px] rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
-                  giftTab === 'history'
-                    ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                سجل الهدايا
-              </button>
-            </div>
-
-            {giftTab !== 'history' ? (
-              <>
-                <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-                  <div className="flex-1">
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                      إهداء إلى:
-                    </label>
-                    <select
-                      value={selectedGiftTarget}
-                      onChange={(e) => setSelectedGiftTarget(e.target.value)}
-                      className="w-full rounded-xl bg-[#070913]/90 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-[#D4AF37]"
-                    >
-                      <option value={room.hostId}>مضيف المجلس: {room.hostName}</option>
-                      {seatedSpeakers
-                        .filter((s) => s.userId && s.userId !== room.hostId)
-                        .map((s) => (
-                          <option key={s.userId} value={s.userId || ''}>
-                            المتحدث: {s.displayName}
-                          </option>
-                        ))}
-                    </select>
+      {/* SEAT INTERACTION SHEET */}
+      <AnimatePresence>
+        {seatActionTarget && seatActionTarget.userId && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
+            onClick={() => setSeatActionTarget(null)}
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="royal-glass w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <AvatarWithFrame
+                    src={seatActionTarget.avatarUrl}
+                    alt={seatActionTarget.displayName || 'متحدث'}
+                    frameId={seatActionTarget.frameId}
+                    size="md"
+                  />
+                  <div>
+                    <h4 className="text-sm font-extrabold text-white">
+                      {seatActionTarget.displayName}
+                    </h4>
+                    <p className="text-[11px] text-[#FCE9A6] font-mono-num">
+                      مايك {seatActionTarget.seatIndex + 1} · 💎{' '}
+                      {(seatActionTarget.receivedDiamonds || 0).toLocaleString('en-US')}
+                    </p>
                   </div>
-                  {(selectedGiftTarget || room.hostId) !== user?.id && (
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSeatActionTarget(null)}
+                  className="w-8 h-8 rounded-full bg-white/10 text-slate-300 flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {seatActionTarget.userId === user?.id ? (
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleToggleMute();
+                      setSeatActionTarget(null);
+                    }}
+                    className="min-h-[44px] rounded-2xl bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-[#FCE9A6] text-xs font-extrabold flex flex-col items-center justify-center gap-1 cursor-pointer"
+                  >
+                    {seatActionTarget.isMuted ? (
+                      <Mic className="w-4 h-4" />
+                    ) : (
+                      <MicOff className="w-4 h-4" />
+                    )}
+                    <span>{seatActionTarget.isMuted ? 'فتح المايك' : 'كتم المايك'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSeatActionTarget(null);
+                      setShowMusicModal(true);
+                    }}
+                    className="min-h-[44px] rounded-2xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 text-xs font-extrabold flex flex-col items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Music className="w-4 h-4" />
+                    <span>موسيقى 🎵</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = seatActionTarget.seatIndex;
+                      setSeatActionTarget(null);
+                      void handleSeatClick(idx);
+                    }}
+                    className="min-h-[44px] rounded-2xl bg-rose-600/25 border border-rose-400/50 text-rose-200 text-xs font-extrabold flex flex-col items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <UserMinus className="w-4 h-4" />
+                    <span>نزول</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => {
-                        setShowGiftModal(false);
-                        navigate(`/messages?to=${selectedGiftTarget || room.hostId}`);
+                        const target = seatActionTarget;
+                        setSeatActionTarget(null);
+                        openMiniProfile(target.userId!, {
+                          displayName: target.displayName || undefined,
+                          avatarUrl: target.avatarUrl || undefined,
+                          frameId: target.frameId || undefined,
+                          level: target.level || 1,
+                          femaleVerifiedBadge: target.femaleVerifiedBadge || null,
+                        });
                       }}
-                      className="min-h-[42px] rounded-xl px-3.5 py-2 text-xs font-bold border border-[#D4AF37]/40 bg-[#D4AF37]/12 text-[#FCE9A6] hover:bg-[#D4AF37]/25 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                      className="min-h-[40px] rounded-xl bg-white/10 text-white text-xs font-bold cursor-pointer"
                     >
-                      <MessageCircleHeart className="w-4 h-4" />
-                      <span>رسالة خاصة 💎</span>
+                      عرض الملف الشخصي
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGiftInitialTargets([seatActionTarget.userId!]);
+                        setSeatActionTarget(null);
+                        setShowGiftModal(true);
+                      }}
+                      className="min-h-[40px] rounded-xl gold-btn text-xs font-extrabold cursor-pointer"
+                    >
+                      إرسال هدية 🎁
+                    </button>
+                  </div>
+
+                  {canManage && seatActionTarget.userId !== room.hostId && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void runAdminAction({
+                            type: 'mute_user',
+                            targetUserId: seatActionTarget.userId!,
+                            isMuted: !seatActionTarget.isMuted,
+                          });
+                          setSeatActionTarget(null);
+                        }}
+                        className="min-h-[38px] rounded-xl bg-amber-500/20 border border-amber-400/40 text-[11px] font-bold text-[#FCE9A6] cursor-pointer"
+                      >
+                        {seatActionTarget.isMuted ? 'فك كتمه' : 'كتم مايكه'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void runAdminAction({
+                            type: 'kick_seat',
+                            targetUserId: seatActionTarget.userId!,
+                          });
+                          setSeatActionTarget(null);
+                        }}
+                        className="min-h-[38px] rounded-xl bg-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
+                      >
+                        إنزال من المايك
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void runAdminAction({
+                            type: 'toggle_moderator',
+                            targetUserId: seatActionTarget.userId!,
+                            targetName: seatActionTarget.displayName || undefined,
+                          });
+                          setSeatActionTarget(null);
+                        }}
+                        className="min-h-[38px] rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-[11px] font-bold text-emerald-200 cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Shield className="w-3 h-3" />
+                        <span>مشرف</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void runAdminAction({
+                            type: 'kick_room',
+                            targetUserId: seatActionTarget.userId!,
+                            targetName: seatActionTarget.displayName || undefined,
+                          });
+                          setSeatActionTarget(null);
+                        }}
+                        className="min-h-[38px] rounded-xl bg-rose-600/30 border border-rose-400/50 text-[11px] font-bold text-rose-200 cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Ban className="w-3 h-3" />
+                        <span>طرد</span>
+                      </button>
+                    </div>
                   )}
                 </div>
-
-                {giftTab === 'lucky' && (
-                  <div className="rounded-2xl border border-[#F3D37A]/35 bg-gradient-to-r from-[#2B1F09]/70 via-[#12172E]/85 to-[#2B1F09]/70 px-3.5 py-2.5 text-xs text-[#FCE9A6] flex items-center justify-between gap-2">
-                    <span>
-                      🎰 تمنحك هدايا الحظ مضاعفات عشوائية فورية في رصيدك من ×1 حتى ×10!
-                    </span>
-                    <span className="font-mono-num font-extrabold text-emerald-300 shrink-0">
-                      حتى ×10
-                    </span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[44vh] overflow-y-auto no-scrollbar pr-0.5">
-                  {(giftTab === 'lucky' ? luckyGifts : fixedGifts).map((gift) => {
-                    const affordable = (user?.coins ?? 0) >= gift.coinsCost;
-                    return (
-                      <button
-                        key={gift.id}
-                        type="button"
-                        disabled={sendingGift}
-                        onClick={() => handleSendGift(gift.id)}
-                        className={`royal-glass royal-glass-hover rounded-2xl p-3 flex flex-col items-center text-center gap-1.5 cursor-pointer transition disabled:opacity-50 ${
-                          gift.tier === 'imperial'
-                            ? 'border-[#FCE9A6]/45 bg-gradient-to-b from-[#2A1E08]/40 to-[#070913]/85'
-                            : gift.tier === 'royal'
-                            ? 'border-[#D4AF37]/35'
-                            : ''
-                        } ${!affordable ? 'opacity-70' : ''}`}
-                      >
-                        <span className="text-3xl">{gift.glyph}</span>
-                        <span className="text-xs font-bold text-white leading-snug line-clamp-1">
-                          {gift.name}
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          {giftTab === 'lucky'
-                            ? 'مضاعف عشوائي ×1–×10'
-                            : gift.tier === 'imperial'
-                            ? 'إمبراطوري'
-                            : gift.tier === 'royal'
-                            ? 'ملكي'
-                            : 'كلاسيكي'}
-                        </span>
-                        <span className="text-xs font-mono-num text-[#FCE9A6] font-extrabold">
-                          {gift.coinsCost.toLocaleString('en-US')} كوينز
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            ) : (
-              <div className="max-h-[48vh] overflow-y-auto no-scrollbar space-y-2.5">
-                {room.messages.filter((m) => m.type === 'gift').length === 0 ? (
-                  <p className="text-xs sm:text-sm text-slate-400 text-center py-8">
-                    لم تُرسل هدايا في هذه الجلسة بعد — افتتح الاحتفال بهدية من متجر المجلس!
-                  </p>
-                ) : (
-                  room.messages
-                    .filter((m) => m.type === 'gift')
-                    .slice()
-                    .reverse()
-                    .map((gm) => (
-                      <div
-                        key={gm.id}
-                        className="rounded-2xl border border-[#D4AF37]/30 bg-[#070913]/75 px-4 py-3 text-xs sm:text-sm text-[#FCE9A6]"
-                      >
-                        {gm.text}
-                      </div>
-                    ))
-                )}
-              </div>
-            )}
+              )}
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
+      {/* LUXURY 3D GIFT DRAWER */}
+      <AnimatePresence>
+        {showGiftModal && (
+          <RoomGiftDrawer
+            room={room}
+            gifts={gifts}
+            userCoins={user?.coins ?? 0}
+            currentUserId={user?.id}
+            initialTargets={giftInitialTargets}
+            sending={sendingGift}
+            onSend={handleSendGiftBatch}
+            onOpenPM={(uid) => {
+              setShowGiftModal(false);
+              minimizeRoom();
+              navigate(`/messages?to=${uid}`);
+            }}
+            onClose={() => setShowGiftModal(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* LUCKY WHEEL MODAL */}
       {showWheelModal && (
         <LuckyWheelModal
           roomId={room.id}
@@ -1172,11 +1486,12 @@ export const RoomPage: React.FC = () => {
           onClose={() => setShowWheelModal(false)}
           onSpinComplete={(nextUser, nextRoom) => {
             updateLocalUser(nextUser);
-            setRoom(nextRoom);
+            void updateRoomFromWheel(nextRoom, wheelCost);
           }}
         />
       )}
 
+      {/* FLOATING GAMES OVERLAY (Keeps audio & mic live!) */}
       <AnimatePresence>
         {showGamesOverlay && (
           <RoomGamesModal
@@ -1184,8 +1499,62 @@ export const RoomPage: React.FC = () => {
             mySeat={mySeat}
             micActive={micActive}
             userCoins={user?.coins ?? 0}
-            onToggleMute={handleToggleMute}
-            onClose={() => setShowGamesOverlay(false)}
+            onToggleMute={() => void handleToggleMute()}
+            onClose={() => {
+              setShowGamesOverlay(false);
+              void addPlayVolume(100);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* AGENCY SETTINGS MODAL */}
+      {showSettingsModal && canManage && (
+        <RoomSettingsModal
+          room={room}
+          extras={extras}
+          presenceMembers={presenceMembers}
+          isOwnerOrAdmin={isOwnerOrAdmin}
+          onUpdateSettings={updateSettings}
+          onAdminAction={runAdminAction}
+          onClose={() => setShowSettingsModal(false)}
+        />
+      )}
+
+      {/* ROOM MUSIC PLAYER MODAL */}
+      {showMusicModal && (
+        <RoomMusicModal
+          isOnMic={Boolean(mySeat)}
+          musicState={musicState}
+          musicVolume={musicVolume}
+          musicMutedLocally={musicMutedLocally}
+          onVolumeChange={(v) => {
+            setMusicVolume(v);
+            if (v > 0 && musicMutedLocally) setMusicMutedLocally(false);
+          }}
+          onToggleLocalMute={() => setMusicMutedLocally(!musicMutedLocally)}
+          onPlayPreset={playPresetMusic}
+          onPlayUploaded={playUploadedMusic}
+          onTogglePlayPause={toggleMusicPlayPause}
+          onStopMusic={stopRoomMusic}
+          onClimbMic={() => {
+            const free = room.seats.find((s) => !s.userId && !s.isLocked);
+            if (free) void handleSeatClick(free.seatIndex);
+          }}
+          onClose={() => setShowMusicModal(false)}
+        />
+      )}
+
+      {/* EXIT / KEEP MINIMIZED MODAL */}
+      <AnimatePresence>
+        {showExitModal && (
+          <RoomExitModal
+            roomTitle={room.title}
+            roomAvatar={room.hostAvatar}
+            isOnMic={Boolean(mySeat)}
+            onKeepMinimized={handleKeepMinimized}
+            onLeaveRoom={() => void handleConfirmLeave()}
+            onCancel={() => setShowExitModal(false)}
           />
         )}
       </AnimatePresence>

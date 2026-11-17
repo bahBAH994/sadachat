@@ -6,6 +6,9 @@ import emblemImg from '../assets/images/sada_app_emblem_1794789005281.jpg';
 
 export const ASSET_MAP: Record<string, string> = {
   royal_stage: royalStageImg,
+  dragon_dark: royalStageImg,
+  emerald_palace: royalStageImg,
+  crimson_throne: competitionCrestImg,
   competition_crest: competitionCrestImg,
   host_male: hostMaleImg,
   host_female: hostFemaleImg,

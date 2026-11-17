@@ -171,7 +171,7 @@ const SLOT_MACHINES: SlotMachineConfig[] = [
   {
     id: 'crown_jewels',
     title: 'جواهر التاج',
-    subtitle: 'خزنة الزمرد والياقوت (4×3) + ربح الأعمدة الملكية الكاملة',
+    subtitle: 'متجر الزمرد والياقوت (4×3) + ربح الأعمدة الملكية الكاملة',
     badge: '4×3 إمبراطوري',
     cols: 4,
     rows: 3,

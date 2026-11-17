@@ -12,6 +12,8 @@ export interface User {
   bio: string;
   avatarUrl: string;
   gender?: 'female' | 'male';
+  age?: number;
+  country?: string;
   femaleVoiceStatus?: 'none' | 'unverified' | 'pending' | 'verified' | 'rejected';
   femaleVerified?: boolean;
   femaleVerifiedBadge?: string | null;
@@ -101,6 +103,35 @@ export interface LuckyWheelResult {
   user: User;
   room: Room;
   message: RoomMessage;
+}
+
+export interface RoomMusicState {
+  isPlaying: boolean;
+  trackName: string;
+  djUserId: string;
+  djName: string;
+  sourceType: 'preset' | 'file';
+  presetId?: string;
+  audioDataUrl?: string | null;
+  updatedAt: number;
+}
+
+export interface RoomGifterEntry {
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+  frameId?: string;
+  totalCoins: number;
+}
+
+export interface RoomExtrasConfig {
+  deputyIds: string[];
+  moderatorIds: string[];
+  kickedUserIds: string[];
+  mutedUserIds: string[];
+  gifters: Record<string, RoomGifterEntry>;
+  playVolumeCoins: number;
+  musicState?: RoomMusicState | null;
 }
 
 export interface Room {
@@ -214,6 +245,8 @@ export interface PrivateConversationPeer {
   frameId: string;
   level: number;
   gender?: 'female' | 'male';
+  age?: number;
+  country?: string;
   femaleVerified?: boolean;
   femaleVerifiedBadge?: string | null;
   isHost?: boolean;
@@ -305,6 +338,9 @@ export interface PlatformSettings {
   luckyGiftMultipliers: LuckyGiftMultiplierSetting[];
   rechargeRewardTiers: RechargeRewardTierSetting[];
   gameRates?: GameWinRatesSettings;
+  roomConfigs?: Record<string, RoomExtrasConfig>;
+  userFollows?: Record<string, string[]>;
+  userMeta?: Record<string, { age?: number; country?: string }>;
 }
 
 export interface CulturalQuestionAdminItem {
@@ -361,6 +397,19 @@ export interface FrameItem {
   minLevel: number;
   ringClass: string;
   isTemporary?: boolean;
+}
+
+export interface Store3DItem {
+  id: string;
+  name: string;
+  subtitle: string;
+  kind: 'frame_and_entry' | 'frame';
+  minRechargeCoins: number;
+  badgeGlyph: string;
+  entryId?: 'entry_car_15d' | 'entry_legendary_30d';
+  entryName?: string;
+  previewGradient: string;
+  ringClass: string;
 }
 
 export interface UsdtDepositRequest {

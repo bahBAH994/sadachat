@@ -13,6 +13,8 @@ interface AuthPayload {
   password: string;
   displayName?: string;
   gender?: 'female' | 'male';
+  age?: number;
+  country?: string;
   referralCode?: string;
   mode: 'login' | 'register';
 }
@@ -21,6 +23,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   deviceUuid: string;
+  onlineUserIds: string[];
   loginOrRegister: (payload: AuthPayload) => Promise<{ user: User; redirectTo: string }>;
   refreshUser: () => Promise<void>;
   updateLocalUser: (user: User) => void;
@@ -33,6 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [deviceUuid] = useState(() => getOrCreateDeviceUuid());
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
 
   const refreshUser = useCallback(async () => {
     try {
@@ -86,6 +90,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user?.id, refreshUser]);
 
+  // Global Supabase Realtime Online Presence + last_seen heartbeat
+  useEffect(() => {
+    if (!user?.id) {
+      setOnlineUserIds([]);
+      return;
+    }
+
+    const onlineChannel = supabase.channel('sada-global-online', {
+      config: { presence: { key: user.id } },
+    });
+
+    const syncOnline = () => {
+      const state = onlineChannel.presenceState<{ userId?: string }>();
+      const ids = new Set<string>();
+      Object.entries(state).forEach(([key, entries]) => {
+        if (key) ids.add(key);
+        entries.forEach((entry) => {
+          if (entry?.userId) ids.add(String(entry.userId));
+        });
+      });
+      setOnlineUserIds(Array.from(ids));
+    };
+
+    onlineChannel
+      .on('presence', { event: 'sync' }, syncOnline)
+      .on('presence', { event: 'join' }, syncOnline)
+      .on('presence', { event: 'leave' }, syncOnline)
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void onlineChannel.track({
+            userId: user.id,
+            gender: user.gender || 'male',
+            onlineAt: Date.now(),
+          });
+        }
+      });
+
+    const updateHeartbeat = () => {
+      void supabase
+        .from('sada_users')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('id', user.id);
+    };
+    updateHeartbeat();
+    const hbInterval = window.setInterval(updateHeartbeat, 60_000);
+
+    return () => {
+      window.clearInterval(hbInterval);
+      void onlineChannel.untrack().catch(() => {});
+      void supabase.removeChannel(onlineChannel);
+    };
+  }, [user?.id, user?.gender]);
+
   const loginOrRegister = useCallback(
     async (payload: AuthPayload) => {
       const result = await loginOrRegisterWithSupabase({
@@ -105,6 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // ignore
     }
     setUser(null);
+    setOnlineUserIds([]);
   }, []);
 
   const updateLocalUser = useCallback((next: User) => {
@@ -117,6 +175,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         loading,
         deviceUuid,
+        onlineUserIds,
         loginOrRegister,
         refreshUser,
         updateLocalUser,

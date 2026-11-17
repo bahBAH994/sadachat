@@ -349,6 +349,14 @@ export async function getPlatformState(): Promise<PlatformStateDoc> {
         ...defs.gameRates!,
         ...(rawSettings.gameRates || {}),
       },
+      userFollows:
+        rawSettings.userFollows && typeof rawSettings.userFollows === 'object'
+          ? rawSettings.userFollows
+          : {},
+      userMeta:
+        rawSettings.userMeta && typeof rawSettings.userMeta === 'object'
+          ? rawSettings.userMeta
+          : {},
     },
     quizSessions: (data?.quiz_sessions as Record<string, QuizSessionRecord>) || {},
     votedKeys: (data?.voted_keys as Record<string, boolean>) || {},

@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useMiniProfile } from '../context/MiniProfileContext';
 import { resolveAsset } from '../lib/assets';
 import {
   answerCulturalQuizInSupabase,
@@ -62,6 +63,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
   initialTab = 'cultural',
 }) => {
   const { user, updateLocalUser } = useAuth();
+  const { openMiniProfile } = useMiniProfile();
   const [activeTab, setActiveTab] = useState<CompTab>(initialTab);
 
   // Voice competitions state
@@ -934,13 +936,30 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                                   alt={c.displayName}
                                   size="md"
                                   frameId={idx === 0 ? 'frame_imperial' : 'frame_obsidian'}
+                                  onClick={() =>
+                                    openMiniProfile(c.userId, {
+                                      displayName: c.displayName,
+                                      avatarUrl: c.avatarUrl,
+                                      level: c.level,
+                                    })
+                                  }
                                 />
 
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-sm font-bold text-white truncate">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openMiniProfile(c.userId, {
+                                          displayName: c.displayName,
+                                          avatarUrl: c.avatarUrl,
+                                          level: c.level,
+                                        })
+                                      }
+                                      className="text-sm font-bold text-white hover:text-[#FCE9A6] truncate cursor-pointer text-right"
+                                    >
                                       {c.displayName}
-                                    </span>
+                                    </button>
                                     {isWinner && (
                                       <span className="inline-flex items-center gap-1 text-xs font-bold text-[#FCE9A6]">
                                         <Crown className="w-3.5 h-3.5" />

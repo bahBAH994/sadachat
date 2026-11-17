@@ -327,7 +327,7 @@ export const WalletPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
-            الخزنة الملكية وبوابة USDT (TRC20)
+            محفظة الشحن والسحب USDT (TRC20)
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 mt-1">
             شحن فوري عبر USDT TRC20 حصراً مع إطارات ودخوليات مؤقتة وسحب أرباح الفائزين والوكلاء والمضيفين

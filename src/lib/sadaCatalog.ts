@@ -7,6 +7,7 @@ import type {
   RechargeRewardTierSetting,
   ReferralWheelSegment,
   RoomSeat,
+  Store3DItem,
   User,
 } from '../types';
 
@@ -16,10 +17,23 @@ export const USDT_TO_COINS_RATE = 1000;
 export const DIAMONDS_PER_USDT = 100;
 export const COINS_PER_USDT_WITHDRAW = 1000;
 export const MIN_WITHDRAW_USDT = 5;
-export const PM_MESSAGE_COST = 150;
-export const PM_REPLY_DIAMONDS = 115;
+export const PM_MESSAGE_COST = 50;
+export const PM_REPLY_DIAMONDS = 38;
 export const LUCKY_WHEEL_COST = 200;
 export const INITIAL_APP_PRIZE_POOL_COINS = 250000;
+
+export const ARAB_COUNTRIES: Array<{ code: string; label: string; flag: string }> = [
+  { code: 'SA', label: 'السعودية', flag: '🇸🇦' },
+  { code: 'EG', label: 'مصر', flag: '🇪🇬' },
+  { code: 'AE', label: 'الإمارات', flag: '🇦🇪' },
+  { code: 'SY', label: 'سوريا', flag: '🇸🇾' },
+  { code: 'IQ', label: 'العراق', flag: '🇮🇶' },
+  { code: 'JO', label: 'الأردن', flag: '🇯🇴' },
+  { code: 'KW', label: 'الكويت', flag: '🇰🇼' },
+  { code: 'MA', label: 'المغرب', flag: '🇲🇦' },
+  { code: 'LB', label: 'لبنان', flag: '🇱🇧' },
+  { code: 'DZ', label: 'الجزائر', flag: '🇩🇿' },
+];
 
 export interface CulturalQuestionItem {
   id: string;
@@ -49,6 +63,108 @@ export function genId(prefix: string): string {
       : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   return `${prefix}_${rand}`;
 }
+
+export function formatShortNumericId(userId: string): string {
+  let hash = 5381;
+  for (let i = 0; i < userId.length; i++) {
+    hash = (hash * 33) ^ userId.charCodeAt(i);
+  }
+  const positive = Math.abs(hash) % 900000000;
+  return String(100000000 + positive);
+}
+
+export function formatCompactMetric(value: number, upperCaseK = false): string {
+  const num = Math.max(0, Number(value || 0));
+  if (num === 0) return '0';
+  if (num >= 1_000_000) {
+    return `${(num / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (num >= 1_000) {
+    return `${(num / 1_000).toFixed(1).replace(/\.0$/, '')}${upperCaseK ? 'K' : 'k'}`;
+  }
+  return String(Math.round(num));
+}
+
+export const ROOM_BACKGROUNDS: Array<{
+  id: string;
+  name: string;
+  description: string;
+  previewClass: string;
+}> = [
+  {
+    id: 'dragon_dark',
+    name: 'التنين الذهبي الداكن',
+    description: 'الخلفية الملكية الافتراضية بتوهج التنين الذهبي',
+    previewClass: 'bg-gradient-to-b from-[#17120A] via-[#2A1C08] to-[#080604]',
+  },
+  {
+    id: 'royal_stage',
+    name: 'الديوان الإمبراطوري',
+    description: 'قصر عربي فاخر بإضاءة ذهبية دافئة',
+    previewClass: 'bg-gradient-to-b from-[#161B33] via-[#2A1F0A] to-[#070913]',
+  },
+  {
+    id: 'competition_crest',
+    name: 'ساحة المسابقات الذهبية',
+    description: 'إطلالة الساحة الملكية للكبار',
+    previewClass: 'bg-gradient-to-b from-[#1F1235] via-[#2E1E0B] to-[#090B16]',
+  },
+  {
+    id: 'emerald_palace',
+    name: 'الزمرد الليلي',
+    description: 'أجواء زمردية عميقة مع بريق ذهبي هادئ',
+    previewClass: 'bg-gradient-to-b from-[#06221A] via-[#0B1922] to-[#050A0E]',
+  },
+  {
+    id: 'crimson_throne',
+    name: 'العرش الياقوتي',
+    description: 'فخامة عنابية داكنة مع هالة ذهبية',
+    previewClass: 'bg-gradient-to-b from-[#2A0B14] via-[#1B0C1C] to-[#09060A]',
+  },
+];
+
+export const ROOM_MUSIC_PRESETS: Array<{
+  id: string;
+  name: string;
+  bpm: number;
+  notes: number[];
+}> = [
+  {
+    id: 'preset_dragon_gold',
+    name: 'سمفونية التنين الذهبي',
+    bpm: 96,
+    notes: [220, 261.63, 329.63, 392, 329.63, 293.66, 261.63, 246.94],
+  },
+  {
+    id: 'preset_arabian_oud',
+    name: 'أنغام السمر الملكية',
+    bpm: 84,
+    notes: [293.66, 311.13, 369.99, 392, 440, 392, 369.99, 311.13],
+  },
+  {
+    id: 'preset_chill_lounge',
+    name: 'موسيقى القصر الهادئة',
+    bpm: 76,
+    notes: [196, 246.94, 293.66, 392, 349.23, 293.66, 246.94, 220],
+  },
+];
+
+export const ROOM_REACTION_EMOJIS: Array<{
+  id: string;
+  label: string;
+  emoji: string;
+  isDice?: boolean;
+}> = [
+  { id: 'laugh', label: 'ضحك', emoji: '😂' },
+  { id: 'love', label: 'حب', emoji: '😍' },
+  { id: 'clap', label: 'تصفيق', emoji: '👏' },
+  { id: 'fire', label: 'نار', emoji: '🔥' },
+  { id: 'shock', label: 'صدمة', emoji: '😱' },
+  { id: 'crown', label: 'تاج', emoji: '👑' },
+  { id: 'salute', label: 'تحية', emoji: '🫡' },
+  { id: 'kiss', label: 'بوسة', emoji: '😘' },
+  { id: 'dice', label: 'نرد عشوائي', emoji: '🎲', isDice: true },
+];
 
 export function computeLevelFromXp(xp: number): number {
   return Math.max(1, Math.floor(Math.sqrt(Math.max(0, xp) / 120)) + 1);
@@ -84,29 +200,29 @@ const FIXED_GIFT_RAW: Array<{
   tier: 'classic' | 'royal' | 'imperial';
   glyph: string;
 }> = [
-  { id: 'gift_01', name: 'وردة الديوان الملكية', coinsCost: 2000, tier: 'classic', glyph: '🌹' },
-  { id: 'gift_02', name: 'فنجان القهوة العربية', coinsCost: 3000, tier: 'classic', glyph: '☕' },
-  { id: 'gift_03', name: 'مبخرة العود الفاخرة', coinsCost: 4500, tier: 'classic', glyph: '🪔' },
-  { id: 'gift_04', name: 'وسام الصوت العذب', coinsCost: 6000, tier: 'classic', glyph: '🎙️' },
-  { id: 'gift_05', name: 'قنديل السمر الذهبي', coinsCost: 8000, tier: 'classic', glyph: '🏮' },
-  { id: 'gift_06', name: 'مسبحة الكهرمان الملكي', coinsCost: 10000, tier: 'classic', glyph: '📿' },
-  { id: 'gift_07', name: 'باقة الياسمين الدمشقي', coinsCost: 12500, tier: 'classic', glyph: '💐' },
+  { id: 'gift_01', name: 'وردة متوهجة', coinsCost: 500, tier: 'classic', glyph: '🌹' },
+  { id: 'gift_02', name: 'قلب ماسي', coinsCost: 1500, tier: 'classic', glyph: '💖' },
+  { id: 'gift_03', name: 'تاج ملكي', coinsCost: 5000, tier: 'royal', glyph: '👑' },
+  { id: 'gift_04', name: 'صقر ذهبي', coinsCost: 12000, tier: 'royal', glyph: '🦅' },
+  { id: 'gift_05', name: 'سيارة رياضية', coinsCost: 30000, tier: 'royal', glyph: '🏎️' },
+  { id: 'gift_06', name: 'يخت ملكي', coinsCost: 60000, tier: 'imperial', glyph: '🛥️' },
+  { id: 'gift_07', name: 'قصر الأحلام', coinsCost: 120000, tier: 'imperial', glyph: '🏰' },
   { id: 'gift_08', name: 'عود الطرب الشرقي', coinsCost: 15000, tier: 'classic', glyph: '🪕' },
   { id: 'gift_09', name: 'خنجر الفخر المذهّب', coinsCost: 18000, tier: 'classic', glyph: '🗡️' },
   { id: 'gift_10', name: 'ساعة القصر الليلية', coinsCost: 21000, tier: 'classic', glyph: '⌚' },
   { id: 'gift_11', name: 'بوابة الأندلس المضيئة', coinsCost: 25000, tier: 'royal', glyph: '🕌' },
-  { id: 'gift_12', name: 'كأس النخبة الماسي', coinsCost: 30000, tier: 'royal', glyph: '🏆' },
-  { id: 'gift_13', name: 'تاج الأمراء المرصّع', coinsCost: 35000, tier: 'royal', glyph: '👑' },
+  { id: 'gift_12', name: 'كأس النخبة الماسي', coinsCost: 35000, tier: 'royal', glyph: '🏆' },
+  { id: 'gift_13', name: 'فنجان القهوة العربية', coinsCost: 2000, tier: 'classic', glyph: '☕' },
   { id: 'gift_14', name: 'مهر الأصالة العربي', coinsCost: 40000, tier: 'royal', glyph: '🐎' },
-  { id: 'gift_15', name: 'صقر الصحراء الذهبي', coinsCost: 45000, tier: 'royal', glyph: '🦅' },
+  { id: 'gift_15', name: 'مبخرة العود الفاخرة', coinsCost: 3500, tier: 'classic', glyph: '🪔' },
   { id: 'gift_16', name: 'عقد اللؤلؤ الخليجي', coinsCost: 52000, tier: 'royal', glyph: '🦪' },
-  { id: 'gift_17', name: 'سيف العز الدمشقي', coinsCost: 60000, tier: 'royal', glyph: '⚔️' },
-  { id: 'gift_18', name: 'يخت الخليج الملكي', coinsCost: 68000, tier: 'royal', glyph: '🛥️' },
+  { id: 'gift_17', name: 'سيف العز الدمشقي', coinsCost: 65000, tier: 'royal', glyph: '⚔️' },
+  { id: 'gift_18', name: 'قنديل السمر الذهبي', coinsCost: 8000, tier: 'classic', glyph: '🏮' },
   { id: 'gift_19', name: 'شعار المجد الذهبي', coinsCost: 76000, tier: 'royal', glyph: '⚜️' },
   { id: 'gift_20', name: 'سيارة القصر الفارهة', coinsCost: 85000, tier: 'royal', glyph: '🚘' },
   { id: 'gift_21', name: 'جوهرة الياقوت الأزرق', coinsCost: 95000, tier: 'imperial', glyph: '💠' },
   { id: 'gift_22', name: 'مروحية كبار الشخصيات', coinsCost: 105000, tier: 'imperial', glyph: '🚁' },
-  { id: 'gift_23', name: 'قصر الرمال الذهبي', coinsCost: 115000, tier: 'imperial', glyph: '🏰' },
+  { id: 'gift_23', name: 'وسام الصوت العذب', coinsCost: 6000, tier: 'classic', glyph: '🎙️' },
   { id: 'gift_24', name: 'طائرة صَدَى الخاصة', coinsCost: 128000, tier: 'imperial', glyph: '✈️' },
   { id: 'gift_25', name: 'نجم الثريا الساطع', coinsCost: 140000, tier: 'imperial', glyph: '🌟' },
   { id: 'gift_26', name: 'هلال السلاطين الماسي', coinsCost: 155000, tier: 'imperial', glyph: '🌙' },
@@ -137,12 +253,12 @@ const LUCKY_GIFT_RAW: Array<{
   { id: 'lucky_12', name: 'زهرة القمر المتلألئة', coinsCost: 3500, tier: 'royal', glyph: '🌺' },
   { id: 'lucky_13', name: 'بوصلة الكنز العربي', coinsCost: 4200, tier: 'royal', glyph: '🧭' },
   { id: 'lucky_14', name: 'صندوق المفاجآت الملكي', coinsCost: 5000, tier: 'royal', glyph: '🎁' },
-  { id: 'lucky_15', name: 'مفتاح خزنة السلاطين', coinsCost: 5800, tier: 'royal', glyph: '🗝️' },
+  { id: 'lucky_15', name: 'مفتاح متجر السلاطين', coinsCost: 5800, tier: 'royal', glyph: '🗝️' },
   { id: 'lucky_16', name: 'نيزك الكوينز المضاعف', coinsCost: 6500, tier: 'imperial', glyph: '☄️' },
   { id: 'lucky_17', name: 'طاووس الحظ الإمبراطوري', coinsCost: 7500, tier: 'imperial', glyph: '🦚' },
   { id: 'lucky_18', name: 'بركان الذهب المتوهج', coinsCost: 8500, tier: 'imperial', glyph: '🌋' },
   { id: 'lucky_19', name: 'كرة الحظ الإمبراطورية', coinsCost: 9200, tier: 'imperial', glyph: '🪩' },
-  { id: 'lucky_20', name: 'خزنة الحظ العظمى', coinsCost: 10000, tier: 'imperial', glyph: '👑' },
+  { id: 'lucky_20', name: 'صندوق الحظ الأعظم', coinsCost: 10000, tier: 'imperial', glyph: '👑' },
 ];
 
 export const LUCKY_GIFT_MULTIPLIERS: LuckyGiftMultiplierSetting[] = [
@@ -242,6 +358,87 @@ export const FRAME_CATALOG: FrameItem[] = [
     minLevel: 1,
     ringClass: 'ring-[4px] ring-amber-300 shadow-[0_0_36px_rgba(251,191,36,0.95)]',
     isTemporary: true,
+  },
+  {
+    id: 'frame_car_luxury',
+    name: 'السيارة الفارهة 3D',
+    description: 'إطار ثلاثي الأبعاد متحرك + دخولية موكب السيارة عند شحن 1,000 كوينز.',
+    priceCoins: 0,
+    minLevel: 1,
+    ringClass: 'ring-[3px] ring-emerald-400 shadow-[0_0_26px_rgba(16,185,129,0.75)]',
+  },
+  {
+    id: 'frame_winged_falcon',
+    name: 'الصقر المجنح 3D',
+    description: 'هالة الصقر الذهبي المتحركة عند شحن 5,000 كوينز.',
+    priceCoins: 0,
+    minLevel: 1,
+    ringClass: 'ring-[3px] ring-amber-400 animate-falcon-aura',
+  },
+  {
+    id: 'frame_diamond_crown',
+    name: 'التاج الألماسي 3D',
+    description: 'تاج ألماسي دوّار ثلاثي الأبعاد + دخولية ملكية عند شحن 20,000 كوينز.',
+    priceCoins: 0,
+    minLevel: 1,
+    ringClass: 'ring-[3px] ring-sky-400 animate-diamond-aura',
+  },
+  {
+    id: 'frame_imperial_dragon',
+    name: 'التنين الإمبراطوري 3D',
+    description: 'أقوى إطار ودخولية ثلاثية الأبعاد متحركة عند شحن 50,000 كوينز.',
+    priceCoins: 0,
+    minLevel: 1,
+    ringClass: 'ring-[4px] ring-amber-300 animate-dragon-aura',
+  },
+];
+
+export const STORE_3D_ITEMS: Store3DItem[] = [
+  {
+    id: 'frame_car_luxury',
+    name: 'السيارة الفارهة 3D',
+    subtitle: 'إطار ثلاثي الأبعاد متحرك + دخولية موكب السيارة الفارهة داخل الوكالة',
+    kind: 'frame_and_entry',
+    minRechargeCoins: 1000,
+    badgeGlyph: '🏎️',
+    entryId: 'entry_car_15d',
+    entryName: 'دخولية السيارة الفارهة 3D',
+    previewGradient: 'from-emerald-950 via-teal-900 to-slate-950',
+    ringClass: 'ring-[3px] ring-emerald-400 shadow-[0_0_26px_rgba(16,185,129,0.75)]',
+  },
+  {
+    id: 'frame_winged_falcon',
+    name: 'الصقر المجنح 3D',
+    subtitle: 'هالة الصقر الذهبي المجنح بتوهج ملكي متواصل على مقاعد البث',
+    kind: 'frame',
+    minRechargeCoins: 5000,
+    badgeGlyph: '🦅',
+    previewGradient: 'from-amber-950 via-stone-900 to-slate-950',
+    ringClass: 'ring-[3px] ring-amber-400 animate-falcon-aura',
+  },
+  {
+    id: 'frame_diamond_crown',
+    name: 'التاج الألماسي 3D',
+    subtitle: 'إطار التاج الألماسي الدوّار + دخولية ملكية متوهجة عند دخول الغرف',
+    kind: 'frame_and_entry',
+    minRechargeCoins: 20000,
+    badgeGlyph: '👑',
+    entryId: 'entry_legendary_30d',
+    entryName: 'دخولية التاج الألماسي 3D',
+    previewGradient: 'from-indigo-950 via-sky-950 to-slate-950',
+    ringClass: 'ring-[3px] ring-sky-400 animate-diamond-aura',
+  },
+  {
+    id: 'frame_imperial_dragon',
+    name: 'التنين الإمبراطوري 3D',
+    subtitle: 'أيقونة الفخامة العليا: تنين ناري متحرك ثلاثي الأبعاد + دخولية إمبراطورية',
+    kind: 'frame_and_entry',
+    minRechargeCoins: 50000,
+    badgeGlyph: '🐉',
+    entryId: 'entry_legendary_30d',
+    entryName: 'دخولية التنين الإمبراطوري 3D',
+    previewGradient: 'from-rose-950 via-amber-950 to-slate-950',
+    ringClass: 'ring-[4px] ring-amber-300 animate-dragon-aura',
   },
 ];
 
@@ -582,8 +779,9 @@ export function createDefaultPlatformSettings(): PlatformSettings {
 }
 
 export function makeEmptySeats(count: number, host?: User): RoomSeat[] {
+  const safeCount = Math.min(30, Math.max(5, count));
   const seats: RoomSeat[] = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < safeCount; i++) {
     if (i === 0 && host) {
       seats.push({
         seatIndex: 0,

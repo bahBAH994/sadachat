@@ -1,15 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import {
-  Building2,
-  Gamepad2,
-  MessageCircleHeart,
-  Mic2,
-  ShieldCheck,
-  Trophy,
-  UserCircle2,
-  Wallet,
-} from 'lucide-react';
+import { Compass, Home, MessageCircle, UserCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export const BottomNav: React.FC = () => {
@@ -20,22 +11,18 @@ export const BottomNav: React.FC = () => {
   if (location.pathname.startsWith('/room/')) return null;
 
   const items = [
-    { to: '/', label: 'المجالس', icon: Mic2 },
-    { to: '/competitions', label: 'المسابقات', icon: Trophy },
-    { to: '/games', label: 'مركز الألعاب', icon: Gamepad2 },
-    { to: '/messages', label: 'الرسائل', icon: MessageCircleHeart },
-    { to: '/agency', label: 'الوكالات', icon: Building2 },
-    { to: '/wallet', label: 'الخزنة', icon: Wallet },
-    { to: '/profile', label: 'حسابي', icon: UserCircle2 },
-    ...(user.is_admin ? [{ to: '/admin', label: 'الإدارة', icon: ShieldCheck }] : []),
+    { to: '/', label: 'حفلة', icon: Home },
+    { to: '/meet', label: 'لقاء', icon: Compass },
+    { to: '/messages', label: 'صندوق الوارد', icon: MessageCircle },
+    { to: '/profile', label: 'أنا', icon: UserCircle2 },
   ];
 
   return (
     <nav
       aria-label="التنقل الرئيسي"
-      className="fixed bottom-6 sm:bottom-4 left-2 right-2 z-40 pointer-events-none pb-safe"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200/80 shadow-[0_-6px_26px_rgba(15,23,42,0.08)] pt-1.5 pb-[max(env(safe-area-inset-bottom,0px),14px)] px-2"
     >
-      <div className="max-w-3xl mx-auto royal-glass rounded-2xl px-1.5 py-1.5 pointer-events-auto flex items-center justify-around gap-0.5 overflow-x-auto no-scrollbar shadow-[0_12px_40px_rgba(0,0,0,0.75)]">
+      <div className="max-w-xl mx-auto grid grid-cols-4 items-center gap-1">
         {items.map((item) => {
           const isActive =
             item.to === '/'
@@ -46,21 +33,24 @@ export const BottomNav: React.FC = () => {
             <Link
               key={item.to}
               to={item.to}
-              className={`relative flex flex-col items-center justify-center min-h-[44px] min-w-[44px] px-1.5 py-1 rounded-xl transition-all duration-200 whitespace-nowrap ${
-                isActive
-                  ? 'text-[#FCE9A6]'
-                  : 'text-slate-400 hover:text-slate-200'
+              className={`relative flex flex-col items-center justify-center min-h-[46px] py-1 rounded-2xl transition-all duration-150 ${
+                isActive ? 'text-emerald-600' : 'text-slate-400 hover:text-slate-700'
               }`}
             >
-              {isActive && (
-                <span className="absolute inset-0 rounded-xl bg-gradient-to-b from-[#D4AF37]/20 to-transparent border border-[#D4AF37]/30 shadow-[0_0_16px_rgba(212,175,55,0.28)]" />
-              )}
-              <Icon
-                className={`relative w-5 h-5 transition-transform duration-200 ${
-                  isActive ? 'scale-110 drop-shadow-[0_0_8px_rgba(243,211,122,0.8)]' : ''
+              <div
+                className={`w-9 h-8 rounded-xl flex items-center justify-center transition-all ${
+                  isActive
+                    ? 'bg-gradient-to-br from-[#22E568] to-[#10B981] text-white shadow-[0_4px_14px_rgba(16,185,129,0.45)]'
+                    : ''
                 }`}
-              />
-              <span className="relative text-[11px] font-semibold mt-0.5 leading-none">
+              >
+                <Icon className="w-5 h-5" />
+              </div>
+              <span
+                className={`text-[11px] mt-0.5 leading-none ${
+                  isActive ? 'font-extrabold text-emerald-700' : 'font-semibold'
+                }`}
+              >
                 {item.label}
               </span>
             </Link>

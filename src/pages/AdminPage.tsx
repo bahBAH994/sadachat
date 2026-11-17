@@ -217,7 +217,7 @@ export const AdminPage: React.FC = () => {
   const handleCloseRoom = async (roomId: string) => {
     try {
       await closeRoomInSupabase(roomId);
-      showOk('تم إغلاق المجلس الصوتي.');
+      showOk('تم إغلاق الوكالة الصوتية.');
       await loadOverview();
     } catch (err) {
       showErr(err, 'تعذّر إغلاق الغرفة.');
@@ -517,6 +517,26 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const handleQuickPmCostPreset = async (cost: number) => {
+    if (!settingsDraft) return;
+    setSavingSettings(true);
+    try {
+      const updated = {
+        ...settingsDraft,
+        pmMessageCost: cost,
+        pmReplyDiamonds: Math.round(cost * (settingsDraft.giftDiamondsRatio || 0.75)),
+      };
+      const saved = await savePlatformSettingsInSupabase(updated);
+      setSettingsDraft(saved);
+      showOk(`تم تعديل وحفظ سعر الرسالة الخاصة إلى ${cost} كوين فورياً!`);
+      await loadOverview();
+    } catch (err) {
+      showErr(err, 'تعذّر حفظ السعر السريع.');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   if (!user?.is_admin) {
     return (
       <div className="max-w-xl mx-auto p-8 text-center">
@@ -622,7 +642,7 @@ export const AdminPage: React.FC = () => {
             </div>
             <div className="royal-glass rounded-3xl p-5 space-y-1">
               <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>المجالس النشطة</span>
+                <span>الوكالات النشطة</span>
                 <Radio className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="text-2xl sm:text-3xl font-extrabold font-mono-num text-emerald-300">
@@ -702,7 +722,7 @@ export const AdminPage: React.FC = () => {
 
               <div className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                 <h2 className="text-base font-bold text-[#F3D37A]">
-                  إدارة المجالس الصوتية ({data.rooms.filter((r) => r.isActive).length})
+                  إدارة الوكالات الصوتية ({data.rooms.filter((r) => r.isActive).length})
                 </h2>
                 <div className="divide-y divide-[#D4AF37]/15">
                   {data.rooms
@@ -1527,7 +1547,7 @@ export const AdminPage: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-slate-300 mb-1">
-                        تكلفة الرسالة الخاصة المدفوعة (كوينز)
+                        تكلفة الرسالة الخاصة المدفوعة (كوينز) — قبل المتابعة المتبادلة
                       </label>
                       <input
                         type="number"
@@ -1542,6 +1562,24 @@ export const AdminPage: React.FC = () => {
                         dir="ltr"
                         className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-white font-mono-num text-left"
                       />
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] text-slate-400">تطبيق سريع بضغطة واحدة:</span>
+                        {[20, 50, 100].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            disabled={savingSettings}
+                            onClick={() => handleQuickPmCostPreset(preset)}
+                            className={`rounded-lg px-2.5 py-1 text-[11px] font-bold font-mono-num border cursor-pointer transition ${
+                              settingsDraft.pmMessageCost === preset
+                                ? 'bg-[#D4AF37] border-[#D4AF37] text-[#070913]'
+                                : 'bg-[#070913]/80 border-[#D4AF37]/30 text-[#FCE9A6] hover:bg-[#D4AF37]/15'
+                            }`}
+                          >
+                            {preset} كوين
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div>
                       <label className="block text-slate-300 mb-1">

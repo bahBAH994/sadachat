@@ -362,6 +362,106 @@ export async function spinReferralWheelInSupabase(
   };
 }
 
+// ======================== FOLLOW & DISCOVERY SYSTEM ========================
+
+export interface FollowRelationStatus {
+  iFollowThem: boolean;
+  theyFollowMe: boolean;
+  isMutual: boolean;
+}
+
+export function getFollowStatus(
+  userFollows: Record<string, string[]> | undefined,
+  userA: string,
+  userB: string
+): FollowRelationStatus {
+  const map = userFollows || {};
+  const listA = Array.isArray(map[userA]) ? map[userA] : [];
+  const listB = Array.isArray(map[userB]) ? map[userB] : [];
+  const iFollowThem = listA.includes(userB);
+  const theyFollowMe = listB.includes(userA);
+  return {
+    iFollowThem,
+    theyFollowMe,
+    isMutual: iFollowThem && theyFollowMe,
+  };
+}
+
+export async function toggleFollowUserInSupabase(
+  currentUserId: string,
+  targetUserId: string
+): Promise<FollowRelationStatus & { userFollows: Record<string, string[]> }> {
+  if (!currentUserId || !targetUserId || currentUserId === targetUserId) {
+    throw new Error('لا يمكن متابعة هذا الحساب.');
+  }
+  const state = await getPlatformState();
+  const currentFollows = { ...(state.settings.userFollows || {}) };
+  const myList = Array.isArray(currentFollows[currentUserId])
+    ? [...currentFollows[currentUserId]]
+    : [];
+
+  const idx = myList.indexOf(targetUserId);
+  if (idx >= 0) {
+    myList.splice(idx, 1);
+  } else {
+    myList.push(targetUserId);
+  }
+
+  currentFollows[currentUserId] = myList;
+  await savePlatformState({
+    settings: {
+      ...state.settings,
+      userFollows: currentFollows,
+    },
+  });
+
+  const relation = getFollowStatus(currentFollows, currentUserId, targetUserId);
+  return { ...relation, userFollows: currentFollows };
+}
+
+export async function getDiscoveryDirectoryFromSupabase(currentUserId: string): Promise<{
+  users: User[];
+  userFollows: Record<string, string[]>;
+  seatedUserIds: string[];
+}> {
+  const [{ data: usersRows }, { data: activeRooms }, state] = await Promise.all([
+    supabase
+      .from('sada_users')
+      .select('*')
+      .eq('is_banned', false)
+      .order('last_seen', { ascending: false }),
+    supabase.from('sada_rooms').select('seats').eq('is_active', true),
+    getPlatformState(),
+  ]);
+
+  const userMeta = state.settings.userMeta || {};
+  const seatedSet = new Set<string>();
+  for (const r of activeRooms || []) {
+    const seats = Array.isArray(r.seats) ? (r.seats as Array<{ userId?: string | null }>) : [];
+    for (const s of seats) {
+      if (s?.userId) seatedSet.add(String(s.userId));
+    }
+  }
+
+  const users = (usersRows || [])
+    .map(rowToUser)
+    .filter((u) => u.id !== currentUserId)
+    .map((u) => {
+      const meta = userMeta[u.id];
+      return {
+        ...u,
+        age: meta?.age,
+        country: meta?.country,
+      };
+    });
+
+  return {
+    users,
+    userFollows: state.settings.userFollows || {},
+    seatedUserIds: Array.from(seatedSet),
+  };
+}
+
 // ======================== PRIVATE MESSAGES & DIAMONDS ========================
 
 function isUserFemaleOrHost(u: User, hostedUserIds: Set<string>): boolean {
@@ -384,7 +484,14 @@ export async function getPmOverviewFromSupabase(user: User) {
     ]);
 
   const hostedUserIds = new Set((rooms || []).map((r) => String(r.host_id)));
-  const usersList = (allUsers || []).map(rowToUser);
+  const userMeta = state.settings.userMeta || {};
+  const userFollows = state.settings.userFollows || {};
+
+  const usersList = (allUsers || []).map(rowToUser).map((u) => ({
+    ...u,
+    age: userMeta[u.id]?.age,
+    country: userMeta[u.id]?.country,
+  }));
   const usersMap = new Map(usersList.map((u) => [u.id, u]));
 
   const convMap = new Map<string, PrivateMessage[]>();
@@ -413,6 +520,8 @@ export async function getPmOverviewFromSupabase(user: User) {
           frameId: peerUser.frameId,
           level: peerUser.level,
           gender: peerUser.gender || 'male',
+          age: peerUser.age,
+          country: peerUser.country,
           femaleVerified: Boolean(peerUser.femaleVerified),
           femaleVerifiedBadge: peerUser.femaleVerifiedBadge || null,
           isHost: isUserFemaleOrHost(peerUser, hostedUserIds),
@@ -431,8 +540,15 @@ export async function getPmOverviewFromSupabase(user: User) {
       return tb - ta;
     });
 
+  const oppositeGender = (user.gender || 'male') === 'male' ? 'female' : 'male';
   const recipients: PrivateConversationPeer[] = usersList
-    .filter((u) => u.id !== user.id && !u.is_banned && isUserFemaleOrHost(u, hostedUserIds))
+    .filter((u) => u.id !== user.id && !u.is_banned)
+    .sort((a, b) => {
+      const aOpp = (a.gender || 'male') === oppositeGender ? 1 : 0;
+      const bOpp = (b.gender || 'male') === oppositeGender ? 1 : 0;
+      if (aOpp !== bOpp) return bOpp - aOpp;
+      return new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime();
+    })
     .map((u) => ({
       id: u.id,
       displayName: u.displayName,
@@ -440,6 +556,8 @@ export async function getPmOverviewFromSupabase(user: User) {
       frameId: u.frameId,
       level: u.level,
       gender: u.gender || 'male',
+      age: u.age,
+      country: u.country,
       femaleVerified: Boolean(u.femaleVerified),
       femaleVerifiedBadge: u.femaleVerifiedBadge || null,
       isHost: isUserFemaleOrHost(u, hostedUserIds),
@@ -455,6 +573,7 @@ export async function getPmOverviewFromSupabase(user: User) {
   return {
     conversations,
     recipients,
+    userFollows,
     gifts: GIFT_CATALOG,
     pmMessageCost: state.settings.pmMessageCost,
     pmReplyDiamonds: state.settings.pmReplyDiamonds,
@@ -471,6 +590,8 @@ export async function sendPrivateMessageInSupabase(
   message: PrivateMessage;
   unlockedReplyDiamonds: number;
   giftDiamondsAwarded: number;
+  immediatePmDiamondsAwarded: number;
+  isMutualFollow: boolean;
   luckyMultiplier: number | null;
   luckyBonusCoins: number;
 }> {
@@ -487,9 +608,17 @@ export async function sendPrivateMessageInSupabase(
     throw new Error('المستلم غير موجود.');
   }
   const recipient = rowToUser(recRow);
-  if (isFemaleVoiceLocked(recipient)) {
+
+  const followStatus = getFollowStatus(
+    state.settings.userFollows || {},
+    freshSender.id,
+    recipient.id
+  );
+  const isMutualFollow = followStatus.isMutual;
+
+  if (isFemaleVoiceLocked(recipient) && (payload.giftId || !isMutualFollow)) {
     throw new Error(
-      'حساب هذه العضوة بانتظار التوثيق الصوتي من الإدارة — استقبال الرسائل المدفوعة والألماس مقفل مؤقتاً.'
+      'حساب هذه العضوة بانتظار التوثيق الصوتي من الإدارة — استقبال الألماس والرسائل المدفوعة مقفل مؤقتاً (يمكنكما المراسلة مجاناً بعد المتابعة المتبادلة).'
     );
   }
 
@@ -503,7 +632,6 @@ export async function sendPrivateMessageInSupabase(
   const now = new Date().toISOString();
   const senderEligibleForDiamonds =
     !isFemaleVoiceLocked(freshSender) && isUserFemaleOrHost(freshSender, hostedIds);
-  const recipientEligibleForPaidPm = isUserFemaleOrHost(recipient, hostedIds);
 
   const { data: convMsgsRaw } = await supabase
     .from('sada_private_messages')
@@ -663,33 +791,62 @@ export async function sendPrivateMessageInSupabase(
       message: pmGift,
       unlockedReplyDiamonds,
       giftDiamondsAwarded,
+      immediatePmDiamondsAwarded: 0,
+      isMutualFollow,
       luckyMultiplier,
       luckyBonusCoins,
     };
   }
 
-  const isReplyingToExisting = convMsgs.some((m) => m.senderId === recipient.id);
-  const shouldChargeCoins =
-    recipientEligibleForPaidPm && !(senderEligibleForDiamonds && isReplyingToExisting);
+  // Mutual follow => completely FREE (0 coins); Before mutual follow => paid coins!
+  const pmCost = Math.max(0, Number(state.settings.pmMessageCost ?? 50));
+  const shouldChargeCoins = !isMutualFollow && pmCost > 0;
 
-  const pmCost = state.settings.pmMessageCost;
-  const pmReplyDiamonds = state.settings.pmReplyDiamonds;
   if (shouldChargeCoins && freshSender.coins < pmCost) {
-    throw new Error(`تحتاج إلى ${pmCost} كوينز لإرسال رسالة خاصة مدفوعة.`);
+    throw new Error(
+      `تحتاج إلى ${pmCost} كوينز لإرسال رسالة خاصة (أو متابعة الطرفين لبعضهما للمراسلة مجاناً).`
+    );
   }
+
+  const ratio = state.settings.giftDiamondsRatio || 0.75;
+  const immediatePmDiamondsAwarded = shouldChargeCoins
+    ? Math.max(1, Math.round(pmCost * ratio))
+    : 0;
 
   if (shouldChargeCoins) {
     freshSender.coins -= pmCost;
     freshSender.xp += 35;
     freshSender.level = computeLevelFromXp(freshSender.xp);
-    await recordTransaction({
-      userId: freshSender.id,
-      type: 'pm_sent',
-      amount: -pmCost,
-      currency: 'coins',
-      description: `رسالة خاصة مدفوعة إلى ${recipient.displayName}`,
-      timestamp: now,
-    });
+    recipient.diamonds += immediatePmDiamondsAwarded;
+
+    await Promise.all([
+      recordTransaction({
+        userId: freshSender.id,
+        type: 'pm_sent',
+        amount: -pmCost,
+        currency: 'coins',
+        description: `رسالة خاصة مدفوعة إلى ${recipient.displayName}`,
+        timestamp: now,
+      }),
+      recordTransaction({
+        userId: recipient.id,
+        type: 'pm_reply_diamond',
+        amount: immediatePmDiamondsAwarded,
+        currency: 'diamonds',
+        description: `أرباح رسالة خاصة من ${freshSender.displayName}`,
+        timestamp: now,
+      }),
+      supabase
+        .from('sada_users')
+        .update({ diamonds: recipient.diamonds })
+        .eq('id', recipient.id),
+    ]);
+
+    await applyHostEarningsAndAgencyCommission(
+      recipient,
+      immediatePmDiamondsAwarded,
+      now
+    );
   }
 
   const pm: PrivateMessage = {
@@ -699,11 +856,11 @@ export async function sendPrivateMessageInSupabase(
     recipientId: recipient.id,
     text: cleanText,
     coinsPaid: shouldChargeCoins ? pmCost : 0,
-    diamondsPotential: shouldChargeCoins ? pmReplyDiamonds : 0,
-    diamondsClaimed: !shouldChargeCoins,
-    diamondsAwarded: 0,
+    diamondsPotential: immediatePmDiamondsAwarded,
+    diamondsClaimed: true,
+    diamondsAwarded: immediatePmDiamondsAwarded,
     createdAt: now,
-    repliedAt: null,
+    repliedAt: shouldChargeCoins ? now : null,
   };
 
   await Promise.all([
@@ -727,7 +884,7 @@ export async function sendPrivateMessageInSupabase(
       diamonds_claimed: pm.diamondsClaimed,
       diamonds_awarded: pm.diamondsAwarded,
       created_at: now,
-      replied_at: null,
+      replied_at: pm.repliedAt,
     }),
   ]);
 
@@ -736,6 +893,8 @@ export async function sendPrivateMessageInSupabase(
     message: pm,
     unlockedReplyDiamonds,
     giftDiamondsAwarded: 0,
+    immediatePmDiamondsAwarded,
+    isMutualFollow,
     luckyMultiplier: null,
     luckyBonusCoins: 0,
   };

@@ -13,6 +13,7 @@ import {
   getRechargeRewardTier,
   isFemaleVoiceLocked,
   MIN_WITHDRAW_USDT,
+  STORE_3D_ITEMS,
 } from './sadaCatalog';
 import {
   getPlatformState,
@@ -24,6 +25,7 @@ import {
   rowToUser,
   rowToWithdrawal,
 } from './sadaMappers';
+import { syncUserOnActiveRoomSeats } from './sadaAuth';
 import { supabase } from './supabase';
 
 export async function checkWithdrawalEligibility(user: User): Promise<{
@@ -493,4 +495,120 @@ export async function submitFemaleVoiceVerificationInSupabase(
   ]);
 
   return { request: reqDoc, user: nextUser };
+}
+
+export async function computeUserCumulativeRechargeCoins(user: User): Promise<{
+  totalRechargedCoins: number;
+  user: User;
+}> {
+  const [{ data: approvedDeps }, { data: rechargeTxs }] = await Promise.all([
+    supabase
+      .from('sada_usdt_deposits')
+      .select('coins_credited')
+      .eq('user_id', user.id)
+      .eq('status', 'approved'),
+    supabase
+      .from('sada_transactions')
+      .select('type, amount, description')
+      .eq('user_id', user.id)
+      .in('type', ['topup', 'admin_grant']),
+  ]);
+
+  const fromDeposits = (approvedDeps || []).reduce(
+    (sum, d) => sum + Math.max(0, Number(d.coins_credited || 0)),
+    0
+  );
+  const fromTxs = (rechargeTxs || []).reduce((sum, t) => {
+    const amt = Number(t.amount || 0);
+    if (amt <= 0) return sum;
+    if (t.type === 'admin_grant' && String(t.description || '').includes('ترحيبي')) {
+      return sum;
+    }
+    return sum + amt;
+  }, 0);
+
+  const totalRechargedCoins = fromDeposits + fromTxs;
+  const reachedIds = STORE_3D_ITEMS.filter(
+    (item) => totalRechargedCoins >= item.minRechargeCoins
+  ).map((item) => item.id);
+
+  const missing = reachedIds.filter((id) => !user.unlockedFrames.includes(id));
+  if (missing.length > 0) {
+    const nextUnlocked = [...user.unlockedFrames, ...missing];
+    user.unlockedFrames = nextUnlocked;
+    await supabase
+      .from('sada_users')
+      .update({ unlocked_frames: nextUnlocked })
+      .eq('id', user.id);
+  }
+
+  return { totalRechargedCoins, user };
+}
+
+export async function getStoreAndBagOverviewFromSupabase(userId: string) {
+  const walletData = await getWalletOverviewFromSupabase(userId);
+  const { totalRechargedCoins, user } = await computeUserCumulativeRechargeCoins(
+    walletData.user
+  );
+
+  return {
+    ...walletData,
+    user,
+    totalRechargedCoins,
+    storeItems: STORE_3D_ITEMS,
+  };
+}
+
+export async function equipStoreOrBagItemInSupabase(
+  user: User,
+  itemId: string
+): Promise<User> {
+  const storeItem = STORE_3D_ITEMS.find((s) => s.id === itemId);
+  if (storeItem) {
+    const { data: userRow } = await supabase
+      .from('sada_users')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+    const freshUser = userRow ? rowToUser(userRow) : { ...user };
+    const { totalRechargedCoins } = await computeUserCumulativeRechargeCoins(freshUser);
+
+    if (
+      !freshUser.unlockedFrames.includes(storeItem.id) &&
+      totalRechargedCoins < storeItem.minRechargeCoins
+    ) {
+      throw new Error(
+        `يُفتح "${storeItem.name}" تلقائياً عند بلوغ إجمالي شحن ${storeItem.minRechargeCoins.toLocaleString(
+          'en-US'
+        )} كوينز.`
+      );
+    }
+
+    if (!freshUser.unlockedFrames.includes(storeItem.id)) {
+      freshUser.unlockedFrames = [...freshUser.unlockedFrames, storeItem.id];
+    }
+    freshUser.frameId = storeItem.id;
+    const patch: Record<string, unknown> = {
+      frame_id: storeItem.id,
+      unlocked_frames: freshUser.unlockedFrames,
+    };
+
+    if (storeItem.entryId && storeItem.entryName) {
+      const expiresAt = new Date(Date.now() + 30 * 86400 * 1000).toISOString();
+      freshUser.activeEntryId = storeItem.entryId;
+      freshUser.activeEntryName = storeItem.entryName;
+      freshUser.tempEntryExpiresAt = expiresAt;
+      patch.active_entry_id = storeItem.entryId;
+      patch.active_entry_name = storeItem.entryName;
+      patch.temp_entry_expires_at = expiresAt;
+    }
+
+    await supabase.from('sada_users').update(patch).eq('id', freshUser.id);
+    await syncUserOnActiveRoomSeats(freshUser);
+    return freshUser;
+  }
+
+  const updated = await purchaseOrEquipFrameInSupabase(user, itemId);
+  await syncUserOnActiveRoomSeats(updated);
+  return updated;
 }
