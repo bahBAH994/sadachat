@@ -9,6 +9,7 @@ import {
 import { supabase } from './supabase';
 
 export type SlotGameId =
+  | 'jungle_hunt'
   | 'classic_fruits'
   | 'pharaoh_treasures'
   | 'neon_galaxy'
@@ -142,18 +143,26 @@ interface SlotMachineSpec {
 }
 
 const SLOT_SPECS: Record<SlotGameId, SlotMachineSpec> = {
+  jungle_hunt: {
+    id: 'jungle_hunt',
+    title: 'مطاردة الأدغال',
+    cols: 5,
+    rows: 3,
+    symbols: ['10', 'J', 'K', '🐊', '🐘', '🦍', '🦁', 'WILD'],
+    weights: [24, 21, 18, 13, 10, 7, 4, 3],
+  },
   classic_fruits: {
     id: 'classic_fruits',
-    title: 'سلوت الفواكه الكلاسيكي',
-    cols: 3,
+    title: 'سلوت الفواكه',
+    cols: 5,
     rows: 3,
     symbols: ['🍒', '🍋', '🍇', '🔔', '⭐', '7️⃣'],
     weights: [28, 24, 20, 14, 9, 5],
   },
   pharaoh_treasures: {
     id: 'pharaoh_treasures',
-    title: 'كنوز الفراعنة',
-    cols: 3,
+    title: 'سلوت الهرم الملكي',
+    cols: 5,
     rows: 3,
     symbols: ['🏺', '🐍', '⚱️', '☀️', '👁️', '🪲'],
     weights: [26, 22, 18, 13, 8, 13],
@@ -168,17 +177,17 @@ const SLOT_SPECS: Record<SlotGameId, SlotMachineSpec> = {
   },
   crown_jewels: {
     id: 'crown_jewels',
-    title: 'جواهر التاج',
-    cols: 4,
+    title: 'السلوت الملكي 3D',
+    cols: 5,
     rows: 3,
-    symbols: ['🔮', '⚜️', '💍', '🏆', '💎', '👑'],
-    weights: [26, 22, 18, 15, 11, 8],
+    symbols: ['🪙', '⚜️', '🏆', '🦅', '💎', '👑'],
+    weights: [28, 22, 18, 14, 11, 7],
   },
   olympus_gates: {
     id: 'olympus_gates',
     title: 'بوابات الأوليمبوس',
     cols: 5,
-    rows: 4,
+    rows: 3,
     symbols: ['🏛️', '⏳', '💍', '🏆', '👑', '⚡'],
     weights: [25, 22, 18, 14, 10, 11],
   },
@@ -192,8 +201,8 @@ const SLOT_SPECS: Record<SlotGameId, SlotMachineSpec> = {
   },
   turbo_racing: {
     id: 'turbo_racing',
-    title: 'سباق السيارات',
-    cols: 4,
+    title: 'سباق التوربو',
+    cols: 5,
     rows: 3,
     symbols: ['🛞', '⛽', '🏁', '🏆', '🔥', '🏎️'],
     weights: [26, 22, 18, 14, 11, 9],
@@ -201,7 +210,7 @@ const SLOT_SPECS: Record<SlotGameId, SlotMachineSpec> = {
   desert_gold: {
     id: 'desert_gold',
     title: 'ذهب الصحراء',
-    cols: 3,
+    cols: 5,
     rows: 3,
     symbols: ['🌴', '🐪', '🗡️', '🏜️', '🪔', '🪙'],
     weights: [26, 22, 18, 14, 10, 10],
@@ -243,6 +252,65 @@ function parseCells(set: Set<string>): Array<[number, number]> {
   });
 }
 
+const PAYLINES_5X3: Array<Array<[number, number]>> = [
+  [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]], // 1. Middle
+  [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]], // 2. Top
+  [[2, 0], [2, 1], [2, 2], [2, 3], [2, 4]], // 3. Bottom
+  [[0, 0], [1, 1], [2, 2], [1, 3], [0, 4]], // 4. V
+  [[2, 0], [1, 1], [0, 2], [1, 3], [2, 4]], // 5. Inverted V
+  [[0, 0], [0, 1], [1, 2], [2, 3], [2, 4]], // 6. Slope down
+  [[2, 0], [2, 1], [1, 2], [0, 3], [0, 4]], // 7. Slope up
+  [[1, 0], [0, 1], [0, 2], [0, 3], [1, 4]], // 8. Arch up
+  [[1, 0], [2, 1], [2, 2], [2, 3], [1, 4]], // 9. Arch down
+  [[0, 0], [1, 1], [1, 2], [1, 3], [0, 4]], // 10. Shallow cup
+  [[2, 0], [1, 1], [1, 2], [1, 3], [2, 4]], // 11. Shallow dome
+  [[1, 0], [0, 1], [1, 2], [0, 3], [1, 4]], // 12. Zigzag top
+  [[1, 0], [2, 1], [1, 2], [2, 3], [1, 4]], // 13. Zigzag bottom
+  [[0, 0], [1, 1], [0, 2], [1, 3], [0, 4]], // 14. Wave top
+  [[2, 0], [1, 1], [2, 2], [1, 3], [2, 4]], // 15. Wave bottom
+];
+
+function evaluate5x3Lines(
+  grid: string[][],
+  sym3: Record<string, number>,
+  sym4: Record<string, number>,
+  sym5: Record<string, number>,
+  winSet: Set<string>,
+  wildSym?: string
+): { total: number; hitWild: boolean; jackpotHit: boolean } {
+  let total = 0;
+  let hitWild = false;
+  let jackpotHit = false;
+  const maxSym = Object.keys(sym5).pop();
+
+  for (const line of PAYLINES_5X3) {
+    const syms = line.map(([r, c]) => grid[r]?.[c] ?? '');
+    const baseSym = (wildSym ? syms.find((s) => s !== wildSym) : syms[0]) || syms[0];
+    let len = 0;
+    let lineHasWild = false;
+    for (const s of syms) {
+      if (s === baseSym || (wildSym && s === wildSym)) {
+        len++;
+        if (wildSym && s === wildSym) lineHasWild = true;
+      } else {
+        break;
+      }
+    }
+    if (len >= 3) {
+      let mult =
+        len === 5 ? sym5[baseSym] || 15 : len === 4 ? sym4[baseSym] || 6 : sym3[baseSym] || 2;
+      if (lineHasWild) {
+        mult *= 1.5;
+        hitWild = true;
+      }
+      total += mult;
+      addCells(winSet, line.slice(0, len));
+      if (len === 5 && baseSym === maxSym) jackpotHit = true;
+    }
+  }
+  return { total, hitWild, jackpotHit };
+}
+
 function evaluateSlotGrid(gameId: SlotGameId, grid: string[][]): SlotEval {
   const winSet = new Set<string>();
   const rulesTriggered: string[] = [];
@@ -250,137 +318,84 @@ function evaluateSlotGrid(gameId: SlotGameId, grid: string[][]): SlotEval {
   let jackpotHit = false;
   let lightningStrikes: LightningStrike[] | undefined;
 
-  if (gameId === 'classic_fruits') {
-    const lineMult: Record<string, number> = {
-      '🍒': 3,
-      '🍋': 4,
-      '🍇': 6,
-      '🔔': 10,
-      '⭐': 15,
-      '7️⃣': 30,
-    };
-    const lines: Array<Array<[number, number]>> = [
-      [[0, 0], [0, 1], [0, 2]],
-      [[1, 0], [1, 1], [1, 2]],
-      [[2, 0], [2, 1], [2, 2]],
-      [[0, 0], [1, 1], [2, 2]],
-      [[2, 0], [1, 1], [0, 2]],
-    ];
-    for (const line of lines) {
-      const a = grid[line[0][0]][line[0][1]];
-      const b = grid[line[1][0]][line[1][1]];
-      const c = grid[line[2][0]][line[2][1]];
-      if (a === b && b === c) {
-        multiplier += lineMult[a] || 3;
-        addCells(winSet, line);
-        if (a === '7️⃣') jackpotHit = true;
-      }
-    }
+  if (gameId === 'jungle_hunt') {
+    const res = evaluate5x3Lines(
+      grid,
+      { '10': 1.2, J: 1.5, K: 2, '🐊': 3, '🐘': 4, '🦍': 6, '🦁': 10, WILD: 15 },
+      { '10': 3, J: 4, K: 5.5, '🐊': 8, '🐘': 12, '🦍': 18, '🦁': 28, WILD: 40 },
+      { '10': 8, J: 11, K: 15, '🐊': 22, '🐘': 32, '🦍': 45, '🦁': 75, WILD: 100 },
+      winSet,
+      'WILD'
+    );
+    multiplier += res.total;
+    if (res.hitWild) rulesTriggered.push('تبديل WILD الأدغال (×1.5)');
+    if (res.jackpotHit) jackpotHit = true;
+  } else if (gameId === 'classic_fruits') {
+    const res = evaluate5x3Lines(
+      grid,
+      { '🍒': 1.5, '🍋': 2, '🍇': 3, '🔔': 5, '⭐': 8, '7️⃣': 14 },
+      { '🍒': 3.5, '🍋': 5, '🍇': 8, '🔔': 14, '⭐': 22, '7️⃣': 35 },
+      { '🍒': 9, '🍋': 14, '🍇': 20, '🔔': 32, '⭐': 50, '7️⃣': 85 },
+      winSet
+    );
+    multiplier += res.total;
+    if (res.jackpotHit) jackpotHit = true;
     const midCherries: Array<[number, number]> = [];
-    for (let c = 0; c < 3; c++) {
+    for (let c = 0; c < 5; c++) {
       if (grid[1][c] === '🍒') midCherries.push([1, c]);
     }
-    if (midCherries.length === 2) {
-      multiplier += 1.5;
+    if (midCherries.length >= 3) {
+      multiplier += 2;
       addCells(winSet, midCherries);
-      rulesTriggered.push('ثنائي الكرز الذهبي (×1.5)');
+      rulesTriggered.push('ثلاثي الكرز الذهبي (+×2)');
     }
   } else if (gameId === 'pharaoh_treasures') {
-    const lineMult: Record<string, number> = {
-      '🏺': 3,
-      '🐍': 6,
-      '⚱️': 9,
-      '☀️': 18,
-      '👁️': 32,
-      '🪲': 15,
-    };
-    const lines: Array<Array<[number, number]>> = [
-      [[0, 0], [0, 1], [0, 2]],
-      [[1, 0], [1, 1], [1, 2]],
-      [[2, 0], [2, 1], [2, 2]],
-      [[0, 0], [1, 1], [2, 2]],
-      [[2, 0], [1, 1], [0, 2]],
-    ];
-    for (const line of lines) {
-      const a = grid[line[0][0]][line[0][1]];
-      const b = grid[line[1][0]][line[1][1]];
-      const c = grid[line[2][0]][line[2][1]];
-      if (a === b && b === c) {
-        multiplier += lineMult[a] || 4;
-        addCells(winSet, line);
-        if (a === '👁️') jackpotHit = true;
-      }
-    }
+    const res = evaluate5x3Lines(
+      grid,
+      { '🏺': 1.5, '🐍': 2.5, '⚱️': 4, '☀️': 7, '👁️': 12, '🪲': 10 },
+      { '🏺': 4, '🐍': 7, '⚱️': 11, '☀️': 18, '👁️': 30, '🪲': 24 },
+      { '🏺': 10, '🐍': 16, '⚱️': 25, '☀️': 42, '👁️': 75, '🪲': 55 },
+      winSet
+    );
+    multiplier += res.total;
+    if (res.jackpotHit) jackpotHit = true;
     const scarabs: Array<[number, number]> = [];
     for (let r = 0; r < 3; r++) {
-      for (let c = 0; c < 3; c++) {
+      for (let c = 0; c < 5; c++) {
         if (grid[r][c] === '🪲') scarabs.push([r, c]);
       }
     }
-    if (scarabs.length >= 2) {
-      const bonus = scarabs.length >= 4 ? 25 : scarabs.length === 3 ? 12 : 2.5;
+    if (scarabs.length >= 3) {
+      const bonus = scarabs.length >= 4 ? 18 : 6;
       multiplier += bonus;
       addCells(winSet, scarabs);
       rulesTriggered.push(`جعران متناثر ×${scarabs.length} (+×${bonus})`);
     }
   } else if (gameId === 'neon_galaxy') {
-    const sym3: Record<string, number> = { '👾': 2, '☄️': 3, '🌌': 4, '🪐': 6, '🛸': 10, '⚡': 12 };
-    const sym4: Record<string, number> = { '👾': 5, '☄️': 8, '🌌': 11, '🪐': 16, '🛸': 25, '⚡': 30 };
-    const sym5: Record<string, number> = { '👾': 12, '☄️': 20, '🌌': 28, '🪐': 36, '🛸': 50, '⚡': 60 };
-    const lines: Array<Array<[number, number]>> = [
-      [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]],
-      [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]],
-      [[2, 0], [2, 1], [2, 2], [2, 3], [2, 4]],
-      [[0, 0], [1, 1], [2, 2], [1, 3], [0, 4]],
-    ];
-    for (const line of lines) {
-      const syms = line.map(([r, c]) => grid[r][c]);
-      const baseSym = syms.find((s) => s !== '⚡') || '⚡';
-      let matchLen = 0;
-      let hasWild = false;
-      for (const s of syms) {
-        if (s === baseSym || s === '⚡') {
-          matchLen++;
-          if (s === '⚡') hasWild = true;
-        } else {
-          break;
-        }
-      }
-      if (matchLen >= 3) {
-        let m =
-          matchLen === 5
-            ? sym5[baseSym] || 15
-            : matchLen === 4
-            ? sym4[baseSym] || 6
-            : sym3[baseSym] || 2.5;
-        if (hasWild) {
-          m *= 2;
-          rulesTriggered.push('مضاعف البرق الكوني ⚡ ×2');
-        }
-        multiplier += m;
-        addCells(winSet, line.slice(0, matchLen));
-        if (matchLen === 5 && baseSym === '🛸') jackpotHit = true;
-      }
-    }
+    const res = evaluate5x3Lines(
+      grid,
+      { '👾': 1.5, '☄️': 2.5, '🌌': 3.5, '🪐': 5.5, '🛸': 9, '⚡': 12 },
+      { '👾': 4, '☄️': 7, '🌌': 10, '🪐': 15, '🛸': 24, '⚡': 30 },
+      { '👾': 11, '☄️': 18, '🌌': 26, '🪐': 36, '🛸': 60, '⚡': 75 },
+      winSet,
+      '⚡'
+    );
+    multiplier += res.total;
+    if (res.hitWild) rulesTriggered.push('مضاعف البرق الكوني ⚡');
+    if (res.jackpotHit) jackpotHit = true;
   } else if (gameId === 'crown_jewels') {
-    const sym3: Record<string, number> = { '🔮': 2, '⚜️': 3.5, '💍': 5, '🏆': 8, '💎': 14, '👑': 22 };
-    const sym4: Record<string, number> = { '🔮': 7, '⚜️': 12, '💍': 18, '🏆': 26, '💎': 38, '👑': 55 };
-    for (let r = 0; r < 3; r++) {
-      const row = grid[r];
-      let len = 1;
-      for (let c = 1; c < 4; c++) {
-        if (row[c] === row[0]) len++;
-        else break;
-      }
-      if (len >= 3) {
-        multiplier += len === 4 ? sym4[row[0]] || 10 : sym3[row[0]] || 3;
-        addCells(winSet, Array.from({ length: len }, (_, c) => [r, c] as [number, number]));
-        if (len === 4 && row[0] === '👑') jackpotHit = true;
-      }
-    }
-    for (let c = 0; c < 4; c++) {
+    const res = evaluate5x3Lines(
+      grid,
+      { '🪙': 1.5, '⚜️': 2.5, '🏆': 4, '🦅': 7, '💎': 11, '👑': 18 },
+      { '🪙': 4, '⚜️': 7, '🏆': 11, '🦅': 18, '💎': 28, '👑': 45 },
+      { '🪙': 10, '⚜️': 16, '🏆': 26, '🦅': 42, '💎': 65, '👑': 100 },
+      winSet
+    );
+    multiplier += res.total;
+    if (res.jackpotHit) jackpotHit = true;
+    for (let c = 0; c < 5; c++) {
       if (grid[0][c] === grid[1][c] && grid[1][c] === grid[2][c]) {
-        const bonus = grid[0][c] === '👑' ? 15 : 4;
+        const bonus = grid[0][c] === '👑' ? 10 : 3;
         multiplier += bonus;
         addCells(winSet, [[0, c], [1, c], [2, c]]);
         rulesTriggered.push(`عمود إمبراطوري مكتمل (+×${bonus})`);
@@ -389,7 +404,7 @@ function evaluateSlotGrid(gameId: SlotGameId, grid: string[][]): SlotEval {
   } else if (gameId === 'olympus_gates') {
     const counts = new Map<string, Array<[number, number]>>();
     const bolts: Array<[number, number]> = [];
-    for (let r = 0; r < 4; r++) {
+    for (let r = 0; r < 3; r++) {
       for (let c = 0; c < 5; c++) {
         const s = grid[r][c];
         if (s === '⚡') {
@@ -421,7 +436,7 @@ function evaluateSlotGrid(gameId: SlotGameId, grid: string[][]): SlotEval {
     if (baseWin > 0) {
       if (bolts.length > 0) {
         const strikeList: LightningStrike[] = bolts.map(([row, col]) => {
-          const choices = [2, 3, 5, 8, 12, 15, 25];
+          const choices = [2, 3, 5, 8, 12, 15];
           const mult = choices[Math.floor(Math.random() * choices.length)];
           return { row, col, mult };
         });
@@ -435,35 +450,16 @@ function evaluateSlotGrid(gameId: SlotGameId, grid: string[][]): SlotEval {
       }
     }
   } else if (gameId === 'sea_pirates') {
-    const sym3: Record<string, number> = { '⚓': 2, '🧭': 3, '🦜': 4, '🏴‍☠️': 6, '💣': 5, '💰': 10 };
-    const sym4: Record<string, number> = { '⚓': 5, '🧭': 8, '🦜': 11, '🏴‍☠️': 18, '💣': 12, '💰': 24 };
-    const sym5: Record<string, number> = { '⚓': 14, '🧭': 20, '🦜': 28, '🏴‍☠️': 42, '💣': 30, '💰': 60 };
-    const lines: Array<Array<[number, number]>> = [
-      [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]],
-      [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]],
-      [[2, 0], [2, 1], [2, 2], [2, 3], [2, 4]],
-      [[0, 0], [1, 1], [2, 2], [1, 3], [0, 4]],
-      [[2, 0], [1, 1], [0, 2], [1, 3], [2, 4]],
-    ];
-    for (const line of lines) {
-      const syms = line.map(([r, c]) => grid[r][c]);
-      const baseSym = syms.find((s) => s !== '💰') || '💰';
-      let matchLen = 0;
-      for (const s of syms) {
-        if (s === baseSym || s === '💰') matchLen++;
-        else break;
-      }
-      if (matchLen >= 3) {
-        multiplier +=
-          matchLen === 5
-            ? sym5[baseSym] || 18
-            : matchLen === 4
-            ? sym4[baseSym] || 8
-            : sym3[baseSym] || 3;
-        addCells(winSet, line.slice(0, matchLen));
-        if (matchLen === 5 && baseSym === '💰') jackpotHit = true;
-      }
-    }
+    const res = evaluate5x3Lines(
+      grid,
+      { '⚓': 1.5, '🧭': 2.5, '🦜': 3.5, '🏴‍☠️': 5.5, '💣': 4.5, '💰': 9 },
+      { '⚓': 4, '🧭': 7, '🦜': 10, '🏴‍☠️': 16, '💣': 12, '💰': 24 },
+      { '⚓': 12, '🧭': 18, '🦜': 26, '🏴‍☠️': 40, '💣': 28, '💰': 60 },
+      winSet,
+      '💰'
+    );
+    multiplier += res.total;
+    if (res.jackpotHit) jackpotHit = true;
     const bombs: Array<[number, number]> = [];
     for (let r = 0; r < 3; r++) {
       for (let c = 0; c < 5; c++) {
@@ -471,36 +467,24 @@ function evaluateSlotGrid(gameId: SlotGameId, grid: string[][]): SlotEval {
       }
     }
     if (bombs.length >= 3) {
-      const bonus = bombs.length >= 5 ? 18 : bombs.length === 4 ? 9 : 4;
+      const bonus = bombs.length >= 5 ? 16 : bombs.length === 4 ? 8 : 4;
       multiplier += bonus;
       addCells(winSet, bombs);
       rulesTriggered.push(`قصف المدافع ×${bombs.length} (+×${bonus})`);
     }
   } else if (gameId === 'turbo_racing') {
-    const sym3: Record<string, number> = { '🛞': 2.5, '⛽': 3.5, '🏁': 5, '🏆': 8, '🔥': 6, '🏎️': 14 };
-    const sym4: Record<string, number> = { '🛞': 7, '⛽': 10, '🏁': 16, '🏆': 26, '🔥': 18, '🏎️': 50 };
-    for (let r = 0; r < 3; r++) {
-      const row = grid[r];
-      let len = 1;
-      for (let c = 1; c < 4; c++) {
-        if (row[c] === row[0]) len++;
-        else break;
-      }
-      if (len >= 3) {
-        let rowMult = len === 4 ? sym4[row[0]] || 10 : sym3[row[0]] || 3;
-        const nitros = row.filter((s) => s === '🔥').length;
-        if (nitros > 0) {
-          rowMult = rowMult * (1 + nitros * 0.5);
-          rulesTriggered.push(`شعلة نايترو 🔥 +${nitros * 50}%`);
-        }
-        multiplier += rowMult;
-        addCells(winSet, Array.from({ length: len }, (_, c) => [r, c] as [number, number]));
-        if (len === 4 && row[0] === '🏎️') jackpotHit = true;
-      }
-    }
+    const res = evaluate5x3Lines(
+      grid,
+      { '🛞': 1.5, '⛽': 2.5, '🏁': 4, '🏆': 6.5, '🔥': 5, '🏎️': 12 },
+      { '🛞': 4, '⛽': 7, '🏁': 11, '🏆': 18, '🔥': 14, '🏎️': 32 },
+      { '🛞': 10, '⛽': 16, '🏁': 25, '🏆': 42, '🔥': 35, '🏎️': 75 },
+      winSet
+    );
+    multiplier += res.total;
+    if (res.jackpotHit) jackpotHit = true;
     const cars: Array<[number, number]> = [];
     for (let r = 0; r < 3; r++) {
-      for (let c = 0; c < 4; c++) {
+      for (let c = 0; c < 5; c++) {
         if (grid[r][c] === '🏎️') cars.push([r, c]);
       }
     }
@@ -511,34 +495,18 @@ function evaluateSlotGrid(gameId: SlotGameId, grid: string[][]): SlotEval {
       rulesTriggered.push(`انطلاقة سيارات متناثرة (+×${bonus})`);
     }
   } else if (gameId === 'desert_gold') {
-    const lineMult: Record<string, number> = {
-      '🌴': 3,
-      '🐪': 5,
-      '🗡️': 9,
-      '🏜️': 16,
-      '🪔': 24,
-      '🪙': 32,
-    };
-    const lines: Array<Array<[number, number]>> = [
-      [[0, 0], [0, 1], [0, 2]],
-      [[1, 0], [1, 1], [1, 2]],
-      [[2, 0], [2, 1], [2, 2]],
-      [[0, 0], [1, 1], [2, 2]],
-      [[2, 0], [1, 1], [0, 2]],
-    ];
-    for (const line of lines) {
-      const a = grid[line[0][0]][line[0][1]];
-      const b = grid[line[1][0]][line[1][1]];
-      const c = grid[line[2][0]][line[2][1]];
-      if (a === b && b === c) {
-        multiplier += lineMult[a] || 4;
-        addCells(winSet, line);
-        if (a === '🪙') jackpotHit = true;
-      }
-    }
+    const res = evaluate5x3Lines(
+      grid,
+      { '🌴': 1.5, '🐪': 2.5, '🗡️': 4.5, '🏜️': 8, '🪔': 12, '🪙': 16 },
+      { '🌴': 4, '🐪': 7, '🗡️': 12, '🏜️': 20, '🪔': 30, '🪙': 42 },
+      { '🌴': 10, '🐪': 18, '🗡️': 28, '🏜️': 45, '🪔': 65, '🪙': 90 },
+      winSet
+    );
+    multiplier += res.total;
+    if (res.jackpotHit) jackpotHit = true;
     const coins: Array<[number, number]> = [];
     for (let r = 0; r < 3; r++) {
-      for (let c = 0; c < 3; c++) {
+      for (let c = 0; c < 5; c++) {
         if (grid[r][c] === '🪙') coins.push([r, c]);
       }
     }
@@ -548,9 +516,9 @@ function evaluateSlotGrid(gameId: SlotGameId, grid: string[][]): SlotEval {
       addCells(winSet, coins);
       rulesTriggered.push(`كنز الدنانير المتناثر (+×${bonus})`);
     }
-    if (multiplier > 0 && grid[1][1] === '🪔') {
+    if (multiplier > 0 && grid[1][2] === '🪔') {
       multiplier *= 2;
-      winSet.add('1-1');
+      winSet.add('1-2');
       rulesTriggered.push('مصباح الواحة الأوسط (×2)');
     }
   }
@@ -570,7 +538,7 @@ function forceWinningGrid(gameId: SlotGameId, spec: SlotMachineSpec): string[][]
   if (gameId === 'olympus_gates') {
     for (let c = 0; c < 5; c++) g[1][c] = sym;
   } else {
-    for (let c = 0; c < spec.cols; c++) g[1][c] = sym;
+    for (let c = 0; c < 3; c++) g[1][c] = sym;
   }
   return g;
 }
@@ -1190,4 +1158,19 @@ export async function openMysteryBoxInSupabase(
 
 export function genGameLogId(): string {
   return genId('game');
+}
+
+export async function getRealJackpotPoolFromSupabase(): Promise<number> {
+  const state = await getPlatformState();
+  return Math.max(0, Number(state.appPrizePoolCoins || 0));
+}
+
+export async function getHallOfFameFromSupabase(): Promise<User[]> {
+  const { data, error } = await supabase
+    .from('sada_users')
+    .select('*')
+    .order('xp', { ascending: false })
+    .limit(12);
+  if (error || !data) return [];
+  return data.map((row) => rowToUser(row));
 }

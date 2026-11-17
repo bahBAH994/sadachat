@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.sada_users (
   active_entry_id TEXT,
   active_entry_name TEXT,
   temp_entry_expires_at TIMESTAMPTZ,
-  coins BIGINT NOT NULL DEFAULT 10000,
+  coins BIGINT NOT NULL DEFAULT 0,
   diamonds BIGINT NOT NULL DEFAULT 0,
   level INTEGER NOT NULL DEFAULT 1,
   xp BIGINT NOT NULL DEFAULT 0,

@@ -353,10 +353,33 @@ export async function getPlatformState(): Promise<PlatformStateDoc> {
         rawSettings.userFollows && typeof rawSettings.userFollows === 'object'
           ? rawSettings.userFollows
           : {},
+      userVisitors:
+        rawSettings.userVisitors && typeof rawSettings.userVisitors === 'object'
+          ? rawSettings.userVisitors
+          : {},
       userMeta:
         rawSettings.userMeta && typeof rawSettings.userMeta === 'object'
           ? rawSettings.userMeta
           : {},
+      userFollowedAgencies:
+        rawSettings.userFollowedAgencies && typeof rawSettings.userFollowedAgencies === 'object'
+          ? rawSettings.userFollowedAgencies
+          : {},
+      userOwnedBackgrounds:
+        rawSettings.userOwnedBackgrounds && typeof rawSettings.userOwnedBackgrounds === 'object'
+          ? rawSettings.userOwnedBackgrounds
+          : {},
+      userHostTasks:
+        rawSettings.userHostTasks && typeof rawSettings.userHostTasks === 'object'
+          ? rawSettings.userHostTasks
+          : {},
+      userGiftStats:
+        rawSettings.userGiftStats && typeof rawSettings.userGiftStats === 'object'
+          ? rawSettings.userGiftStats
+          : {},
+      hostJoinApplications: Array.isArray(rawSettings.hostJoinApplications)
+        ? rawSettings.hostJoinApplications
+        : [],
     },
     quizSessions: (data?.quiz_sessions as Record<string, QuizSessionRecord>) || {},
     votedKeys: (data?.voted_keys as Record<string, boolean>) || {},

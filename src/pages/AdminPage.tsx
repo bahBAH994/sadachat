@@ -40,6 +40,7 @@ import {
   rejectFemaleVoiceInSupabase,
   rejectUsdtDepositInSupabase,
   rejectUsdtWithdrawalInSupabase,
+  reviewHostJoinApplicationInSupabase,
   savePlatformSettingsInSupabase,
   unlockDeviceInSupabase,
   updateAdminUserInSupabase,
@@ -53,6 +54,7 @@ import type {
   CulturalQuestionAdminItem,
   DeviceLock,
   FemaleVoiceVerificationRequest,
+  HostJoinApplication,
   PlatformSettings,
   Room,
   SecurityLog,
@@ -73,6 +75,7 @@ interface AdminOverview {
   usdtDeposits: UsdtDepositRequest[];
   usdtWithdrawals: UsdtWithdrawalRequest[];
   femaleVoiceRequests: FemaleVoiceVerificationRequest[];
+  hostJoinApplications?: HostJoinApplication[];
   stats: {
     totalUsers: number;
     activeRooms: number;
@@ -360,6 +363,23 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const handleReviewHostApp = async (
+    appId: string,
+    decision: 'approved' | 'rejected'
+  ) => {
+    try {
+      await reviewHostJoinApplicationInSupabase(appId, decision);
+      showOk(
+        decision === 'approved'
+          ? 'تم قبول الطلب وربط المضيف بالوكالة بنجاح!'
+          : 'تم رفض طلب الانضمام للوكالة.'
+      );
+      await Promise.all([loadOverview(), refreshUser()]);
+    } catch (err) {
+      showErr(err, 'تعذّر مراجعة طلب الانضمام.');
+    }
+  };
+
   // --- QUESTIONS CSV / EXCEL ---
   const handleExportExcel = async () => {
     const XLSX = await import('xlsx');
@@ -586,7 +606,13 @@ export const AdminPage: React.FC = () => {
                   ? `طلبات توثيق البنات (${data?.stats.pendingFemaleVoiceCount})`
                   : 'طلبات توثيق البنات',
             },
-            { id: 'agencies', label: 'الوكالات والمضيفين' },
+            {
+              id: 'agencies',
+              label:
+                (data?.hostJoinApplications?.filter((a) => a.status === 'pending').length || 0) > 0
+                  ? `الوكالات والمضيفين (${data?.hostJoinApplications?.filter((a) => a.status === 'pending').length})`
+                  : 'الوكالات والمضيفين',
+            },
             { id: 'questions', label: 'الأسئلة (CSV/Excel)' },
             { id: 'settings', label: 'الإعدادات المالية' },
             { id: 'users', label: 'الأعضاء' },
@@ -994,6 +1020,83 @@ export const AdminPage: React.FC = () => {
           {/* TAB 3: AGENCIES & HOSTS APPROVAL */}
           {tab === 'agencies' && (
             <div className="space-y-5">
+              {/* Pending Host Join Applications */}
+              <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-[#FCE9A6]">
+                    <UserCheck className="w-5 h-5 text-emerald-300" />
+                    <h2 className="text-base font-bold">
+                      طلبات انضمام المضيفين للوكالات ({data.hostJoinApplications?.length || 0})
+                    </h2>
+                  </div>
+                  <span className="text-xs text-slate-300">بانتظار موافقة الإدارة</span>
+                </div>
+
+                {!data.hostJoinApplications || data.hostJoinApplications.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-4 text-center">
+                    لا توجد طلبات انضمام مضيفين للوكالات حالياً.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-[#D4AF37]/15">
+                    {data.hostJoinApplications.map((app) => (
+                      <div
+                        key={app.id}
+                        className="py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-extrabold text-white">
+                              {app.displayName}
+                            </span>
+                            <span className="text-xs font-bold text-[#FCE9A6]">
+                              ← وكالة: {app.agencyName}
+                            </span>
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
+                                app.status === 'approved'
+                                  ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                                  : app.status === 'rejected'
+                                  ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
+                                  : 'bg-amber-500/20 border-[#D4AF37]/50 text-[#FCE9A6]'
+                              }`}
+                            >
+                              {app.status === 'approved'
+                                ? 'معتمد ✓'
+                                : app.status === 'rejected'
+                                ? 'مرفوض'
+                                : 'بانتظار موافقة الإدارة'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-300">{app.bio}</p>
+                          <p className="text-[11px] text-slate-400 font-mono-num">
+                            {new Date(app.createdAt).toLocaleString('ar-EG')}
+                          </p>
+                        </div>
+
+                        {app.status === 'pending' && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleReviewHostApp(app.id, 'approved')}
+                              className="min-h-[38px] rounded-xl bg-emerald-600 hover:bg-emerald-500 border border-emerald-400/60 px-4 py-1.5 text-xs font-extrabold text-white cursor-pointer"
+                            >
+                              قبول واعتماد كمضيف
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleReviewHostApp(app.id, 'rejected')}
+                              className="min-h-[38px] rounded-xl bg-rose-700 hover:bg-rose-600 border border-rose-400/60 px-4 py-1.5 text-xs font-extrabold text-white cursor-pointer"
+                            >
+                              رفض
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
               <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                 <div className="flex items-center gap-2 text-[#F3D37A]">
                   <Building2 className="w-5 h-5" />

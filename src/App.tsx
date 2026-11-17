@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { ActiveRoomProvider } from './context/ActiveRoomContext';
+import { ActiveRoomProvider, useActiveRoom } from './context/ActiveRoomContext';
 import { MiniProfileProvider } from './context/MiniProfileContext';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
@@ -21,17 +21,38 @@ import { CompetitionsPage } from './pages/CompetitionsPage';
 import { WalletPage } from './pages/WalletPage';
 import { StorePage } from './pages/StorePage';
 import { BagPage } from './pages/BagPage';
+import { DiamondWalletPage } from './pages/DiamondWalletPage';
+import { MyLevelPage } from './pages/MyLevelPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { MessagesPage } from './pages/MessagesPage';
 import { AgencyPage } from './pages/AgencyPage';
 import { GamesCenterPage } from './pages/GamesCenterPage';
 import { AdminPage } from './pages/AdminPage';
 
+const RoomRouteBridge: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
+  const { activeRoomId, room, enterRoom, restoreRoom } = useActiveRoom();
+
+  useEffect(() => {
+    if (!id || !user) return;
+    if (activeRoomId === id && room) {
+      restoreRoom();
+    } else {
+      void enterRoom(id);
+    }
+  }, [activeRoomId, enterRoom, id, restoreRoom, room, user]);
+
+  return null;
+};
+
 const ProtectedShell: React.FC<{
   children: React.ReactNode;
   requireAdmin?: boolean;
 }> = ({ children, requireAdmin = false }) => {
   const { user, loading } = useAuth();
+  const { activeRoomId, isMinimized } = useActiveRoom();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -51,11 +72,16 @@ const ProtectedShell: React.FC<{
     return <Navigate to="/" replace />;
   }
 
+  const isOnRoomRoute = location.pathname.startsWith('/room/');
+  const isFullScreenRoom = Boolean(activeRoomId && !isMinimized) || isOnRoomRoute;
+  const shouldKeepRoomMounted = Boolean(activeRoomId) || isOnRoomRoute;
+
   return (
     <div className="min-h-screen flex flex-col">
-      <TopBar />
-      <main className="flex-1">{children}</main>
-      <BottomNav />
+      {!isFullScreenRoom && <TopBar />}
+      <main className={isFullScreenRoom ? 'hidden' : 'flex-1'}>{children}</main>
+      {!isFullScreenRoom && <BottomNav />}
+      {shouldKeepRoomMounted && <RoomPage />}
       <FloatingMinimizedRoom />
       <UserMiniProfileModal />
     </div>
@@ -108,7 +134,7 @@ export default function App() {
               path="/room/:id"
               element={
                 <ProtectedShell>
-                  <RoomPage />
+                  <RoomRouteBridge />
                 </ProtectedShell>
               }
             />
@@ -141,6 +167,22 @@ export default function App() {
               element={
                 <ProtectedShell>
                   <BagPage />
+                </ProtectedShell>
+              }
+            />
+            <Route
+              path="/diamond-wallet"
+              element={
+                <ProtectedShell>
+                  <DiamondWalletPage />
+                </ProtectedShell>
+              }
+            />
+            <Route
+              path="/my-level"
+              element={
+                <ProtectedShell>
+                  <MyLevelPage />
                 </ProtectedShell>
               }
             />

@@ -41,7 +41,7 @@ export const TopBar: React.FC = () => {
               referrerPolicy="no-referrer"
               className="w-8 h-8 rounded-xl object-cover border border-amber-300 shadow-sm"
             />
-            <span className="text-base font-extrabold text-slate-900">صَدَى</span>
+            <span className="text-base font-extrabold text-slate-900">صَدَى - SADA</span>
           </Link>
         </div>
 

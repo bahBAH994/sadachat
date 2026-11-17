@@ -14,6 +14,10 @@ const FRAME_CLASSES: Record<string, string> = {
   frame_winged_falcon: 'ring-[3px] ring-amber-400 animate-falcon-aura',
   frame_diamond_crown: 'ring-[3px] ring-sky-400 animate-diamond-aura',
   frame_imperial_dragon: 'ring-[4px] ring-amber-300 animate-dragon-aura',
+  frame_emerald_aura: 'ring-[3px] ring-emerald-400 animate-falcon-aura',
+  frame_royal_phoenix: 'ring-[3px] ring-amber-400 animate-dragon-aura',
+  frame_galaxy_sovereign: 'ring-[4px] ring-violet-400 animate-diamond-aura',
+  frame_host_gift_7d: 'ring-[3px] ring-rose-400 animate-diamond-aura',
 };
 
 const FRAME_3D_BADGE: Record<string, { glyph: string; ringBg: string }> = {
@@ -32,6 +36,22 @@ const FRAME_3D_BADGE: Record<string, { glyph: string; ringBg: string }> = {
   frame_imperial_dragon: {
     glyph: '🐉',
     ringBg: 'conic-gradient(from 0deg, #ef4444, #f59e0b, #fef08a, #ef4444)',
+  },
+  frame_emerald_aura: {
+    glyph: '💚',
+    ringBg: 'conic-gradient(from 0deg, #10b981, #34d399, #fef08a, #10b981)',
+  },
+  frame_royal_phoenix: {
+    glyph: '🔥',
+    ringBg: 'conic-gradient(from 0deg, #f97316, #fbbf24, #ef4444, #f97316)',
+  },
+  frame_galaxy_sovereign: {
+    glyph: '🌌',
+    ringBg: 'conic-gradient(from 0deg, #8b5cf6, #38bdf8, #fde047, #8b5cf6)',
+  },
+  frame_host_gift_7d: {
+    glyph: '🎁',
+    ringBg: 'conic-gradient(from 0deg, #f43f5e, #fbbf24, #ec4899, #f43f5e)',
   },
 };
 

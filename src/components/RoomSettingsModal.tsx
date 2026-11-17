@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import {
   Ban,
+  ClipboardList,
   Crown,
   ImagePlus,
+  Lock,
   Megaphone,
   Mic,
   MicOff,
@@ -24,6 +26,9 @@ interface RoomSettingsModalProps {
   extras: RoomExtrasConfig;
   presenceMembers: RoomPresenceMember[];
   isOwnerOrAdmin: boolean;
+  initialTab?: 'agency' | 'members' | 'logs';
+  ownedBackgrounds?: string[];
+  isAdmin?: boolean;
   onUpdateSettings: (patch: {
     maxSeats?: number;
     hostAvatar?: string;
@@ -52,11 +57,16 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   extras,
   presenceMembers,
   isOwnerOrAdmin,
+  initialTab = 'agency',
+  ownedBackgrounds = [],
+  isAdmin = false,
   onUpdateSettings,
   onAdminAction,
   onClose,
 }) => {
-  const [tab, setTab] = useState<'agency' | 'members'>('agency');
+  const [tab, setTab] = useState<'agency' | 'members' | 'logs'>(
+    initialTab === 'logs' && !isOwnerOrAdmin ? 'agency' : initialTab
+  );
   const [titleInput, setTitleInput] = useState(room.title);
   const [announcement, setAnnouncement] = useState(room.description || '');
   const [seatCount, setSeatCount] = useState<number>(room.maxSeats || 15);
@@ -206,29 +216,47 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
         </div>
 
         {/* Tabs */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/20">
+        <div
+          className={`grid ${
+            isOwnerOrAdmin ? 'grid-cols-3' : 'grid-cols-2'
+          } gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/20`}
+        >
           <button
             type="button"
             onClick={() => setTab('agency')}
-            className={`min-h-[40px] rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`min-h-[40px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer ${
               tab === 'agency'
                 ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
                 : 'text-slate-300 hover:text-white'
             }`}
           >
-            المقاعد والمظهر والإعلان
+            المظهر والمايكات
           </button>
           <button
             type="button"
             onClick={() => setTab('members')}
-            className={`min-h-[40px] rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`min-h-[40px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer ${
               tab === 'members'
                 ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
                 : 'text-slate-300 hover:text-white'
             }`}
           >
-            المايكات والمشرفين ({memberList.length})
+            المشرفين والأعضاء ({memberList.length})
           </button>
+          {isOwnerOrAdmin && (
+            <button
+              type="button"
+              onClick={() => setTab('logs')}
+              className={`min-h-[40px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+                tab === 'logs'
+                  ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
+                  : 'text-amber-200 hover:text-white'
+              }`}
+            >
+              <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+              <span>سجل المشرفين</span>
+            </button>
+          )}
         </div>
 
         {feedback && (
@@ -237,13 +265,98 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           </div>
         )}
 
-        {tab === 'agency' ? (
+        {tab === 'logs' && isOwnerOrAdmin ? (
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-[#D4AF37]/30 bg-[#070913]/85 p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-[#FCE9A6]" />
+                <div>
+                  <h4 className="text-xs font-extrabold text-[#FCE9A6]">
+                    سجل حركة المشرفين (خاص بالوكيل)
+                  </h4>
+                  <p className="text-[10px] text-slate-400">
+                    توثيق فوري لكل طرد، إنزال من المايك، كتم، أو قفل مقعد مع التوقيت
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-full bg-[#D4AF37]/20 border border-[#D4AF37]/40 px-2 py-0.5 text-[10px] font-mono-num font-bold text-[#FCE9A6]">
+                {(extras.modLogs || []).length}
+              </span>
+            </div>
+
+            {(extras.modLogs || []).length === 0 ? (
+              <div className="rounded-2xl bg-[#070913]/60 border border-white/10 py-10 text-center text-xs text-slate-400">
+                لا توجد إجراءات إشرافية مسجلة حتى الآن داخل هذه الوكالة.
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[52vh] overflow-y-auto no-scrollbar">
+                {(extras.modLogs || []).map((log) => {
+                  const badgeStyle =
+                    log.actionType === 'kick_room'
+                      ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
+                      : log.actionType === 'unban_room'
+                      ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                      : log.actionType === 'mute_user' || log.actionType === 'mute_all'
+                      ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
+                      : 'bg-sky-500/20 border-sky-400/50 text-sky-200';
+                  const timeLabel = new Date(log.timestamp).toLocaleString('ar-EG', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+
+                  return (
+                    <div
+                      key={log.id}
+                      className="rounded-2xl bg-[#070913]/80 border border-white/10 p-3 space-y-1"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs font-extrabold text-white truncate">
+                            {log.actorName}
+                          </span>
+                          <span className="rounded-md bg-[#D4AF37]/20 border border-[#D4AF37]/40 px-1.5 py-0.5 text-[9px] font-bold text-[#FCE9A6] shrink-0">
+                            {log.actorRole}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono-num text-slate-400 shrink-0">
+                          {timeLabel}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-bold text-slate-200">{log.details}</p>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[9px] font-extrabold shrink-0 ${badgeStyle}`}
+                        >
+                          {log.actionType === 'kick_room'
+                            ? 'طرد'
+                            : log.actionType === 'unban_room'
+                            ? 'فك طرد'
+                            : log.actionType === 'kick_seat'
+                            ? 'إنزال مايك'
+                            : log.actionType === 'mute_user' || log.actionType === 'mute_all'
+                            ? 'كتم'
+                            : log.actionType === 'clear_all'
+                            ? 'تصفية مايكات'
+                            : log.actionType === 'lock_seat'
+                            ? 'قفل مقعد'
+                            : 'فتح مقعد'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : tab === 'agency' ? (
           <form onSubmit={handleSaveAll} className="space-y-4">
             {/* Active Mic Grid Size Selector */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-[#F3D37A] flex items-center gap-1.5">
                 <Mic className="w-3.5 h-3.5" />
-                <span>عدد المايكات النشطة (شبكة 5 أعمدة)</span>
+                <span>عدد المايكات النشطة (توزيع هندسي متدرج)</span>
               </label>
               <div className="grid grid-cols-6 gap-1.5">
                 {SEAT_OPTIONS.map((cnt) => (
@@ -354,21 +467,45 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                 </label>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {ROOM_BACKGROUNDS.map((bg) => (
-                  <button
-                    key={bg.id}
-                    type="button"
-                    onClick={() => setCoverImage(bg.id)}
-                    className={`rounded-xl p-2.5 text-right border transition cursor-pointer ${
-                      coverImage === bg.id
-                        ? 'border-[#FCE9A6] ring-1 ring-[#FCE9A6]/60'
-                        : 'border-white/15 hover:border-[#D4AF37]/50'
-                    } ${bg.previewClass}`}
-                  >
-                    <p className="text-xs font-extrabold text-[#FCE9A6] truncate">{bg.name}</p>
-                    <p className="text-[10px] text-slate-300 truncate">{bg.description}</p>
-                  </button>
-                ))}
+                {ROOM_BACKGROUNDS.map((bg) => {
+                  const locked =
+                    Boolean(bg.priceCoins) &&
+                    !isAdmin &&
+                    !ownedBackgrounds.includes(bg.id) &&
+                    room.coverImage !== bg.id;
+                  return (
+                    <button
+                      key={bg.id}
+                      type="button"
+                      onClick={() => {
+                        if (locked) {
+                          setFeedback(
+                            `الخلفية "${bg.name}" تتطلب شراءها من المتجر مقابل ${bg.priceCoins?.toLocaleString('en-US')} كوينز أولاً.`
+                          );
+                          return;
+                        }
+                        setCoverImage(bg.id);
+                      }}
+                      className={`rounded-xl p-2.5 text-right border transition cursor-pointer relative ${
+                        coverImage === bg.id
+                          ? 'border-[#FCE9A6] ring-1 ring-[#FCE9A6]/60'
+                          : locked
+                          ? 'border-white/10 opacity-70'
+                          : 'border-white/15 hover:border-[#D4AF37]/50'
+                      } ${bg.previewClass}`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-xs font-extrabold text-[#FCE9A6] truncate">{bg.name}</p>
+                        {locked && <Lock className="w-3 h-3 text-amber-300 shrink-0" />}
+                      </div>
+                      <p className="text-[10px] text-slate-300 truncate">
+                        {locked
+                          ? `🔒 ${bg.priceCoins?.toLocaleString('en-US')} كوينز في المتجر`
+                          : bg.description}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -555,7 +692,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                       }
                       className="rounded-xl bg-rose-950/60 border border-rose-500/40 px-2.5 py-1 text-[10px] font-bold text-rose-200 hover:bg-emerald-900/50 hover:text-emerald-200 cursor-pointer"
                     >
-                      فك الطرد ({uid.slice(-5)}) ↺
+                      فك الطرد: {extras.kickedUserNames?.[uid] || uid.slice(-5)} ↺
                     </button>
                   ))}
                 </div>

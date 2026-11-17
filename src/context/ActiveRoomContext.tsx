@@ -8,12 +8,13 @@ import React, {
   useState,
 } from 'react';
 import { useAuth } from './AuthContext';
-import { ROOM_MUSIC_PRESETS } from '../lib/sadaCatalog';
+import { setAudioMuted } from '../lib/sadaAudio';
 import {
   adminControlRoomInSupabase,
   canManageRoom,
   createEmptyRoomExtras,
   getRoomDetailsFromSupabase,
+  getRoomExtrasFromSupabase,
   incrementRoomPlayVolumeInSupabase,
   joinRoomInSupabase,
   leaveRoomInSupabase,
@@ -70,6 +71,16 @@ export interface RoomSeatEmojiEvent {
   expiresAt: number;
 }
 
+export interface RoomPlaySupportEntry {
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+  frameId?: string;
+  supportCoins: number;
+  playCoins: number;
+  totalCoins: number;
+}
+
 interface ActiveRoomContextValue {
   activeRoomId: string | null;
   room: Room | null;
@@ -90,6 +101,7 @@ interface ActiveRoomContextValue {
   presenceMembers: RoomPresenceMember[];
   liveListenersCount: number;
   topGifters: RoomGifterEntry[];
+  supportAndPlayLeaderboard: RoomPlaySupportEntry[];
   totalVolumeCoins: number;
   giftBanner: {
     senderName: string;
@@ -109,8 +121,10 @@ interface ActiveRoomContextValue {
   musicState: RoomMusicState | null;
   musicVolume: number;
   musicMutedLocally: boolean;
+  roomAudioMuted: boolean;
   setMusicVolume: (vol: number) => void;
   setMusicMutedLocally: (muted: boolean) => void;
+  setRoomAudioMuted: (muted: boolean) => void;
   enterRoom: (roomId: string) => Promise<void>;
   minimizeRoom: () => void;
   restoreRoom: () => void;
@@ -152,7 +166,6 @@ interface ActiveRoomContextValue {
       | { type: 'toggle_deputy'; targetUserId: string; targetName?: string }
       | { type: 'toggle_moderator'; targetUserId: string; targetName?: string }
   ) => Promise<void>;
-  playPresetMusic: (presetId: string) => Promise<void>;
   playUploadedMusic: (trackName: string, dataUrl: string) => Promise<void>;
   toggleMusicPlayPause: () => Promise<void>;
   stopRoomMusic: () => Promise<void>;
@@ -188,6 +201,12 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const [musicVolume, setMusicVolume] = useState<number>(0.45);
   const [musicMutedLocally, setMusicMutedLocally] = useState<boolean>(false);
+  const [roomAudioMuted, setRoomAudioMutedState] = useState<boolean>(false);
+
+  const setRoomAudioMuted = useCallback((muted: boolean) => {
+    setRoomAudioMutedState(muted);
+    setAudioMuted(muted);
+  }, []);
 
   const roomChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -198,10 +217,8 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const micAudioCtxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // Room Music Playback refs (HTMLAudioElement for uploaded tracks + WebAudio Synth for presets)
+  // Room Music Playback ref (HTMLAudioElement for device-uploaded tracks only)
   const musicAudioElRef = useRef<HTMLAudioElement | null>(null);
-  const musicSynthCtxRef = useRef<AudioContext | null>(null);
-  const musicSynthTimerRef = useRef<number | null>(null);
 
   const stopMusicEngines = useCallback(() => {
     if (musicAudioElRef.current) {
@@ -211,14 +228,6 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       } catch {
         // ignore
       }
-    }
-    if (musicSynthTimerRef.current) {
-      window.clearInterval(musicSynthTimerRef.current);
-      musicSynthTimerRef.current = null;
-    }
-    if (musicSynthCtxRef.current) {
-      musicSynthCtxRef.current.close().catch(() => {});
-      musicSynthCtxRef.current = null;
     }
   }, []);
 
@@ -274,7 +283,8 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setWheelBanner(null);
     setEntryBanner(null);
     setError(null);
-  }, [teardownActiveChannels]);
+    setRoomAudioMuted(false);
+  }, [setRoomAudioMuted, teardownActiveChannels]);
 
   const enterRoom = useCallback(
     async (roomId: string) => {
@@ -399,10 +409,20 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                   kickedUserIds: Array.isArray(nextRoomCfg.kickedUserIds)
                     ? nextRoomCfg.kickedUserIds
                     : [],
+                  kickedUserNames:
+                    nextRoomCfg.kickedUserNames &&
+                    typeof nextRoomCfg.kickedUserNames === 'object'
+                      ? nextRoomCfg.kickedUserNames
+                      : {},
                   mutedUserIds: Array.isArray(nextRoomCfg.mutedUserIds)
                     ? nextRoomCfg.mutedUserIds
                     : [],
                   gifters: nextRoomCfg.gifters || {},
+                  players:
+                    nextRoomCfg.players && typeof nextRoomCfg.players === 'object'
+                      ? nextRoomCfg.players
+                      : {},
+                  modLogs: Array.isArray(nextRoomCfg.modLogs) ? nextRoomCfg.modLogs : [],
                   playVolumeCoins: Number(nextRoomCfg.playVolumeCoins || 0),
                   musicState: nextRoomCfg.musicState || null,
                 });
@@ -424,7 +444,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               setFullscreenGift(flyData);
               setTimeout(() => {
                 setFullscreenGift((curr) => (curr?.id === flyData.id ? null : curr));
-              }, 3400);
+              }, 5000);
             }
           })
           .on('broadcast', { event: 'seat:emoji' }, ({ payload }) => {
@@ -625,12 +645,12 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
   }, [activeRoomId, cleanupMicMonitor, mySeat?.seatIndex, mySeat?.isMuted, user?.id]);
 
-  // Persistent Room Music Player Effect (survives tab navigation when minimized!)
+  // Persistent Room Music Player Effect (device audio file only, respects local/room mute)
   useEffect(() => {
     const music = extras.musicState;
     stopMusicEngines();
 
-    if (!music || !music.isPlaying || musicMutedLocally || !activeRoomId) {
+    if (!music || !music.isPlaying || musicMutedLocally || roomAudioMuted || !activeRoomId) {
       return;
     }
 
@@ -645,41 +665,6 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       } catch {
         // ignore browser autoplay restriction until user interacts
       }
-      return;
-    }
-
-    if (music.sourceType === 'preset') {
-      const preset =
-        ROOM_MUSIC_PRESETS.find((p) => p.id === music.presetId) || ROOM_MUSIC_PRESETS[0];
-      try {
-        const ctx = new AudioContext();
-        musicSynthCtxRef.current = ctx;
-        let idx = 0;
-        const stepMs = Math.round((60 / preset.bpm) * 1000);
-
-        const playNote = () => {
-          if (!musicSynthCtxRef.current || musicSynthCtxRef.current.state === 'closed') return;
-          const now = ctx.currentTime;
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(preset.notes[idx % preset.notes.length], now);
-          const vol = Math.max(0.01, musicVolume * 0.14);
-          gain.gain.setValueAtTime(0.001, now);
-          gain.gain.exponentialRampToValueAtTime(vol, now + 0.08);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + stepMs / 1000);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now);
-          osc.stop(now + stepMs / 1000 + 0.05);
-          idx++;
-        };
-
-        playNote();
-        musicSynthTimerRef.current = window.setInterval(playNote, stepMs);
-      } catch {
-        // ignore
-      }
     }
 
     return () => {
@@ -689,19 +674,20 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     activeRoomId,
     extras.musicState?.isPlaying,
     extras.musicState?.trackName,
-    extras.musicState?.presetId,
     extras.musicState?.audioDataUrl,
     extras.musicState?.updatedAt,
     musicMutedLocally,
+    roomAudioMuted,
     stopMusicEngines,
   ]);
 
   // Live volume adjustment for active HTMLAudioElement
   useEffect(() => {
     if (musicAudioElRef.current) {
-      musicAudioElRef.current.volume = musicMutedLocally ? 0 : Math.max(0, Math.min(1, musicVolume));
+      musicAudioElRef.current.volume =
+        musicMutedLocally || roomAudioMuted ? 0 : Math.max(0, Math.min(1, musicVolume));
     }
-  }, [musicVolume, musicMutedLocally]);
+  }, [musicVolume, musicMutedLocally, roomAudioMuted]);
 
   const minimizeRoom = useCallback(() => {
     setIsMinimized(true);
@@ -751,6 +737,8 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           isLocked: !isLocked,
         });
         setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
+        const nextExtras = await getRoomExtrasFromSupabase(room.id);
+        setExtras(nextExtras);
       } catch {
         // ignore
       }
@@ -887,6 +875,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const totalCoinsSpent =
         data.gift.coinsCost * data.quantity * Math.max(1, data.recipientIds.length);
       const isFullscreen =
+        ['gift_05', 'gift_06', 'gift_07', 'gift_28'].includes(data.gift.id) ||
         data.gift.tier === 'imperial' ||
         data.gift.coinsCost >= 12000 ||
         totalCoinsSpent >= 25000;
@@ -914,7 +903,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setFullscreenGift(flyEvent);
         setTimeout(() => {
           setFullscreenGift((curr) => (curr?.id === flyEvent.id ? null : curr));
-        }, 3400);
+        }, 5000);
       }
 
       const targetLabel =
@@ -985,10 +974,10 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     async (nextRoom: Room, coinsCost: number) => {
       setRoom(nextRoom);
       if (!activeRoomId) return;
-      const nextExtras = await incrementRoomPlayVolumeInSupabase(activeRoomId, coinsCost);
+      const nextExtras = await incrementRoomPlayVolumeInSupabase(activeRoomId, coinsCost, user);
       setExtras(nextExtras);
     },
-    [activeRoomId]
+    [activeRoomId, user]
   );
 
   const updateSettings = useCallback(
@@ -1041,29 +1030,9 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     [room]
   );
 
-  const playPresetMusic = useCallback(
-    async (presetId: string) => {
-      if (!user) return;
-      const preset =
-        ROOM_MUSIC_PRESETS.find((p) => p.id === presetId) || ROOM_MUSIC_PRESETS[0];
-      await broadcastMusicState({
-        isPlaying: true,
-        trackName: preset.name,
-        djUserId: user.id,
-        djName: user.displayName,
-        sourceType: 'preset',
-        presetId: preset.id,
-        audioDataUrl: null,
-        updatedAt: Date.now(),
-      });
-    },
-    [broadcastMusicState, user]
-  );
-
   const playUploadedMusic = useCallback(
     async (trackName: string, dataUrl: string) => {
       if (!user) return;
-      // Keep audioDataUrl synced in Supabase if compact, or play locally while broadcasting state
       const syncDataUrl = dataUrl.length <= 450_000 ? dataUrl : null;
       if (!syncDataUrl) {
         try {
@@ -1071,7 +1040,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           musicAudioElRef.current = el;
           el.src = dataUrl;
           el.loop = true;
-          el.volume = musicMutedLocally ? 0 : musicVolume;
+          el.volume = musicMutedLocally || roomAudioMuted ? 0 : musicVolume;
           void el.play();
         } catch {
           // ignore
@@ -1087,7 +1056,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         updatedAt: Date.now(),
       });
     },
-    [broadcastMusicState, musicMutedLocally, musicVolume, user]
+    [broadcastMusicState, musicMutedLocally, musicVolume, roomAudioMuted, user]
   );
 
   const toggleMusicPlayPause = useCallback(async () => {
@@ -1106,10 +1075,10 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const addPlayVolume = useCallback(
     async (coinsAmount: number) => {
       if (!activeRoomId) return;
-      const next = await incrementRoomPlayVolumeInSupabase(activeRoomId, coinsAmount);
+      const next = await incrementRoomPlayVolumeInSupabase(activeRoomId, coinsAmount, user);
       setExtras(next);
     },
-    [activeRoomId]
+    [activeRoomId, user]
   );
 
   const canManage = useMemo(
@@ -1124,17 +1093,48 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const liveListenersCount = useMemo(() => {
     if (!room) return 0;
-    return Math.max(
-      room.listenersCount,
-      presenceMembers.length,
-      room.seats.filter((s) => s.userId).length
-    );
-  }, [presenceMembers.length, room]);
+    const connectedIds = new Set(presenceMembers.map((p) => p.userId));
+    if (user?.id) connectedIds.add(user.id);
+    return connectedIds.size;
+  }, [presenceMembers, room, user?.id]);
 
   const topGifters = useMemo(() => {
     const entries = Object.values(extras.gifters || {});
     return entries.sort((a, b) => b.totalCoins - a.totalCoins).slice(0, 3);
   }, [extras.gifters]);
+
+  const supportAndPlayLeaderboard = useMemo<RoomPlaySupportEntry[]>(() => {
+    const map = new Map<string, RoomPlaySupportEntry>();
+    for (const g of Object.values(extras.gifters || {})) {
+      map.set(g.userId, {
+        userId: g.userId,
+        displayName: g.displayName,
+        avatarUrl: g.avatarUrl,
+        frameId: g.frameId,
+        supportCoins: g.totalCoins || 0,
+        playCoins: 0,
+        totalCoins: g.totalCoins || 0,
+      });
+    }
+    for (const p of Object.values(extras.players || {})) {
+      const existing = map.get(p.userId);
+      if (existing) {
+        existing.playCoins += p.playCoins || 0;
+        existing.totalCoins = existing.supportCoins + existing.playCoins;
+      } else {
+        map.set(p.userId, {
+          userId: p.userId,
+          displayName: p.displayName,
+          avatarUrl: p.avatarUrl,
+          frameId: p.frameId,
+          supportCoins: 0,
+          playCoins: p.playCoins || 0,
+          totalCoins: p.playCoins || 0,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.totalCoins - a.totalCoins);
+  }, [extras.gifters, extras.players]);
 
   const totalVolumeCoins = useMemo(() => {
     if (!room) return 0;
@@ -1163,6 +1163,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         presenceMembers,
         liveListenersCount,
         topGifters,
+        supportAndPlayLeaderboard,
         totalVolumeCoins,
         giftBanner,
         wheelBanner,
@@ -1173,8 +1174,10 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         musicState: extras.musicState || null,
         musicVolume,
         musicMutedLocally,
+        roomAudioMuted,
         setMusicVolume,
         setMusicMutedLocally,
+        setRoomAudioMuted,
         enterRoom,
         minimizeRoom,
         restoreRoom,
@@ -1191,7 +1194,6 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         updateRoomFromWheel,
         updateSettings,
         runAdminAction,
-        playPresetMusic,
         playUploadedMusic,
         toggleMusicPlayPause,
         stopRoomMusic,

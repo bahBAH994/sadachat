@@ -1,23 +1,30 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Ban,
+  ClipboardList,
   Crown,
   Gamepad2,
   Gift,
+  Heart,
   Lock,
+  MessageCircle,
+  MessageSquareText,
   Mic,
   MicOff,
+  Minimize2,
   Music,
-  Plus,
   Send,
   Settings,
   Shield,
   Smile,
   Sparkles,
+  Trophy,
   UserMinus,
   Users,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -29,8 +36,11 @@ import {
   formatCompactMetric,
   formatShortNumericId,
 } from '../lib/sadaCatalog';
+import { getPlatformState } from '../lib/sadaMappers';
+import { toggleFollowAgencyInSupabase } from '../lib/sadaSocialService';
 import type { GiftItem, RoomSeat } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import { DragonCinemaOverlay } from '../components/DragonCinemaOverlay';
 import { DragonStageBackdrop } from '../components/DragonStageBackdrop';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { LuckyWheelModal } from '../components/LuckyWheelModal';
@@ -52,7 +62,6 @@ interface ComboSession {
 }
 
 export const RoomPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, updateLocalUser } = useAuth();
   const { openMiniProfile } = useMiniProfile();
@@ -67,6 +76,7 @@ export const RoomPage: React.FC = () => {
     loading,
     error,
     clearError,
+    isMinimized,
     mySeat,
     canManage,
     isOwnerOrAdmin,
@@ -76,6 +86,7 @@ export const RoomPage: React.FC = () => {
     presenceMembers,
     liveListenersCount,
     topGifters,
+    supportAndPlayLeaderboard,
     totalVolumeCoins,
     giftBanner,
     wheelBanner,
@@ -86,11 +97,11 @@ export const RoomPage: React.FC = () => {
     musicState,
     musicVolume,
     musicMutedLocally,
+    roomAudioMuted,
     setMusicVolume,
     setMusicMutedLocally,
-    enterRoom,
+    setRoomAudioMuted,
     minimizeRoom,
-    restoreRoom,
     leaveActiveRoom,
     handleSeatClick,
     handleToggleLock,
@@ -103,7 +114,6 @@ export const RoomPage: React.FC = () => {
     updateRoomFromWheel,
     updateSettings,
     runAdminAction,
-    playPresetMusic,
     playUploadedMusic,
     toggleMusicPlayPause,
     stopRoomMusic,
@@ -111,6 +121,7 @@ export const RoomPage: React.FC = () => {
   } = useActiveRoom();
 
   const [chatText, setChatText] = useState('');
+  const [chatFilter, setChatFilter] = useState<'all' | 'chat'>('all');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [giftInitialTargets, setGiftInitialTargets] = useState<string[] | undefined>(
@@ -124,11 +135,29 @@ export const RoomPage: React.FC = () => {
   const [showWheelModal, setShowWheelModal] = useState(false);
   const [showGamesOverlay, setShowGamesOverlay] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'agency' | 'members' | 'logs'>(
+    'agency'
+  );
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [showMusicModal, setShowMusicModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [seatActionTarget, setSeatActionTarget] = useState<RoomSeat | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isFollowingAgency, setIsFollowingAgency] = useState(false);
+  const [heartBurstTick, setHeartBurstTick] = useState(0);
+  const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!user?.id || !room?.id) return;
+    getPlatformState()
+      .then((state) => {
+        const followed = state.settings.userFollowedAgencies?.[user.id] || [];
+        setIsFollowingAgency(followed.includes(room.id));
+        const ownedBgs = state.settings.userOwnedBackgrounds?.[user.id] || [];
+        setOwnedBackgrounds(ownedBgs);
+      })
+      .catch(() => {});
+  }, [user?.id, room?.id]);
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const giftBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -140,20 +169,16 @@ export const RoomPage: React.FC = () => {
     setTimeout(() => setToastMsg(null), 2600);
   };
 
-  // Enter or restore room when route mounts
-  useEffect(() => {
-    if (!id || !user) return;
-    if (activeRoomId === id && room) {
-      restoreRoom();
-    } else {
-      void enterRoom(id);
-    }
-  }, [id, user?.id]);
+  const isMinimizedRef = useRef(isMinimized);
+  const activeRoomIdRef = useRef(activeRoomId);
+  isMinimizedRef.current = isMinimized;
+  activeRoomIdRef.current = activeRoomId;
 
-  // Scroll chat smoothly
+  // Scroll chat smoothly when room is visible
   useEffect(() => {
+    if (isMinimized) return;
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [room?.messages.length]);
+  }, [isMinimized, room?.messages.length]);
 
   // Combo circular countdown ticker (3.0s)
   useEffect(() => {
@@ -175,19 +200,29 @@ export const RoomPage: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [comboSession]);
 
-  // Intercept hardware Back button on mobile so user sees Keep vs Exit modal
+  // History State Trap: Push { inRoom: true } on enter/restore and intercept hardware Back
   useEffect(() => {
-    if (!room) return;
+    if (!activeRoomId || isMinimized) return;
+
+    if (!window.history.state?.inRoom) {
+      window.history.pushState({ inRoom: true }, '');
+    }
+
     const handlePopState = () => {
+      if (isMinimizedRef.current || !activeRoomIdRef.current) return;
       setShowExitModal(true);
-      window.history.pushState({ sadaRoomGuard: true }, '', window.location.href);
+      window.setTimeout(() => {
+        if (!isMinimizedRef.current && activeRoomIdRef.current && !window.history.state?.inRoom) {
+          window.history.pushState({ inRoom: true }, '');
+        }
+      }, 0);
     };
-    window.history.pushState({ sadaRoomGuard: true }, '', window.location.href);
+
     window.addEventListener('popstate', handlePopState);
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [room?.id]);
+  }, [activeRoomId, isMinimized]);
 
   const topSpeakerSeatIndex = useMemo(() => {
     if (!room?.seats?.length) return -1;
@@ -206,17 +241,54 @@ export const RoomPage: React.FC = () => {
     return bestIdx;
   }, [room?.seats]);
 
-  const handleFollowAgency = () => {
-    if (!room) return;
-    setIsFollowingAgency((prev) => !prev);
-    const shortId = formatShortNumericId(room.id).slice(0, 6);
-    navigator.clipboard?.writeText(shortId).catch(() => {});
-    showToast(
-      !isFollowingAgency
-        ? `تمت إضافة "${room.title}" للمفضلة ونسخ رقم الوكالة (${shortId}) ✓`
-        : 'تمت إزالة الوكالة من المفضلة'
-    );
+  const handleFollowAgency = async () => {
+    if (!room || !user) return;
+    setHeartBurstTick((t) => t + 1);
+    try {
+      const res = await toggleFollowAgencyInSupabase(user.id, room.id);
+      setIsFollowingAgency(res.following);
+      const shortId = formatShortNumericId(room.id).slice(0, 6);
+      navigator.clipboard?.writeText(shortId).catch(() => {});
+      showToast(
+        res.following
+          ? `♥ تمت متابعة "${room.title}" وإضافتها لقسم الخاص بي (${shortId}) ✓`
+          : 'تم إلغاء متابعة الوكالة'
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'تعذّر تحديث متابعة الوكالة');
+    }
   };
+
+  const micRows = useMemo(() => {
+    const seats = room?.seats || [];
+    const total = seats.length;
+    if (total === 5) {
+      return [
+        { seats: seats.slice(0, 1), cols: 1, isHero5: true },
+        { seats: seats.slice(1, 5), cols: 4, isHero5: false },
+      ];
+    }
+    if (total === 10) {
+      return [
+        { seats: seats.slice(0, 2), cols: 2, isHero5: false },
+        { seats: seats.slice(2, 6), cols: 4, isHero5: false },
+        { seats: seats.slice(6, 10), cols: 4, isHero5: false },
+      ];
+    }
+    const rows: Array<{ seats: RoomSeat[]; cols: number; isHero5: boolean }> = [];
+    for (let i = 0; i < total; i += 5) {
+      rows.push({ seats: seats.slice(i, i + 5), cols: 5, isHero5: false });
+    }
+    return rows;
+  }, [room?.seats]);
+
+  const filteredMessages = useMemo(() => {
+    const list = room?.messages || [];
+    if (chatFilter === 'chat') {
+      return list.filter((m) => m.type === 'chat');
+    }
+    return list;
+  }, [chatFilter, room?.messages]);
 
   const handleSeatInteraction = async (seat: RoomSeat) => {
     if (!user || !room) return;
@@ -326,14 +398,17 @@ export const RoomPage: React.FC = () => {
 
   const handleKeepMinimized = () => {
     setShowExitModal(false);
+    isMinimizedRef.current = true;
+    window.history.pushState({ inRoom: true }, '');
     minimizeRoom();
     navigate('/');
   };
 
   const handleConfirmLeave = async () => {
     setShowExitModal(false);
+    isMinimizedRef.current = true;
     await leaveActiveRoom();
-    navigate('/');
+    navigate('/', { replace: true });
   };
 
   // Resolve exact viewport start & destination coordinates for flying gifts
@@ -375,6 +450,7 @@ export const RoomPage: React.FC = () => {
   };
 
   if (loading && !room) {
+    if (isMinimized) return null;
     return (
       <div className="min-h-[100dvh] bg-[#0A0805] flex items-center justify-center p-6 text-center">
         <div className="royal-glass rounded-3xl px-7 py-5 text-sm font-extrabold text-[#FCE9A6]">
@@ -385,6 +461,7 @@ export const RoomPage: React.FC = () => {
   }
 
   if (!room) {
+    if (isMinimized) return null;
     return (
       <div className="min-h-[100dvh] bg-[#0A0805] flex flex-col items-center justify-center p-6 text-center space-y-4">
         <p className="text-rose-400 font-bold text-sm">
@@ -407,22 +484,37 @@ export const RoomPage: React.FC = () => {
   const comboCircumference = 2 * Math.PI * comboCircleRadius;
 
   return (
-    <div className="relative min-h-[100dvh] h-[100dvh] w-full flex flex-col overflow-hidden text-white">
+    <div
+      className={
+        isMinimized
+          ? 'hidden pointer-events-none'
+          : `relative min-h-[100dvh] h-[100dvh] w-full flex flex-col overflow-hidden text-white ${
+              fullscreenGift ? 'animate-dragon-shake' : ''
+            }`
+      }
+    >
       {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
       <DragonStageBackdrop coverImage={room.coverImage} />
 
       <div className="relative z-10 flex-1 flex flex-col max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2 min-h-0">
         {/* 1. ROOM TOP BAR */}
-        <header className="flex items-center justify-between gap-2 shrink-0">
-          {/* Right Side (RTL start): Agency Square Avatar, Title, ID + Green (+) Button */}
+        <header className="flex items-center justify-between gap-1.5 shrink-0">
+          {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
           <div
             ref={headerAnchorRef}
-            className="flex items-center gap-2 min-w-0 bg-black/35 backdrop-blur-md border border-[#D4AF37]/30 rounded-2xl p-1 pl-2"
+            className="flex items-center gap-1.5 min-w-0 bg-black/40 backdrop-blur-md border border-[#D4AF37]/35 rounded-2xl p-1 pl-2"
           >
             <button
               type="button"
-              onClick={() => (canManage ? setShowSettingsModal(true) : handleFollowAgency())}
-              className="relative w-10 h-10 rounded-xl overflow-hidden border border-[#F3D37A]/70 shrink-0 cursor-pointer"
+              onClick={() => {
+                if (canManage) {
+                  setSettingsInitialTab('agency');
+                  setShowSettingsModal(true);
+                } else {
+                  void handleFollowAgency();
+                }
+              }}
+              className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden border border-[#F3D37A]/70 shrink-0 cursor-pointer"
               title={canManage ? 'تغيير صورة أو إعدادات الوكالة' : room.title}
             >
               <img
@@ -434,36 +526,31 @@ export const RoomPage: React.FC = () => {
             </button>
 
             <div className="min-w-0">
-              <h1 className="text-xs sm:text-sm font-extrabold text-white truncate max-w-[115px] sm:max-w-[170px] leading-tight">
-                {room.title}
-              </h1>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h1 className="text-[11px] sm:text-sm font-extrabold text-white truncate max-w-[88px] sm:max-w-[140px] leading-tight">
+                  {room.title}
+                </h1>
+                <button
+                  type="button"
+                  onClick={() => void handleFollowAgency()}
+                  className={`rounded-full px-2 py-0.5 text-[9px] sm:text-[10px] font-extrabold shrink-0 cursor-pointer transition shadow ${
+                    isFollowingAgency
+                      ? 'bg-[#D4AF37] text-[#070913]'
+                      : 'bg-gradient-to-r from-[#2CE376] to-[#0FA958] text-white hover:brightness-110'
+                  }`}
+                >
+                  {isFollowingAgency ? 'متابَع ✓' : 'متابعة الوكالة'}
+                </button>
+              </div>
               <div className="flex items-center gap-1 text-[10px] text-amber-200/90 font-mono-num">
                 <span className="text-amber-400">🔥</span>
                 <span>{roomNumericId}</span>
               </div>
             </div>
-
-            <button
-              type="button"
-              onClick={handleFollowAgency}
-              className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 cursor-pointer transition shadow ${
-                isFollowingAgency
-                  ? 'bg-[#D4AF37] text-[#070913]'
-                  : 'bg-gradient-to-br from-[#2CE376] to-[#0FA958] text-white'
-              }`}
-              aria-label="متابعة الوكالة ونسخ المعرف"
-              title="متابعة الوكالة"
-            >
-              <Plus
-                className={`w-4 h-4 transition-transform ${
-                  isFollowingAgency ? 'rotate-45' : ''
-                }`}
-              />
-            </button>
           </div>
 
-          {/* Left Side (RTL end): Top 3 Gifters Circles + Live Member Counter + Minimize/Exit (X) */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Left Side (RTL end): Top 3 Gifters (1,2,3) + Live Counter + Heart (♥) + Settings (⚙️) + Minimize */}
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             <div className="flex items-center gap-1">
               {[0, 1, 2].map((rankIdx) => {
                 const gifter = topGifters[rankIdx];
@@ -492,17 +579,22 @@ export const RoomPage: React.FC = () => {
                           frameId: gifter.frameId,
                         });
                       } else {
-                        setGiftInitialTargets(undefined);
-                        setShowGiftModal(true);
+                        setShowLeaderboardModal(true);
                       }
                     }}
                     className="relative flex flex-col items-center cursor-pointer group"
                     title={
                       gifter
-                        ? `${gifter.displayName}: ${gifter.totalCoins.toLocaleString('en-US')}`
-                        : 'قائمة كبار الداعمين'
+                        ? `#${rankIdx + 1} ${gifter.displayName}: ${gifter.totalCoins.toLocaleString('en-US')}`
+                        : `المركز ${rankIdx + 1}`
                     }
                   >
+                    {/* Explicit Rank Number 1, 2, 3 */}
+                    <span
+                      className={`absolute -top-1 -right-1 z-10 w-3.5 h-3.5 rounded-full text-[8px] font-mono-num font-black flex items-center justify-center shadow ${badgeBg}`}
+                    >
+                      {rankIdx + 1}
+                    </span>
                     <div
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden border-2 bg-black/50 flex items-center justify-center ${rankBorder}`}
                     >
@@ -529,36 +621,86 @@ export const RoomPage: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => (canManage ? setShowSettingsModal(true) : undefined)}
-              className="flex items-center gap-0.5 bg-black/35 border border-white/15 rounded-full px-2 py-1 text-[11px] font-mono-num font-bold text-white cursor-pointer"
+              onClick={() => {
+                if (canManage) {
+                  setSettingsInitialTab('members');
+                  setShowSettingsModal(true);
+                } else {
+                  setShowLeaderboardModal(true);
+                }
+              }}
+              className="flex items-center gap-0.5 bg-black/40 border border-white/15 rounded-full px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-mono-num font-bold text-white cursor-pointer"
               title="المتواجدون الآن داخل الوكالة"
             >
               <span>{liveListenersCount}</span>
-              <Users className="w-3.5 h-3.5 text-slate-200" />
+              <Users className="w-3 h-3 text-slate-200" />
             </button>
 
+            {/* Heart Follow / Interact Button replacing (X) */}
+            <button
+              type="button"
+              onClick={() => void handleFollowAgency()}
+              className={`relative w-8 h-8 rounded-full border flex items-center justify-center cursor-pointer transition active:scale-90 ${
+                isFollowingAgency
+                  ? 'bg-rose-600/35 border-rose-400 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.55)]'
+                  : 'bg-black/45 hover:bg-rose-950/50 border-white/20 text-rose-200'
+              }`}
+              aria-label="متابعة وتفاعل"
+              title="متابعة الوكالة / تفاعل"
+            >
+              <Heart className={`w-4 h-4 ${isFollowingAgency ? 'fill-rose-400 text-rose-400' : ''}`} />
+              {heartBurstTick > 0 && (
+                <motion.span
+                  key={heartBurstTick}
+                  initial={{ scale: 0.7, opacity: 1, y: 0 }}
+                  animate={{ scale: 1.7, opacity: 0, y: -18 }}
+                  transition={{ duration: 0.65 }}
+                  className="pointer-events-none absolute text-rose-400 text-xs"
+                >
+                  ♥
+                </motion.span>
+              )}
+            </button>
+
+            {/* Agency Settings Icon right beside the Heart */}
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSettingsInitialTab('agency');
+                  setShowSettingsModal(true);
+                }}
+                className="w-8 h-8 rounded-full bg-black/45 hover:bg-[#D4AF37]/25 border border-[#D4AF37]/50 text-[#FCE9A6] flex items-center justify-center cursor-pointer"
+                aria-label="إعدادات الوكالة"
+                title="إعدادات وإدارة الوكالة"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Discreet Minimize / Leave trigger (complements hardware back trap) */}
             <button
               type="button"
               onClick={() => setShowExitModal(true)}
-              className="w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 border border-white/15 text-white flex items-center justify-center cursor-pointer"
+              className="w-7 h-7 rounded-full bg-black/35 hover:bg-black/60 border border-white/15 text-slate-200 flex items-center justify-center cursor-pointer"
               aria-label="تصغير أو خروج"
               title="احتفظ أو خروج"
             >
-              <X className="w-4 h-4" />
+              <Minimize2 className="w-3.5 h-3.5" />
             </button>
           </div>
         </header>
 
-        {/* SUB-HEADER ROW: Live Volume Capsule + Quick Wheel + Music + Manager Settings */}
-        <div className="flex items-center justify-between gap-2 mt-1.5 mb-2 shrink-0">
+        {/* SUB-HEADER ROW: Trophy Leaderboard + Wheel + Mute Room | Device Music + Agent Mod Log */}
+        <div className="flex items-center justify-between gap-1.5 mt-1.5 mb-1.5 shrink-0 flex-wrap">
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setShowGamesOverlay(true)}
-              className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#2D2007]/90 to-[#141008]/90 border border-[#F3D37A]/55 px-2.5 py-1 shadow-[0_0_14px_rgba(212,175,55,0.28)] cursor-pointer"
-              title="إجمالي حجم اللعب والدعم داخل الوكالة"
+              onClick={() => setShowLeaderboardModal(true)}
+              className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#2D2007]/90 to-[#141008]/90 border border-[#F3D37A]/65 px-2.5 py-1 shadow-[0_0_14px_rgba(212,175,55,0.3)] cursor-pointer hover:brightness-110"
+              title="تصنيف اللعب والدعم داخل الوكالة"
             >
-              <span className="text-[10px]">🏆</span>
+              <Trophy className="w-3.5 h-3.5 text-[#FDE047]" />
               <span className="text-[11px] font-mono-num font-extrabold text-[#FCE9A6]">
                 {formatCompactMetric(totalVolumeCoins)}
               </span>
@@ -572,18 +714,43 @@ export const RoomPage: React.FC = () => {
               <Sparkles className="w-3 h-3 text-amber-200" />
               <span>دولاب</span>
             </button>
+
+            {/* One-tap Mute Room Audio Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = !roomAudioMuted;
+                setRoomAudioMuted(next);
+                showToast(
+                  next ? '🔇 تم كتم صوت الروم من جهازك' : '🔊 تم تشغيل صوت الروم على جهازك'
+                );
+              }}
+              className={`inline-flex items-center gap-1 rounded-xl border px-2 py-1 text-[10px] font-extrabold cursor-pointer transition ${
+                roomAudioMuted
+                  ? 'bg-rose-600/40 border-rose-400/75 text-rose-100 shadow-[0_0_10px_rgba(244,63,94,0.4)]'
+                  : 'bg-black/45 border-white/20 text-slate-200 hover:border-[#D4AF37]/50'
+              }`}
+              title="كتم جميع أصوات الروم من جهازك"
+            >
+              {roomAudioMuted ? (
+                <VolumeX className="w-3.5 h-3.5 text-rose-300" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5 text-[#FCE9A6]" />
+              )}
+              <span>{roomAudioMuted ? 'صوت مكتوم' : 'كتم الروم'}</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => setShowMusicModal(true)}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold max-w-[130px] cursor-pointer ${
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold max-w-[125px] cursor-pointer ${
                 musicState?.isPlaying
                   ? 'bg-[#D4AF37]/25 border-[#FCE9A6]/75 text-[#FCE9A6]'
                   : 'bg-black/50 border-white/20 text-slate-200 hover:border-[#D4AF37]/50'
               }`}
-              title="موسيقى الغرفة"
+              title="تشغيل مقطع صوتي من جهازك"
             >
               <Music
                 className={`w-3 h-3 shrink-0 ${
@@ -591,18 +758,22 @@ export const RoomPage: React.FC = () => {
                 }`}
               />
               <span className="truncate">
-                {musicState ? musicState.trackName : 'موسيقى'}
+                {musicState ? musicState.trackName : 'موسيقى الجهاز'}
               </span>
             </button>
 
-            {canManage && (
+            {isOwnerOrAdmin && (
               <button
                 type="button"
-                onClick={() => setShowSettingsModal(true)}
-                className="inline-flex items-center gap-1 rounded-xl bg-black/50 border border-[#D4AF37]/50 px-2.5 py-1 text-[10px] font-extrabold text-[#FCE9A6] hover:bg-[#D4AF37]/20 cursor-pointer"
+                onClick={() => {
+                  setSettingsInitialTab('logs');
+                  setShowSettingsModal(true);
+                }}
+                className="inline-flex items-center gap-1 rounded-xl bg-amber-500/20 border border-[#F3D37A]/55 px-2.5 py-1 text-[10px] font-extrabold text-[#FCE9A6] hover:bg-amber-500/30 cursor-pointer"
+                title="سجل حركة المشرفين (خاص بالوكيل)"
               >
-                <Settings className="w-3 h-3" />
-                <span>إدارة الوكالة</span>
+                <ClipboardList className="w-3 h-3" />
+                <span>سجل المشرفين</span>
               </button>
             )}
           </div>
@@ -674,267 +845,338 @@ export const RoomPage: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* 2. HORIZONTAL 5-COLUMN MIC GRID (5 x 6 = Up to 30 Circular Mics, 42px circles) */}
-        <section className="shrink-0 max-h-[46dvh] overflow-y-auto no-scrollbar py-0.5">
-          <div className="grid grid-cols-5 gap-[6px]">
-            {room.seats.map((seat) => {
-              const isMe = seat.userId === user?.id;
-              const isActiveSpeaker = Boolean(seat.userId && seat.isSpeaking && !seat.isMuted);
-              const isTop1 = Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex);
-              const seatEmoji = seat.userId ? seatEmojis[seat.userId] : undefined;
+        {/* 2. SMART GEOMETRIC MIC GRID (1+4 | 2+4+4 | 5xN up to 30 Larger Mics) */}
+        <section
+          className={`shrink-0 ${
+            showGamesOverlay ? 'max-h-[34dvh]' : 'max-h-[50dvh]'
+          } overflow-y-auto no-scrollbar py-1 space-y-2`}
+        >
+          {micRows.map((row, rIdx) => (
+            <div
+              key={rIdx}
+              className={`flex items-start justify-center ${
+                row.cols === 5
+                  ? 'grid grid-cols-5 gap-1.5 sm:gap-2'
+                  : row.cols === 4
+                  ? 'grid grid-cols-4 gap-2 sm:gap-3 max-w-md mx-auto'
+                  : row.cols === 2
+                  ? 'gap-8 sm:gap-12'
+                  : ''
+              }`}
+            >
+              {row.seats.map((seat) => {
+                const isMe = seat.userId === user?.id;
+                const isActiveSpeaker = Boolean(seat.userId && seat.isSpeaking && !seat.isMuted);
+                const isTop1 = Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex);
+                const seatEmoji = seat.userId ? seatEmojis[seat.userId] : undefined;
 
-              return (
-                <button
-                  key={seat.seatIndex}
-                  type="button"
-                  onClick={() => void handleSeatInteraction(seat)}
-                  className="flex flex-col items-center text-center cursor-pointer group focus:outline-none"
-                >
-                  {/* Charisma / Support Points Badge ABOVE circle */}
-                  <div className="h-[14px] flex items-center justify-center gap-0.5 mb-0.5">
-                    {seat.userId ? (
-                      <span
-                        className={`inline-flex items-center gap-0.5 px-1.5 rounded-full text-[9px] font-mono-num font-extrabold leading-tight ${
-                          isTop1
-                            ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-[#070913]'
-                            : (seat.receivedDiamonds || 0) > 0
-                            ? 'bg-black/55 text-[#FCE9A6] border border-[#D4AF37]/40'
-                            : 'bg-black/40 text-slate-300'
-                        }`}
-                      >
-                        <span>{formatCompactMetric(seat.receivedDiamonds || 0)}</span>
-                        <span className="text-[8px]">💎</span>
-                      </span>
-                    ) : (
-                      <span className="text-[8px] font-mono-num text-slate-400/75">
-                        {seat.seatIndex + 1}
-                      </span>
-                    )}
-                  </div>
+                const sizeClass = row.isHero5
+                  ? 'w-[62px] h-[62px] sm:w-[68px] sm:h-[68px]'
+                  : room.seats.length <= 10
+                  ? 'w-[50px] h-[50px] sm:w-[56px] sm:h-[56px]'
+                  : 'w-[46px] h-[46px] sm:w-[52px] sm:h-[52px]';
 
-                  {/* Circular Seat Container (42px diameter) */}
-                  <div
-                    ref={(el) => {
-                      seatRefs.current[seat.seatIndex] = el;
-                    }}
-                    className="relative flex items-center justify-center"
+                return (
+                  <button
+                    key={seat.seatIndex}
+                    type="button"
+                    onClick={() => void handleSeatInteraction(seat)}
+                    className="flex flex-col items-center text-center cursor-pointer group focus:outline-none"
                   >
-                    {/* Golden Speaking Waves */}
-                    {isActiveSpeaker && (
-                      <>
-                        <span className="absolute -inset-1.5 rounded-full border-2 border-[#FCE9A6] animate-gold-wave pointer-events-none" />
-                        <span className="absolute -inset-0.5 rounded-full border border-amber-400/90 shadow-[0_0_16px_rgba(251,191,36,0.9)] pointer-events-none" />
-                      </>
-                    )}
-
-                    {/* TOP 1 Winged Golden Crown Aura */}
-                    {isTop1 && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute -inset-2 pointer-events-none flex items-center justify-between text-amber-300 text-xs animate-top1-shimmer"
-                      >
-                        <span className="-mr-1">🪽</span>
-                        <span className="-ml-1 scale-x-[-1]">🪽</span>
-                      </span>
-                    )}
-
-                    {seat.userId ? (
-                      <div
-                        className={`relative w-[42px] h-[42px] rounded-full overflow-hidden bg-[#14110B] ${
-                          isTop1
-                            ? 'ring-2 ring-amber-300 shadow-[0_0_16px_rgba(251,191,36,0.85)]'
-                            : isMe
-                            ? 'ring-2 ring-[#22E568] shadow-[0_0_12px_rgba(34,229,104,0.55)]'
-                            : 'ring-[1.5px] ring-[#D4AF37]/65'
-                        }`}
-                      >
-                        <img
-                          src={resolveAsset(seat.avatarUrl)}
-                          alt={seat.displayName || 'متحدث'}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    ) : (
-                      <div
-                        className={`w-[42px] h-[42px] rounded-full flex items-center justify-center border transition ${
-                          seat.isLocked
-                            ? 'bg-black/50 border-slate-700/70 text-slate-500'
-                            : 'bg-black/40 border-[#D4AF37]/30 text-[#D4AF37]/85 group-hover:border-[#FCE9A6] group-hover:bg-[#D4AF37]/15'
-                        }`}
-                      >
-                        {seat.isLocked ? (
-                          <Lock className="w-3.5 h-3.5" />
-                        ) : (
-                          <Mic className="w-4 h-4" />
-                        )}
-                      </div>
-                    )}
-
-                    {/* Animated Interactive Reaction / Dice Bubble (4 seconds) */}
-                    <AnimatePresence>
-                      {seatEmoji && (
-                        <motion.div
-                          key={seatEmoji.id}
-                          initial={{ scale: 0.2, opacity: 0, y: 8 }}
-                          animate={{
-                            scale: [0.3, 1.32, 1.05, 1.15, 1],
-                            opacity: 1,
-                            y: [-2, -7, -3, -6, -3],
-                            rotate: seatEmoji.diceValue ? [0, 360, 720] : [0, -8, 8, -4, 0],
-                          }}
-                          exit={{ scale: 0.4, opacity: 0, y: -12 }}
-                          transition={{ duration: 0.9, ease: 'easeOut' }}
-                          className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none"
+                    {/* Charisma / Support Points Badge ABOVE circle */}
+                    <div className="h-[15px] flex items-center justify-center gap-0.5 mb-0.5">
+                      {seat.userId ? (
+                        <span
+                          className={`inline-flex items-center gap-0.5 px-1.5 rounded-full text-[9px] font-mono-num font-extrabold leading-tight ${
+                            isTop1
+                              ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-[#070913]'
+                              : (seat.receivedDiamonds || 0) > 0
+                              ? 'bg-black/55 text-[#FCE9A6] border border-[#D4AF37]/40'
+                              : 'bg-black/40 text-slate-300'
+                          }`}
                         >
-                          <div className="w-[46px] h-[46px] rounded-full bg-black/70 backdrop-blur-[2px] border border-[#FCE9A6]/80 shadow-[0_0_18px_rgba(251,191,36,0.75)] flex flex-col items-center justify-center">
-                            <span className="text-2xl leading-none drop-shadow">
-                              {seatEmoji.diceValue
-                                ? DICE_GLYPHS[seatEmoji.diceValue - 1]
-                                : seatEmoji.emoji}
-                            </span>
-                            {seatEmoji.diceValue && (
-                              <span className="mt-0.5 px-1 rounded-full bg-[#FCE9A6] text-[#070913] text-[8px] font-mono-num font-extrabold leading-none">
-                                {seatEmoji.diceValue}
-                              </span>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* TOP 1 Crest Pill */}
-                    {isTop1 && (
-                      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 text-[#070913] text-[7px] font-extrabold leading-tight shadow z-10 whitespace-nowrap">
-                        TOP1
-                      </span>
-                    )}
-
-                    {/* Mic Muted Badge */}
-                    {seat.userId && seat.isMuted && (
-                      <span className="absolute -bottom-0.5 -left-0.5 w-4 h-4 rounded-full bg-rose-600 border border-[#0A0805] flex items-center justify-center text-white z-10">
-                        <MicOff className="w-2.5 h-2.5" />
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Speaker Name & Role Micro-Tag */}
-                  <div className="mt-1 flex items-center justify-center gap-0.5 max-w-[66px]">
-                    {seat.userId ? (
-                      <>
-                        {seat.userId === room.hostId && (
-                          <span className="text-[8px] text-amber-300 shrink-0">👑</span>
-                        )}
-                        <span className="text-[10px] font-bold text-white/95 truncate leading-tight">
-                          {seat.displayName}
+                          <span>{formatCompactMetric(seat.receivedDiamonds || 0)}</span>
+                          <span className="text-[8px]">💎</span>
                         </span>
-                      </>
-                    ) : (
-                      <span className="text-[9px] font-semibold text-slate-400/90 truncate">
-                        {seat.isLocked ? 'مقفل' : 'مايك'}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                      ) : (
+                        <span className="text-[9px] font-mono-num text-slate-300/80">
+                          {seat.seatIndex + 1}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Enlarged Circular Seat Container */}
+                    <div
+                      ref={(el) => {
+                        seatRefs.current[seat.seatIndex] = el;
+                      }}
+                      className="relative flex items-center justify-center"
+                    >
+                      {/* Golden Speaking Waves */}
+                      {isActiveSpeaker && (
+                        <>
+                          <span className="absolute -inset-1.5 rounded-full border-2 border-[#FCE9A6] animate-gold-wave pointer-events-none" />
+                          <span className="absolute -inset-0.5 rounded-full border border-amber-400/90 shadow-[0_0_16px_rgba(251,191,36,0.9)] pointer-events-none" />
+                        </>
+                      )}
+
+                      {/* TOP 1 Winged Golden Crown Aura */}
+                      {isTop1 && (
+                        <span
+                          aria-hidden="true"
+                          className="absolute -inset-2 pointer-events-none flex items-center justify-between text-amber-300 text-xs animate-top1-shimmer"
+                        >
+                          <span className="-mr-1">🪽</span>
+                          <span className="-ml-1 scale-x-[-1]">🪽</span>
+                        </span>
+                      )}
+
+                      {seat.userId ? (
+                        <div
+                          className={`relative ${sizeClass} rounded-full overflow-hidden bg-[#14110B] ${
+                            isTop1
+                              ? 'ring-2 ring-amber-300 shadow-[0_0_16px_rgba(251,191,36,0.85)]'
+                              : isMe
+                              ? 'ring-2 ring-[#22E568] shadow-[0_0_12px_rgba(34,229,104,0.55)]'
+                              : 'ring-[1.5px] ring-[#D4AF37]/65'
+                          }`}
+                        >
+                          <img
+                            src={resolveAsset(seat.avatarUrl)}
+                            alt={seat.displayName || 'متحدث'}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className={`${sizeClass} rounded-full flex items-center justify-center border transition ${
+                            seat.isLocked
+                              ? 'bg-black/50 border-slate-700/70 text-slate-500'
+                              : 'bg-black/40 border-[#D4AF37]/35 text-[#D4AF37]/90 group-hover:border-[#FCE9A6] group-hover:bg-[#D4AF37]/15'
+                          }`}
+                        >
+                          {seat.isLocked ? (
+                            <Lock className="w-4 h-4" />
+                          ) : (
+                            <Mic className={row.isHero5 ? 'w-5 h-5' : 'w-4 h-4'} />
+                          )}
+                        </div>
+                      )}
+
+                      {/* Enlarged High-Impact Animated Reaction / Dice Bubble (Full 4 seconds) */}
+                      <AnimatePresence>
+                        {seatEmoji && (
+                          <motion.div
+                            key={seatEmoji.id}
+                            initial={{ scale: 0.25, opacity: 0, y: 10 }}
+                            animate={{
+                              scale: [1, 1.2, 0.96, 1.15, 1],
+                              opacity: 1,
+                              y: [0, -7, -2, -6, 0],
+                              rotate: seatEmoji.diceValue
+                                ? [0, 360, 720, 720, 720]
+                                : [0, -10, 10, -6, 0],
+                            }}
+                            exit={{ scale: 0.35, opacity: 0, y: -14 }}
+                            transition={{
+                              duration: 1.15,
+                              repeat: Infinity,
+                              repeatType: 'mirror',
+                              ease: 'easeInOut',
+                            }}
+                            className="absolute -inset-2.5 z-20 flex flex-col items-center justify-center pointer-events-none"
+                          >
+                            <div className="w-[62px] h-[62px] sm:w-[68px] sm:h-[68px] rounded-full bg-black/80 backdrop-blur-[2px] border-2 border-[#FCE9A6] shadow-[0_0_26px_rgba(251,191,36,0.9)] flex flex-col items-center justify-center">
+                              <span className="text-3xl sm:text-4xl leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]">
+                                {seatEmoji.diceValue
+                                  ? DICE_GLYPHS[seatEmoji.diceValue - 1]
+                                  : seatEmoji.emoji}
+                              </span>
+                              {seatEmoji.diceValue && (
+                                <span className="mt-0.5 px-1.5 rounded-full bg-[#FCE9A6] text-[#070913] text-[9px] font-mono-num font-black leading-none">
+                                  {seatEmoji.diceValue}
+                                </span>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* TOP 1 Crest Pill */}
+                      {isTop1 && (
+                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 text-[#070913] text-[7px] font-extrabold leading-tight shadow z-10 whitespace-nowrap">
+                          TOP1
+                        </span>
+                      )}
+
+                      {/* Mic Muted Badge */}
+                      {seat.userId && seat.isMuted && (
+                        <span className="absolute -bottom-0.5 -left-0.5 w-4 h-4 rounded-full bg-rose-600 border border-[#0A0805] flex items-center justify-center text-white z-10">
+                          <MicOff className="w-2.5 h-2.5" />
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Speaker Name & Role Micro-Tag */}
+                    <div className="mt-1 flex items-center justify-center gap-0.5 max-w-[70px]">
+                      {seat.userId ? (
+                        <>
+                          {seat.userId === room.hostId && (
+                            <span className="text-[8px] text-amber-300 shrink-0">👑</span>
+                          )}
+                          <span className="text-[10px] font-bold text-white/95 truncate leading-tight">
+                            {seat.displayName}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-[9px] font-semibold text-slate-400/90 truncate">
+                          {seat.isLocked ? 'مقفل' : 'مايك'}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </section>
 
-        {/* 3. PUBLIC CHAT & WELCOME ANNOUNCEMENT */}
-        <section className="flex-1 min-h-0 flex flex-col mt-1.5 overflow-hidden">
-          <div className="flex-1 overflow-y-auto no-scrollbar space-y-1.5 px-1 py-1">
-            <div className="rounded-2xl bg-black/30 backdrop-blur-[2px] border border-[#D4AF37]/25 px-3 py-2 text-xs leading-relaxed">
-              <div className="flex items-center justify-between gap-2 mb-0.5">
-                <span className="font-extrabold text-[#FCE9A6]">إعلان الوكالة</span>
-                {canManage && (
-                  <button
-                    type="button"
-                    onClick={() => setShowSettingsModal(true)}
-                    className="text-[10px] font-bold text-amber-300/90 hover:underline cursor-pointer"
-                  >
-                    تعديل
-                  </button>
-                )}
-              </div>
-              <p className="text-[11px] sm:text-xs font-semibold text-amber-50/95 whitespace-pre-line">
-                {room.description || 'أهلاً بكم في الوكالة الملكية · نتمنى لكم أطيب الأوقات!'}
-              </p>
-            </div>
+        {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
+        <section className="flex-1 min-h-[100px] max-h-[31dvh] sm:max-h-[34dvh] flex flex-col mt-1 overflow-hidden">
+          {/* Compact Chat Filter Tabs */}
+          <div className="flex items-center gap-1.5 px-1 mb-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setChatFilter('all')}
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold border transition cursor-pointer ${
+                chatFilter === 'all'
+                  ? 'bg-[#D4AF37]/85 border-[#FCE9A6] text-[#070913]'
+                  : 'bg-black/45 border-white/15 text-slate-300 hover:text-white'
+              }`}
+            >
+              <MessageSquareText className="w-3 h-3" />
+              <span>الكل / الهدايا</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setChatFilter('chat')}
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold border transition cursor-pointer ${
+                chatFilter === 'chat'
+                  ? 'bg-[#D4AF37]/85 border-[#FCE9A6] text-[#070913]'
+                  : 'bg-black/45 border-white/15 text-slate-300 hover:text-white'
+              }`}
+            >
+              <MessageCircle className="w-3 h-3" />
+              <span>الدردشة فقط</span>
+            </button>
+          </div>
 
-            {room.messages.map((m) => {
-              const isJoinSystem =
-                m.type === 'system' && m.text.startsWith('دخل الغرفة');
-              if (isJoinSystem) {
-                return (
-                  <div key={m.id} className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#18B75D] to-[#0FA958] px-3 py-0.5 text-[11px] font-bold text-white shadow-sm">
-                      <span>🔔</span>
-                      <span>{m.text}</span>
-                    </span>
-                  </div>
-                );
-              }
-
-              if (m.type === 'system') {
-                return (
-                  <div
-                    key={m.id}
-                    className="inline-block rounded-xl bg-black/45 px-2.5 py-1 text-[11px] text-amber-100/90"
-                  >
-                    {m.text}
-                  </div>
-                );
-              }
-
-              if (m.type === 'gift' || m.type === 'wheel' || m.type === 'entry') {
-                return (
-                  <div
-                    key={m.id}
-                    className="rounded-xl border border-[#D4AF37]/45 bg-gradient-to-r from-[#362407]/75 to-[#151008]/75 px-3 py-1.5 text-[11px] font-bold text-[#FCE9A6] shadow-sm"
-                  >
-                    {m.text}
-                  </div>
-                );
-              }
-
-              return (
-                <div
-                  key={m.id}
-                  className="rounded-xl bg-black/35 backdrop-blur-[2px] px-2.5 py-1.5 text-xs leading-snug"
-                >
-                  <div className="inline-flex flex-wrap items-center gap-1 ml-1.5">
-                    <span
-                      className={`inline-flex items-center rounded-md px-1.5 py-0.2 text-[9px] font-mono-num font-extrabold ${
-                        m.isAdmin
-                          ? 'bg-amber-400 text-[#070913]'
-                          : m.level >= 15
-                          ? 'bg-sky-500/80 text-white'
-                          : 'bg-emerald-600/80 text-white'
-                      }`}
-                    >
-                      Lv.{m.level}
-                    </span>
-                    <FemaleVerifiedBadge badge={m.femaleVerifiedBadge} />
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-1.5 px-1 py-0.5">
+            {chatFilter === 'all' && (
+              <div className="rounded-2xl bg-black/30 backdrop-blur-[2px] border border-[#D4AF37]/25 px-3 py-1.5 text-xs leading-relaxed">
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <span className="font-extrabold text-[#FCE9A6]">إعلان الوكالة</span>
+                  {canManage && (
                     <button
                       type="button"
-                      onClick={() =>
-                        openMiniProfile(m.userId, {
-                          displayName: m.displayName,
-                          level: m.level,
-                          is_admin: m.isAdmin,
-                          femaleVerifiedBadge: m.femaleVerifiedBadge,
-                        })
-                      }
-                      className="font-extrabold text-[#FCE9A6] hover:underline cursor-pointer"
+                      onClick={() => {
+                        setSettingsInitialTab('agency');
+                        setShowSettingsModal(true);
+                      }}
+                      className="text-[10px] font-bold text-amber-300/90 hover:underline cursor-pointer"
                     >
-                      {m.displayName}:
+                      تعديل
                     </button>
-                  </div>
-                  <span className="text-white/95">{m.text}</span>
+                  )}
                 </div>
-              );
-            })}
+                <p className="text-[11px] font-semibold text-amber-50/95 whitespace-pre-line">
+                  {room.description || 'أهلاً بكم في الوكالة الملكية · نتمنى لكم أطيب الأوقات!'}
+                </p>
+              </div>
+            )}
+
+            {filteredMessages.length === 0 ? (
+              <div className="rounded-xl bg-black/25 px-3 py-4 text-center text-[11px] text-slate-300">
+                {chatFilter === 'chat'
+                  ? 'لا توجد رسائل دردشة نصية بعد — ابدأ المحادثة!'
+                  : 'لا توجد رسائل بعد.'}
+              </div>
+            ) : (
+              filteredMessages.map((m) => {
+                const isJoinSystem =
+                  m.type === 'system' && m.text.startsWith('دخل الغرفة');
+                if (isJoinSystem) {
+                  return (
+                    <div key={m.id} className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#18B75D] to-[#0FA958] px-3 py-0.5 text-[11px] font-bold text-white shadow-sm">
+                        <span>🔔</span>
+                        <span>{m.text}</span>
+                      </span>
+                    </div>
+                  );
+                }
+
+                if (m.type === 'system') {
+                  return (
+                    <div
+                      key={m.id}
+                      className="inline-block rounded-xl bg-black/45 px-2.5 py-1 text-[11px] text-amber-100/90"
+                    >
+                      {m.text}
+                    </div>
+                  );
+                }
+
+                if (m.type === 'gift' || m.type === 'wheel' || m.type === 'entry') {
+                  return (
+                    <div
+                      key={m.id}
+                      className="rounded-xl border border-[#D4AF37]/45 bg-gradient-to-r from-[#362407]/75 to-[#151008]/75 px-3 py-1.5 text-[11px] font-bold text-[#FCE9A6] shadow-sm"
+                    >
+                      {m.text}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={m.id}
+                    className="rounded-xl bg-black/35 backdrop-blur-[2px] px-2.5 py-1.5 text-xs leading-snug"
+                  >
+                    <div className="inline-flex flex-wrap items-center gap-1 ml-1.5">
+                      <span
+                        className={`inline-flex items-center rounded-md px-1.5 py-0.2 text-[9px] font-mono-num font-extrabold ${
+                          m.isAdmin
+                            ? 'bg-amber-400 text-[#070913]'
+                            : m.level >= 15
+                            ? 'bg-sky-500/80 text-white'
+                            : 'bg-emerald-600/80 text-white'
+                        }`}
+                      >
+                        Lv.{m.level}
+                      </span>
+                      <FemaleVerifiedBadge badge={m.femaleVerifiedBadge} />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openMiniProfile(m.userId, {
+                            displayName: m.displayName,
+                            level: m.level,
+                            is_admin: m.isAdmin,
+                            femaleVerifiedBadge: m.femaleVerifiedBadge,
+                          })
+                        }
+                        className="font-extrabold text-[#FCE9A6] hover:underline cursor-pointer"
+                      >
+                        {m.displayName}:
+                      </button>
+                    </div>
+                    <span className="text-white/95">{m.text}</span>
+                  </div>
+                );
+              })
+            )}
             <div ref={chatEndRef} />
           </div>
         </section>
@@ -1223,54 +1465,8 @@ export const RoomPage: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* FULLSCREEN LUXURY GIFT CELEBRATION OVERLAY (Non-blocking so Combo taps stay responsive) */}
-      <div className="fixed inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden">
-        <AnimatePresence>
-          {fullscreenGift && (
-            <motion.div
-              key={fullscreenGift.id}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.08 }}
-              transition={{ duration: 0.45 }}
-              className="relative flex flex-col items-center justify-center text-center px-6"
-            >
-              {/* Radial Golden Spotlight */}
-              <div className="absolute w-[320px] h-[320px] rounded-full bg-radial from-amber-300/35 via-amber-500/10 to-transparent blur-2xl" />
-
-              <motion.div
-                animate={{
-                  y: [0, -14, 0],
-                  scale: [1, 1.12, 1],
-                  rotate: [0, -4, 4, 0],
-                }}
-                transition={{ duration: 1.8, repeat: Infinity }}
-                className="relative text-[92px] sm:text-[110px] leading-none drop-shadow-[0_14px_32px_rgba(251,191,36,0.85)]"
-              >
-                {fullscreenGift.gift.glyph}
-              </motion.div>
-
-              <div className="mt-3 rounded-2xl border border-[#FCE9A6]/80 bg-gradient-to-r from-[#2D1D06]/90 via-[#161007]/90 to-[#2D1D06]/90 px-5 py-2 shadow-[0_0_32px_rgba(243,211,122,0.65)]">
-                <p className="text-xs sm:text-sm font-extrabold text-white">
-                  أهدى{' '}
-                  <span className="text-[#FCE9A6]">{fullscreenGift.senderName}</span>{' '}
-                  {fullscreenGift.gift.name}{' '}
-                  {fullscreenGift.quantity > 1 ? `×${fullscreenGift.quantity}` : ''}{' '}
-                  {fullscreenGift.comboCount > 1
-                    ? `· Combo ×${fullscreenGift.comboCount}`
-                    : ''}
-                </p>
-                <p className="text-[11px] font-bold text-amber-200/90 mt-0.5">
-                  إلى{' '}
-                  {fullscreenGift.recipientNames.length > 1
-                    ? `الجميع على المايكات (${fullscreenGift.recipientNames.length})`
-                    : fullscreenGift.recipientNames[0] || room.hostName}
-                </p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      {/* FULLSCREEN 5-SECOND DRAGON CINEMA CELEBRATION OVERLAY */}
+      <DragonCinemaOverlay event={fullscreenGift} hostName={room.hostName} />
 
       {/* SEAT INTERACTION SHEET */}
       <AnimatePresence>
@@ -1388,7 +1584,7 @@ export const RoomPage: React.FC = () => {
                   </div>
 
                   {canManage && seatActionTarget.userId !== room.hostId && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-white/10">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 border-t border-white/10">
                       <button
                         type="button"
                         onClick={() => {
@@ -1415,6 +1611,20 @@ export const RoomPage: React.FC = () => {
                         className="min-h-[38px] rounded-xl bg-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
                       >
                         إنزال من المايك
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleToggleLock(
+                            seatActionTarget.seatIndex,
+                            seatActionTarget.isLocked
+                          );
+                          setSeatActionTarget(null);
+                        }}
+                        className="min-h-[38px] rounded-xl bg-sky-500/20 border border-sky-400/40 text-[11px] font-bold text-sky-200 cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Lock className="w-3 h-3" />
+                        <span>قفل المايك</span>
                       </button>
                       <button
                         type="button"
@@ -1496,15 +1706,137 @@ export const RoomPage: React.FC = () => {
         {showGamesOverlay && (
           <RoomGamesModal
             roomTitle={room.title}
+            totalVolumeCoins={totalVolumeCoins}
             mySeat={mySeat}
             micActive={micActive}
             userCoins={user?.coins ?? 0}
             onToggleMute={() => void handleToggleMute()}
-            onClose={() => {
+            onRecharge={() => {
               setShowGamesOverlay(false);
-              void addPlayVolume(100);
+              minimizeRoom();
+              navigate('/wallet');
             }}
+            onOpenAgency={() => {
+              setShowGamesOverlay(false);
+              minimizeRoom();
+              navigate('/agency');
+            }}
+            onPlaySpent={(coins) => void addPlayVolume(coins)}
+            onClose={() => setShowGamesOverlay(false)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* PLAY & SUPPORT LEADERBOARD MODAL (🏆 تصنيف اللعب والدعم) */}
+      <AnimatePresence>
+        {showLeaderboardModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-0 sm:p-4"
+            onClick={() => setShowLeaderboardModal(false)}
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="royal-glass w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4 max-h-[82vh] flex flex-col"
+            >
+              <div className="flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FDE047] to-[#B45309] text-[#070913] flex items-center justify-center shadow">
+                    <Trophy className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold gold-gradient-text">
+                      تصنيف اللعب والدعم 🏆
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      مرتب من الأعلى إلى الأقل حسب نقاط الدعم واللعب داخل الوكالة
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLeaderboardModal(false)}
+                  className="w-8 h-8 rounded-full bg-white/10 text-slate-300 flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
+                {supportAndPlayLeaderboard.length === 0 ? (
+                  <div className="rounded-2xl bg-[#070913]/70 border border-white/10 py-10 text-center text-xs text-slate-400">
+                    لم يتم تسجيل أي نقاط دعم أو لعب في هذه الوكالة حتى الآن.
+                  </div>
+                ) : (
+                  supportAndPlayLeaderboard.map((entry, idx) => (
+                    <div
+                      key={entry.userId}
+                      className={`rounded-2xl border p-3 flex items-center justify-between gap-2 ${
+                        idx === 0
+                          ? 'bg-gradient-to-r from-[#3B2607]/85 to-[#17120A]/90 border-[#FDE047]/65'
+                          : 'bg-[#070913]/80 border-white/10'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowLeaderboardModal(false);
+                          openMiniProfile(entry.userId, {
+                            displayName: entry.displayName,
+                            avatarUrl: entry.avatarUrl,
+                            frameId: entry.frameId,
+                          });
+                        }}
+                        className="flex items-center gap-2.5 min-w-0 text-right cursor-pointer"
+                      >
+                        <span
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-mono-num font-black shrink-0 ${
+                            idx === 0
+                              ? 'bg-[#FDE047] text-[#070913]'
+                              : idx === 1
+                              ? 'bg-slate-200 text-slate-900'
+                              : idx === 2
+                              ? 'bg-amber-700 text-white'
+                              : 'bg-white/10 text-slate-300'
+                          }`}
+                        >
+                          {idx + 1}
+                        </span>
+                        <AvatarWithFrame
+                          src={entry.avatarUrl}
+                          alt={entry.displayName}
+                          frameId={entry.frameId}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs font-extrabold text-white truncate">
+                            {entry.displayName}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono-num mt-0.5">
+                            <span className="text-amber-300">
+                              🎁 دعم: {entry.supportCoins.toLocaleString('en-US')}
+                            </span>
+                            <span className="text-emerald-300">
+                              🎮 لعب: {entry.playCoins.toLocaleString('en-US')}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+
+                      <div className="text-left shrink-0">
+                        <span className="block text-xs font-mono-num font-black text-[#FCE9A6]">
+                          {entry.totalCoins.toLocaleString('en-US')}
+                        </span>
+                        <span className="block text-[9px] text-slate-400">إجمالي</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -1515,13 +1847,16 @@ export const RoomPage: React.FC = () => {
           extras={extras}
           presenceMembers={presenceMembers}
           isOwnerOrAdmin={isOwnerOrAdmin}
+          initialTab={settingsInitialTab}
+          ownedBackgrounds={ownedBackgrounds}
+          isAdmin={Boolean(user?.is_admin)}
           onUpdateSettings={updateSettings}
           onAdminAction={runAdminAction}
           onClose={() => setShowSettingsModal(false)}
         />
       )}
 
-      {/* ROOM MUSIC PLAYER MODAL */}
+      {/* ROOM MUSIC PLAYER MODAL (Device Audio File Only) */}
       {showMusicModal && (
         <RoomMusicModal
           isOnMic={Boolean(mySeat)}
@@ -1533,7 +1868,6 @@ export const RoomPage: React.FC = () => {
             if (v > 0 && musicMutedLocally) setMusicMutedLocally(false);
           }}
           onToggleLocalMute={() => setMusicMutedLocally(!musicMutedLocally)}
-          onPlayPreset={playPresetMusic}
           onPlayUploaded={playUploadedMusic}
           onTogglePlayPause={toggleMusicPlayPause}
           onStopMusic={stopRoomMusic}
@@ -1554,7 +1888,12 @@ export const RoomPage: React.FC = () => {
             isOnMic={Boolean(mySeat)}
             onKeepMinimized={handleKeepMinimized}
             onLeaveRoom={() => void handleConfirmLeave()}
-            onCancel={() => setShowExitModal(false)}
+            onCancel={() => {
+              setShowExitModal(false);
+              if (!window.history.state?.inRoom) {
+                window.history.pushState({ inRoom: true }, '');
+              }
+            }}
           />
         )}
       </AnimatePresence>

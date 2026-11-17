@@ -3,13 +3,14 @@ import type {
   Competition,
   CulturalQuestionAdminItem,
   DeviceLock,
+  FemaleVoiceVerificationRequest,
+  HostJoinApplication,
   PlatformSettings,
   Room,
   SecurityLog,
   UsdtDepositRequest,
   UsdtWithdrawalRequest,
   User,
-  FemaleVoiceVerificationRequest,
 } from '../types';
 import {
   genId,
@@ -47,6 +48,7 @@ export interface AdminOverviewPayload {
   usdtDeposits: UsdtDepositRequest[];
   usdtWithdrawals: UsdtWithdrawalRequest[];
   femaleVoiceRequests: FemaleVoiceVerificationRequest[];
+  hostJoinApplications: HostJoinApplication[];
   stats: {
     totalUsers: number;
     activeRooms: number;
@@ -98,6 +100,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
   const usdtDeposits = (depositsRes.data || []).map(rowToDeposit);
   const usdtWithdrawals = (withdrawalsRes.data || []).map(rowToWithdrawal);
   const femaleVoiceRequests = (femaleRes.data || []).map(rowToFemaleVoiceReq);
+  const hostJoinApplications = state.settings.hostJoinApplications || [];
 
   const activeRooms = rooms.filter((r) => r.isActive).length;
   const totalCoins = users.reduce((sum, u) => sum + (u.coins || 0), 0);
@@ -123,6 +126,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
     usdtDeposits,
     usdtWithdrawals,
     femaleVoiceRequests,
+    hostJoinApplications,
     stats: {
       totalUsers: users.length,
       activeRooms,
@@ -732,6 +736,41 @@ export async function updateHostApprovalInSupabase(
   }
 
   await supabase.from('sada_users').update(patch).eq('id', targetId);
+}
+
+export async function reviewHostJoinApplicationInSupabase(
+  appId: string,
+  decision: 'approved' | 'rejected'
+): Promise<void> {
+  const state = await getPlatformState();
+  const apps = [...(state.settings.hostJoinApplications || [])];
+  const idx = apps.findIndex((a) => a.id === appId);
+  if (idx < 0) throw new Error('طلب الانضمام غير موجود.');
+  const app = apps[idx];
+  if (app.status !== 'pending') {
+    throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
+  }
+
+  const now = new Date().toISOString();
+  apps[idx] = {
+    ...app,
+    status: decision,
+    reviewedAt: now,
+  };
+
+  if (decision === 'approved') {
+    await updateHostApprovalInSupabase(app.userId, {
+      isHost: true,
+      agencyId: app.agencyId,
+    });
+  }
+
+  await savePlatformState({
+    settings: {
+      ...state.settings,
+      hostJoinApplications: apps,
+    },
+  });
 }
 
 export function buildQuestionsCsvText(questions: CulturalQuestionAdminItem[]): string {

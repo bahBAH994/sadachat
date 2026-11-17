@@ -1,33 +1,50 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Briefcase,
   Building2,
+  CalendarCheck,
   Camera,
   Check,
+  CheckCircle2,
   ChevronLeft,
   Coins,
   Copy,
   Crown,
+  Flame,
   Gamepad2,
   Gem,
   Gift,
   LogOut,
   MapPin,
+  MessageCircleHeart,
   Mic2,
   Save,
   Settings,
-  Shield,
   ShieldCheck,
   Sparkles,
   Store,
   User as UserIcon,
+  Users,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useMiniProfile } from '../context/MiniProfileContext';
 import { AVATAR_CHOICES } from '../lib/assets';
-import { updateProfileInSupabase } from '../lib/sadaAuth';
-import { formatShortNumericId, STORE_3D_ITEMS } from '../lib/sadaCatalog';
+import { getUserPublicProfileFromSupabase, updateProfileInSupabase } from '../lib/sadaAuth';
+import { ARAB_COUNTRIES, formatShortNumericId, STORE_3D_ITEMS } from '../lib/sadaCatalog';
+import { getPlatformState } from '../lib/sadaMappers';
+import {
+  getProfileSocialListFromSupabase,
+  getUserGiftLevelsFromSupabase,
+} from '../lib/sadaSocialService';
+import {
+  checkInDailyHostTaskInSupabase,
+  claimHostTaskMilestoneInSupabase,
+  getHostTasksOverviewFromSupabase,
+} from '../lib/sadaWalletService';
+import { supabase } from '../lib/supabase';
+import type { HostTaskProgress, User } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import {
   FemaleVerifiedBadge,
@@ -67,17 +84,29 @@ async function compressStaticImageToDataUrl(file: File): Promise<string> {
   });
 }
 
+type SocialListKind = 'friends' | 'followers' | 'following' | 'visitors';
+
+const SOCIAL_MODAL_TITLES: Record<SocialListKind, string> = {
+  friends: 'الأصدقاء (متابعة متبادلة)',
+  followers: 'المتابِعون',
+  following: 'الأشخاص الذين أتابعهم',
+  visitors: 'زوار ملفي الشخصي',
+};
+
 export const ProfilePage: React.FC = () => {
   const { user, updateLocalUser, logout } = useAuth();
+  const { openMiniProfile } = useMiniProfile();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || 'host_male');
+  const [pendingAvatarUrl, setPendingAvatarUrl] = useState<string | null>(null);
   const [gender, setGender] = useState<'female' | 'male'>(user?.gender || 'male');
   const [isHost, setIsHost] = useState<boolean>(Boolean(user?.isHost));
   const [saving, setSaving] = useState(false);
+  const [savingPendingAvatar, setSavingPendingAvatar] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
@@ -85,12 +114,124 @@ export const ProfilePage: React.FC = () => {
     null
   );
 
+  const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
+  const [userVisitors, setUserVisitors] = useState<Record<string, string[]>>({});
+  const [giftLevels, setGiftLevels] = useState({ sendLevel: 1, receiveLevel: 1 });
+
+  // Social users modal
+  const [socialModalKind, setSocialModalKind] = useState<SocialListKind | null>(null);
+  const [socialUsers, setSocialUsers] = useState<User[]>([]);
+  const [loadingSocial, setLoadingSocial] = useState(false);
+
+  // Host Tasks 15-day streak modal
+  const [showTasksModal, setShowTasksModal] = useState(false);
+  const [taskProgress, setTaskProgress] = useState<HostTaskProgress>({
+    streakDays: 0,
+    lastCheckInDate: null,
+    claimedDay7: false,
+    claimedDay15: false,
+  });
+  const [checkedInToday, setCheckedInToday] = useState(false);
+  const [taskBusy, setTaskBusy] = useState(false);
+
+  const loadProfileSocialAndUser = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [freshUser, state, levels, tasks] = await Promise.all([
+        getUserPublicProfileFromSupabase(user.id).catch(() => null),
+        getPlatformState().catch(() => null),
+        getUserGiftLevelsFromSupabase(user.id).catch(() => null),
+        getHostTasksOverviewFromSupabase(user.id).catch(() => null),
+      ]);
+      if (freshUser) {
+        updateLocalUser(freshUser);
+        setDisplayName(freshUser.displayName);
+        setBio(freshUser.bio);
+        setGender(freshUser.gender || 'male');
+        setIsHost(Boolean(freshUser.isHost));
+        if (!showEditModal) {
+          setAvatarUrl(freshUser.avatarUrl);
+        }
+      }
+      if (state?.settings) {
+        setUserFollows(state.settings.userFollows || {});
+        setUserVisitors(state.settings.userVisitors || {});
+      }
+      if (levels) {
+        setGiftLevels({
+          sendLevel: levels.sendLevel,
+          receiveLevel: levels.receiveLevel,
+        });
+      }
+      if (tasks) {
+        setTaskProgress(tasks.progress);
+        setCheckedInToday(tasks.checkedInToday);
+      }
+    } catch {
+      // ignore transient error
+    }
+  }, [user?.id, updateLocalUser, showEditModal]);
+
+  useEffect(() => {
+    void loadProfileSocialAndUser();
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`sada-profile-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_platform_state' },
+        () => {
+          void loadProfileSocialAndUser();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'sada_users', filter: `id=eq.${user.id}` },
+        () => {
+          void loadProfileSocialAndUser();
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadProfileSocialAndUser, user?.id]);
+
+  const socialCounts = useMemo(() => {
+    if (!user?.id) return { friends: 0, followers: 0, following: 0, visitors: 0 };
+    const myFollowing = Array.isArray(userFollows[user.id])
+      ? userFollows[user.id].filter((id) => id !== user.id)
+      : [];
+    let followers = 0;
+    for (const [uid, list] of Object.entries(userFollows)) {
+      if (uid !== user.id && Array.isArray(list) && list.includes(user.id)) {
+        followers += 1;
+      }
+    }
+    const friends = myFollowing.filter(
+      (fid) => Array.isArray(userFollows[fid]) && userFollows[fid].includes(user.id)
+    ).length;
+    const visitors = Array.isArray(userVisitors[user.id])
+      ? userVisitors[user.id].filter((id) => id !== user.id).length
+      : 0;
+    return {
+      friends,
+      followers,
+      following: myFollowing.length,
+      visitors,
+    };
+  }, [user?.id, userFollows, userVisitors]);
+
   if (!user) return null;
 
   const numericId = formatShortNumericId(user.id);
   const xpNextLevel = Math.pow(user.level, 2) * 120;
   const xpProgress = Math.min(100, Math.round((user.xp / Math.max(1, xpNextLevel)) * 100));
   const active3D = STORE_3D_ITEMS.find((i) => i.id === user.frameId) || STORE_3D_ITEMS[0];
+  const userCountry = user.country
+    ? ARAB_COUNTRIES.find((c) => c.code === user.country)
+    : null;
+  const canViewMyAgency = Boolean(user.isAgent || user.is_admin);
 
   const handleCopyId = () => {
     navigator.clipboard?.writeText(numericId).catch(() => {});
@@ -121,7 +262,6 @@ export const ProfilePage: React.FC = () => {
     try {
       let finalDataUrl: string;
       if (isAnimated) {
-        // Read .gif / .webp raw via FileReader without canvas compression so animation stays intact
         finalDataUrl = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onerror = () => reject(new Error('تعذّر قراءة الصورة المتحركة.'));
@@ -132,23 +272,47 @@ export const ProfilePage: React.FC = () => {
         finalDataUrl = await compressStaticImageToDataUrl(file);
       }
 
-      setAvatarUrl(finalDataUrl);
-      const updated = await updateProfileInSupabase(user, { avatarUrl: finalDataUrl });
-      updateLocalUser(updated);
-      setFeedback({
-        type: 'ok',
-        text: isAnimated
-          ? 'تم رفع صورتك المتحركة بنجاح وستظهر متحركة على المايك!'
-          : 'تم تحديث صورتك الشخصية بنجاح!',
-      });
+      if (showEditModal) {
+        setAvatarUrl(finalDataUrl);
+      } else {
+        // Preview locally first; persist ONLY when user clicks "حفظ التعديلات"
+        setPendingAvatarUrl(finalDataUrl);
+      }
     } catch (err) {
       setFeedback({
         type: 'err',
-        text: err instanceof Error ? err.message : 'تعذّر رفع الصورة الشخصية.',
+        text: err instanceof Error ? err.message : 'تعذّر قراءة الصورة الشخصية.',
       });
     } finally {
       setUploadingAvatar(false);
     }
+  };
+
+  const handleConfirmPendingAvatar = async () => {
+    if (!pendingAvatarUrl) return;
+    setSavingPendingAvatar(true);
+    setFeedback(null);
+    try {
+      const updated = await updateProfileInSupabase(user, { avatarUrl: pendingAvatarUrl });
+      updateLocalUser(updated);
+      setAvatarUrl(updated.avatarUrl);
+      setPendingAvatarUrl(null);
+      setFeedback({
+        type: 'ok',
+        text: 'تم حفظ وتحديث صورتك الشخصية بنجاح في قاعدة البيانات والمايكات!',
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'تعذّر حفظ الصورة الشخصية.',
+      });
+    } finally {
+      setSavingPendingAvatar(false);
+    }
+  };
+
+  const handleCancelPendingAvatar = () => {
+    setPendingAvatarUrl(null);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -164,6 +328,7 @@ export const ProfilePage: React.FC = () => {
         isHost,
       });
       updateLocalUser(updatedUser);
+      setPendingAvatarUrl(null);
       setShowEditModal(false);
       setFeedback({ type: 'ok', text: 'تم حفظ تعديلات ملفك الشخصي بنجاح.' });
     } catch (err) {
@@ -173,6 +338,58 @@ export const ProfilePage: React.FC = () => {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOpenSocialModal = async (kind: SocialListKind) => {
+    setSocialModalKind(kind);
+    setLoadingSocial(true);
+    try {
+      const list = await getProfileSocialListFromSupabase(user.id, kind);
+      setSocialUsers(list);
+    } catch {
+      setSocialUsers([]);
+    } finally {
+      setLoadingSocial(false);
+    }
+  };
+
+  const handleDailyCheckIn = async () => {
+    setTaskBusy(true);
+    setFeedback(null);
+    try {
+      const res = await checkInDailyHostTaskInSupabase(user);
+      setTaskProgress(res.progress);
+      setCheckedInToday(res.checkedInToday);
+      setFeedback({
+        type: 'ok',
+        text: `تم تسجيل حضورك اليومي بنجاح! سلسلتك الحالية: ${res.progress.streakDays} يوماً متتالياً.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'تعذّر تسجيل الحضور اليومي.',
+      });
+    } finally {
+      setTaskBusy(false);
+    }
+  };
+
+  const handleClaimMilestone = async (milestone: 7 | 15) => {
+    setTaskBusy(true);
+    setFeedback(null);
+    try {
+      const res = await claimHostTaskMilestoneInSupabase(user, milestone);
+      updateLocalUser(res.user);
+      setTaskProgress(res.progress);
+      setFeedback({ type: 'ok', text: res.rewardMessage });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'تعذّر استلام المكافأة.',
+      });
+    } finally {
+      setTaskBusy(false);
     }
   };
 
@@ -191,14 +408,21 @@ export const ProfilePage: React.FC = () => {
         className="hidden"
       />
 
-      {/* Dark Royal Profile Top Header matching Screenshot 2 */}
+      {/* Dark Royal Profile Top Header */}
       <section className="relative bg-gradient-to-b from-[#090D16] via-[#12192B] to-[#1A2438] text-white pt-4 pb-12 px-4 overflow-hidden">
         <div className="max-w-3xl mx-auto space-y-5 relative z-10">
           {/* Top utility row */}
           <div className="flex items-center justify-between text-xs">
             <button
               type="button"
-              onClick={() => setShowEditModal(true)}
+              onClick={() => {
+                setDisplayName(user.displayName);
+                setBio(user.bio);
+                setAvatarUrl(pendingAvatarUrl || user.avatarUrl);
+                setGender(user.gender || 'male');
+                setIsHost(Boolean(user.isHost));
+                setShowEditModal(true);
+              }}
               className="inline-flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-3 py-1.5 font-bold text-slate-200 cursor-pointer transition"
             >
               <Settings className="w-3.5 h-3.5 text-[#FCE9A6]" />
@@ -218,7 +442,9 @@ export const ProfilePage: React.FC = () => {
               )}
               <span className="inline-flex items-center gap-1 text-slate-300 font-semibold">
                 <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                <span>موقع المدينة</span>
+                <span>
+                  {userCountry ? `${userCountry.flag} ${userCountry.label}` : 'صَدَى - SADA'}
+                </span>
               </span>
             </div>
           </div>
@@ -229,7 +455,7 @@ export const ProfilePage: React.FC = () => {
               {/* Circular Avatar + Golden Camera Icon */}
               <div className="relative shrink-0">
                 <AvatarWithFrame
-                  src={avatarUrl}
+                  src={pendingAvatarUrl || user.avatarUrl}
                   alt={user.displayName}
                   frameId={user.frameId}
                   size="xl"
@@ -238,7 +464,7 @@ export const ProfilePage: React.FC = () => {
                   type="button"
                   disabled={uploadingAvatar}
                   onClick={() => fileInputRef.current?.click()}
-                  title="تغيير الصورة الشخصية (يدعم GIF و WebP المتحركة)"
+                  title="معاينة صورة جديدة (يُحفظ بعد الضغط على حفظ التعديلات)"
                   className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-gradient-to-br from-[#FCE9A6] via-[#D4AF37] to-[#A67C1E] text-[#070913] border-2 border-[#0B0F1A] shadow-[0_0_16px_rgba(212,175,55,0.75)] flex items-center justify-center cursor-pointer hover:scale-105 transition disabled:opacity-60 z-20"
                 >
                   <Camera className="w-4 h-4" />
@@ -253,7 +479,8 @@ export const ProfilePage: React.FC = () => {
                   <FemaleVerifiedBadge badge={user.femaleVerifiedBadge} />
                 </div>
 
-                <div className="flex items-center flex-wrap gap-2">
+                {/* ID + Separate Send & Receive Level Badges */}
+                <div className="flex items-center flex-wrap gap-1.5">
                   <button
                     type="button"
                     onClick={handleCopyId}
@@ -267,10 +494,23 @@ export const ProfilePage: React.FC = () => {
                     )}
                   </button>
 
-                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/25 border border-violet-300/40 px-2.5 py-0.5 text-[11px] font-bold text-violet-100 font-mono-num">
-                    <Crown className="w-3 h-3 text-amber-300" />
-                    Lv.{user.level}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/my-level')}
+                    className="inline-flex items-center gap-1 rounded-full bg-amber-500/25 border border-amber-300/50 px-2.5 py-0.5 text-[11px] font-extrabold text-[#FCE9A6] font-mono-num cursor-pointer"
+                  >
+                    <Gift className="w-3 h-3 text-amber-300" />
+                    <span>داعم Lv.{giftLevels.sendLevel}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate('/my-level')}
+                    className="inline-flex items-center gap-1 rounded-full bg-sky-500/25 border border-sky-300/50 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-100 font-mono-num cursor-pointer"
+                  >
+                    <Crown className="w-3 h-3 text-sky-300" />
+                    <span>مضيف Lv.{giftLevels.receiveLevel}</span>
+                  </button>
                 </div>
 
                 <p className="text-[11px] text-slate-300 line-clamp-1">{user.bio}</p>
@@ -278,33 +518,76 @@ export const ProfilePage: React.FC = () => {
             </div>
           </div>
 
-          {/* 4 Stats Row + Active 3D Card */}
+          {/* Pending Avatar Explicit Save / Cancel Bar */}
+          {pendingAvatarUrl && (
+            <div className="rounded-2xl bg-amber-500/15 border border-amber-300/50 p-3 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-bold text-[#FCE9A6]">
+                معاينة الصورة الجديدة جاهزة — اضغط "حفظ التعديلات" لاعتمادها على حسابك والمايكات:
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={savingPendingAvatar}
+                  onClick={handleConfirmPendingAvatar}
+                  className="emerald-btn rounded-xl px-4 py-1.5 text-xs font-extrabold cursor-pointer flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{savingPendingAvatar ? 'جارٍ الحفظ...' : 'حفظ التعديلات'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelPendingAvatar}
+                  className="rounded-xl bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-bold text-slate-200 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 4 Interactive Stats Row + Active 3D Card */}
           <div className="grid grid-cols-12 items-center gap-3 pt-1">
             <div className="col-span-7 grid grid-cols-4 gap-1 text-center">
-              <div className="space-y-0.5">
+              <button
+                type="button"
+                onClick={() => handleOpenSocialModal('friends')}
+                className="space-y-0.5 rounded-xl py-1 hover:bg-white/10 transition cursor-pointer"
+              >
                 <span className="block text-base sm:text-lg font-extrabold font-mono-num">
-                  {Math.max(12, user.level * 5)}
+                  {socialCounts.friends}
                 </span>
-                <span className="block text-[11px] text-slate-400">الأصدقاء</span>
-              </div>
-              <div className="space-y-0.5">
+                <span className="block text-[11px] text-slate-300">الأصدقاء</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenSocialModal('followers')}
+                className="space-y-0.5 rounded-xl py-1 hover:bg-white/10 transition cursor-pointer"
+              >
                 <span className="block text-base sm:text-lg font-extrabold font-mono-num">
-                  {Math.max(24, user.level * 9)}
+                  {socialCounts.followers}
                 </span>
-                <span className="block text-[11px] text-slate-400">التالية</span>
-              </div>
-              <div className="space-y-0.5">
+                <span className="block text-[11px] text-slate-300">المتابِعون</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenSocialModal('following')}
+                className="space-y-0.5 rounded-xl py-1 hover:bg-white/10 transition cursor-pointer"
+              >
                 <span className="block text-base sm:text-lg font-extrabold font-mono-num">
-                  {user.referralCount || 0}
+                  {socialCounts.following}
                 </span>
-                <span className="block text-[11px] text-slate-400">أتابع</span>
-              </div>
-              <div className="space-y-0.5">
+                <span className="block text-[11px] text-slate-300">أتابع</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenSocialModal('visitors')}
+                className="space-y-0.5 rounded-xl py-1 hover:bg-white/10 transition cursor-pointer"
+              >
                 <span className="block text-base sm:text-lg font-extrabold font-mono-num">
-                  {Math.max(0, Math.floor(user.xp / 50))}
+                  {socialCounts.visitors}
                 </span>
-                <span className="block text-[11px] text-slate-400">زائر</span>
-              </div>
+                <span className="block text-[11px] text-slate-300">زائر</span>
+              </button>
             </div>
 
             <div className="col-span-5 flex justify-end">
@@ -336,11 +619,11 @@ export const ProfilePage: React.FC = () => {
           </div>
         )}
 
-        {/* 4 Quick Icons Bar (مستواي - المتجر - الحقيبة - عائلة) */}
+        {/* 4 Quick Icons Bar: مستواي - المتجر - الحقيبة - محفظة الألماس (عائلة محذوفة) */}
         <section className="light-card rounded-3xl p-4 grid grid-cols-4 gap-2 text-center">
           <button
             type="button"
-            onClick={() => setShowEditModal(true)}
+            onClick={() => navigate('/my-level')}
             className="flex flex-col items-center gap-1.5 cursor-pointer group"
           >
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 border border-amber-300/70 flex items-center justify-center text-amber-700 group-hover:scale-105 transition">
@@ -348,7 +631,7 @@ export const ProfilePage: React.FC = () => {
             </div>
             <span className="text-xs font-extrabold text-slate-800">مستواي</span>
             <span className="text-[10px] text-amber-600 font-mono-num font-bold">
-              {xpProgress}% XP
+              {xpProgress}% · S{giftLevels.sendLevel}/R{giftLevels.receiveLevel}
             </span>
           </button>
 
@@ -361,7 +644,7 @@ export const ProfilePage: React.FC = () => {
               <Store className="w-6 h-6" />
             </div>
             <span className="text-xs font-extrabold text-slate-800">المتجر</span>
-            <span className="text-[10px] text-emerald-600 font-bold">دخوليات 3D</span>
+            <span className="text-[10px] text-emerald-600 font-bold">إطارات وخلفيات</span>
           </button>
 
           <button
@@ -369,45 +652,45 @@ export const ProfilePage: React.FC = () => {
             onClick={() => navigate('/bag')}
             className="flex flex-col items-center gap-1.5 cursor-pointer group"
           >
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-100 to-indigo-200 border border-sky-300/70 flex items-center justify-center text-sky-700 group-hover:scale-105 transition">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-200 border border-indigo-300/70 flex items-center justify-center text-indigo-700 group-hover:scale-105 transition">
               <Briefcase className="w-6 h-6" />
             </div>
             <span className="text-xs font-extrabold text-slate-800">الحقيبة</span>
-            <span className="text-[10px] text-sky-600 font-bold">ألماس وممتلكات</span>
+            <span className="text-[10px] text-indigo-600 font-bold">ممتلكاتي</span>
           </button>
 
           <button
             type="button"
-            onClick={() => navigate('/agency')}
+            onClick={() => navigate('/diamond-wallet')}
             className="flex flex-col items-center gap-1.5 cursor-pointer group"
           >
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-lime-100 to-emerald-200 border border-lime-300/70 flex items-center justify-center text-emerald-700 group-hover:scale-105 transition">
-              <Shield className="w-6 h-6" />
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-100 to-cyan-200 border border-sky-300/70 flex items-center justify-center text-sky-700 group-hover:scale-105 transition">
+              <Gem className="w-6 h-6" />
             </div>
-            <span className="text-xs font-extrabold text-slate-800">عائلة</span>
-            <span className="text-[10px] text-slate-500 font-bold">الوكالات</span>
+            <span className="text-xs font-extrabold text-slate-800">محفظة الألماس</span>
+            <span className="text-[10px] text-sky-600 font-bold">أرباحي وسحبها</span>
           </button>
         </section>
 
-        {/* Dual Wallet Summary Card */}
-        <section className="light-card rounded-3xl p-4 grid grid-cols-2 divide-x divide-x-reverse divide-slate-100">
+        {/* Prominent Dual Wallet Summary Card */}
+        <section className="light-card rounded-3xl p-4 sm:p-5 grid grid-cols-2 divide-x divide-x-reverse divide-slate-100">
           <button
             type="button"
             onClick={() => navigate('/wallet')}
             className="pl-3 text-right space-y-1.5 cursor-pointer group"
           >
             <div className="flex items-center justify-between text-xs text-slate-500 font-bold">
-              <span>كوينز</span>
+              <span>رصيد الكوينز</span>
               <span className="text-slate-400 group-hover:text-emerald-600 flex items-center gap-0.5">
-                المحفظة
+                الشحن
                 <ChevronLeft className="w-3.5 h-3.5" />
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
-                <Coins className="w-4 h-4" />
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                <Coins className="w-5 h-5" />
               </div>
-              <span className="text-lg font-black text-slate-900 font-mono-num">
+              <span className="text-2xl sm:text-3xl font-black text-slate-900 font-mono-num truncate">
                 {user.coins.toLocaleString('en-US')}
               </span>
             </div>
@@ -415,21 +698,21 @@ export const ProfilePage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => navigate('/bag')}
+            onClick={() => navigate('/diamond-wallet')}
             className="pr-4 text-right space-y-1.5 cursor-pointer group"
           >
             <div className="flex items-center justify-between text-xs text-slate-500 font-bold">
-              <span>ألماس</span>
+              <span>رصيد الألماس</span>
               <span className="text-slate-400 group-hover:text-sky-600 flex items-center gap-0.5">
-                الحقيبة
+                محفظة الألماس
                 <ChevronLeft className="w-3.5 h-3.5" />
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-sky-100 flex items-center justify-center text-sky-600">
-                <Gem className="w-4 h-4" />
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-sky-100 flex items-center justify-center text-sky-600 shrink-0">
+                <Gem className="w-5 h-5" />
               </div>
-              <span className="text-lg font-black text-slate-900 font-mono-num">
+              <span className="text-2xl sm:text-3xl font-black text-slate-900 font-mono-num truncate">
                 {user.diamonds.toLocaleString('en-US')}
               </span>
             </div>
@@ -439,22 +722,24 @@ export const ProfilePage: React.FC = () => {
         {/* Female Voice Verification Card if applicable */}
         <FemaleVoiceVerificationCard />
 
-        {/* 4 Pastel Feature Tiles matching Screenshot 2 */}
+        {/* Feature Tiles: "وكالتي" visible ONLY for Agency Owners / Admin */}
         <section className="light-card rounded-3xl p-4 grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => navigate('/agency')}
-            className="rounded-2xl bg-emerald-50/90 hover:bg-emerald-100/80 border border-emerald-100 p-4 flex items-center justify-between cursor-pointer transition"
-          >
-            <span className="text-sm font-extrabold text-emerald-950">وكالتي</span>
-            <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-emerald-600 shadow-sm">
-              <Building2 className="w-5 h-5" />
-            </div>
-          </button>
+          {canViewMyAgency && (
+            <button
+              type="button"
+              onClick={() => navigate('/agency?tab=my-agency')}
+              className="rounded-2xl bg-emerald-50/90 hover:bg-emerald-100/80 border border-emerald-100 p-4 flex items-center justify-between cursor-pointer transition"
+            >
+              <span className="text-sm font-extrabold text-emerald-950">وكالتي</span>
+              <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-emerald-600 shadow-sm">
+                <Building2 className="w-5 h-5" />
+              </div>
+            </button>
+          )}
 
           <button
             type="button"
-            onClick={() => navigate('/agency')}
+            onClick={() => navigate('/agency?tab=host-center')}
             className="rounded-2xl bg-violet-50/90 hover:bg-violet-100/80 border border-violet-100 p-4 flex items-center justify-between cursor-pointer transition"
           >
             <span className="text-sm font-extrabold text-violet-950">مركز المضيف</span>
@@ -465,10 +750,15 @@ export const ProfilePage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => navigate('/competitions')}
+            onClick={() => setShowTasksModal(true)}
             className="rounded-2xl bg-amber-50/90 hover:bg-amber-100/80 border border-amber-100 p-4 flex items-center justify-between cursor-pointer transition"
           >
-            <span className="text-sm font-extrabold text-amber-950">مركز المهام</span>
+            <div className="text-right">
+              <span className="block text-sm font-extrabold text-amber-950">مهام المضيف</span>
+              <span className="block text-[10px] font-bold text-amber-700 font-mono-num">
+                السلسلة: {taskProgress.streakDays}/15 يوم
+              </span>
+            </div>
             <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-amber-600 shadow-sm">
               <Sparkles className="w-5 h-5" />
             </div>
@@ -477,7 +767,9 @@ export const ProfilePage: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/competitions')}
-            className="rounded-2xl bg-rose-50/90 hover:bg-rose-100/80 border border-rose-100 p-4 flex items-center justify-between cursor-pointer transition"
+            className={`${
+              !canViewMyAgency ? 'col-span-2' : ''
+            } rounded-2xl bg-rose-50/90 hover:bg-rose-100/80 border border-rose-100 p-4 flex items-center justify-between cursor-pointer transition`}
           >
             <span className="text-sm font-extrabold text-rose-950">دعوة الأصدقاء</span>
             <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-rose-600 shadow-sm">
@@ -490,7 +782,14 @@ export const ProfilePage: React.FC = () => {
         <section className="light-card rounded-3xl p-4 grid grid-cols-4 gap-2 text-center">
           <button
             type="button"
-            onClick={() => setShowEditModal(true)}
+            onClick={() => {
+              setDisplayName(user.displayName);
+              setBio(user.bio);
+              setAvatarUrl(pendingAvatarUrl || user.avatarUrl);
+              setGender(user.gender || 'male');
+              setIsHost(Boolean(user.isHost));
+              setShowEditModal(true);
+            }}
             className="flex flex-col items-center gap-1.5 text-slate-600 hover:text-emerald-600 cursor-pointer transition"
           >
             <UserIcon className="w-5 h-5" />
@@ -530,7 +829,236 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Edit Profile & Animated Avatar Modal */}
+      {/* Social List Modal (Friends / Followers / Following / Visitors) */}
+      {socialModalKind && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
+          onClick={() => setSocialModalKind(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md max-h-[80vh] flex flex-col rounded-3xl bg-white border border-slate-200 shadow-2xl overflow-hidden text-slate-900"
+          >
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-emerald-600" />
+                <h2 className="text-sm sm:text-base font-extrabold">
+                  {SOCIAL_MODAL_TITLES[socialModalKind]}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSocialModalKind(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto no-scrollbar space-y-2.5 flex-1">
+              {loadingSocial ? (
+                <p className="text-xs text-center text-slate-400 py-8">جارٍ التحميل...</p>
+              ) : socialUsers.length === 0 ? (
+                <p className="text-xs text-center text-slate-500 py-8">
+                  لا يوجد مستخدمون مسجلون في هذه القائمة حالياً.
+                </p>
+              ) : (
+                socialUsers.map((person) => (
+                  <div
+                    key={person.id}
+                    className="rounded-2xl border border-slate-100 bg-slate-50 p-3 flex items-center justify-between gap-2"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSocialModalKind(null);
+                        openMiniProfile(person.id, person);
+                      }}
+                      className="flex items-center gap-3 min-w-0 flex-1 text-right cursor-pointer"
+                    >
+                      <AvatarWithFrame
+                        src={person.avatarUrl}
+                        alt={person.displayName}
+                        frameId={person.frameId}
+                        size="sm"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
+                          {person.displayName}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-mono-num">
+                          ID: {formatShortNumericId(person.id)} · Lv.{person.level}
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSocialModalKind(null);
+                        navigate(`/messages?to=${person.id}`);
+                      }}
+                      className="rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700 cursor-pointer flex items-center gap-1 shrink-0"
+                    >
+                      <MessageCircleHeart className="w-3.5 h-3.5" />
+                      <span>مراسلة</span>
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Host Tasks 15-Day Streak Modal ("مهام المضيف") */}
+      {showTasksModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
+          onClick={() => setShowTasksModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg max-h-[88vh] overflow-y-auto no-scrollbar rounded-3xl bg-white border border-slate-200 p-5 sm:p-6 space-y-5 shadow-2xl text-slate-900"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700">
+                  <CalendarCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base sm:text-lg font-black">مهام المضيف اليومية (15 يوماً)</h2>
+                  <p className="text-[11px] text-slate-500">
+                    سجّل دخولك يومياً دون انقطاع لفتح الإطار والدخولية المجانية!
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTasksModal(false)}
+                className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Streak Progress Header */}
+            <div className="rounded-2xl bg-gradient-to-r from-[#0F172A] to-[#064E3B] p-4 text-white flex items-center justify-between gap-3">
+              <div>
+                <span className="text-[11px] text-amber-200 font-bold">سلسلة المواظبة الحالية</span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <Flame className="w-6 h-6 text-amber-400" />
+                  <span className="text-2xl font-black font-mono-num">
+                    {taskProgress.streakDays} / 15 يوم
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={checkedInToday || taskBusy}
+                onClick={handleDailyCheckIn}
+                className={`min-h-[42px] rounded-2xl px-4 text-xs font-extrabold cursor-pointer transition ${
+                  checkedInToday
+                    ? 'bg-white/15 text-emerald-200 border border-emerald-400/40'
+                    : 'gold-btn'
+                }`}
+              >
+                {checkedInToday ? 'تم تسجيل اليوم ✓' : 'تسجيل حضور اليوم'}
+              </button>
+            </div>
+
+            {/* 15-Day Grid */}
+            <div className="grid grid-cols-5 gap-2">
+              {Array.from({ length: 15 }, (_, idx) => {
+                const dayNum = idx + 1;
+                const done = taskProgress.streakDays >= dayNum;
+                const isMilestone = dayNum === 7 || dayNum === 15;
+                return (
+                  <div
+                    key={dayNum}
+                    className={`rounded-2xl p-2 text-center border text-xs font-mono-num ${
+                      done
+                        ? 'bg-emerald-50 border-emerald-400 text-emerald-800'
+                        : isMilestone
+                        ? 'bg-amber-50 border-amber-300 text-amber-900'
+                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    <span className="block text-[10px] font-bold">يوم {dayNum}</span>
+                    <span className="block text-base mt-0.5">
+                      {done ? '✅' : dayNum === 7 ? '🎁' : dayNum === 15 ? '🏎️' : '⭐'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Milestone Rewards */}
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black text-rose-950">
+                    🎁 مكافأة 7 أيام متتالية: إطار مهام المضيف (7 أيام)
+                  </h3>
+                  <p className="text-[11px] text-rose-700 mt-0.5">
+                    إطار متحرك مجاني لمدة 7 أيام فور إتمام الأسبوع الأول.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={taskBusy || taskProgress.claimedDay7 || taskProgress.streakDays < 7}
+                  onClick={() => handleClaimMilestone(7)}
+                  className={`min-h-[38px] rounded-xl px-3.5 text-xs font-extrabold shrink-0 cursor-pointer ${
+                    taskProgress.claimedDay7
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : taskProgress.streakDays >= 7
+                      ? 'emerald-btn'
+                      : 'bg-slate-200 text-slate-500'
+                  }`}
+                >
+                  {taskProgress.claimedDay7
+                    ? 'تم الاستلام ✓'
+                    : taskProgress.streakDays >= 7
+                    ? 'استلام الإطار'
+                    : `${taskProgress.streakDays}/7`}
+                </button>
+              </div>
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black text-amber-950">
+                    🏎️ مكافأة 15 يوماً متتالية: دخولية مهام المضيف الملكية (7 أيام)
+                  </h3>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    دخولية 3D فاخرة مجانية لمدة 7 أيام عند إتمام 15 يوماً متتالية.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={taskBusy || taskProgress.claimedDay15 || taskProgress.streakDays < 15}
+                  onClick={() => handleClaimMilestone(15)}
+                  className={`min-h-[38px] rounded-xl px-3.5 text-xs font-extrabold shrink-0 cursor-pointer ${
+                    taskProgress.claimedDay15
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : taskProgress.streakDays >= 15
+                      ? 'gold-btn'
+                      : 'bg-slate-200 text-slate-500'
+                  }`}
+                >
+                  {taskProgress.claimedDay15
+                    ? 'تم الاستلام ✓'
+                    : taskProgress.streakDays >= 15
+                    ? 'استلام الدخولية'
+                    : `${taskProgress.streakDays}/15`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Profile & Avatar Modal */}
       {showEditModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
@@ -554,7 +1082,7 @@ export const ProfilePage: React.FC = () => {
 
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-700">
-                الصورة الشخصية (اختر رمزاً أو ارفع صورة ثابتة / متحركة GIF & WebP)
+                الصورة الشخصية (اختر رمزاً أو ارفع صورة — تُحفظ فقط عند الضغط على حفظ التعديلات)
               </label>
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -584,6 +1112,12 @@ export const ProfilePage: React.FC = () => {
                   </button>
                 ))}
               </div>
+              {avatarUrl !== user.avatarUrl && (
+                <p className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>تم اختيار صورة جديدة للمعاينة — اضغط "حفظ التعديلات" لتثبيتها.</span>
+                </p>
+              )}
             </div>
 
             <div>

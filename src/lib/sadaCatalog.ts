@@ -8,6 +8,7 @@ import type {
   ReferralWheelSegment,
   RoomSeat,
   Store3DItem,
+  StoreBackgroundItem,
   User,
 } from '../types';
 
@@ -85,11 +86,55 @@ export function formatCompactMetric(value: number, upperCaseK = false): string {
   return String(Math.round(num));
 }
 
+export const STORE_LUXURY_BACKGROUNDS: StoreBackgroundItem[] = [
+  {
+    id: 'bg_royal_majlis',
+    name: 'مجلس السلاطين الذهبي',
+    subtitle: 'خلفية فخمة بتيجان وأقواس ذهبية وإضاءة قصور ملكية متوهجة',
+    priceCoins: 5000,
+    badgeGlyph: '👑',
+    previewClass: 'bg-gradient-to-b from-[#1D1407] via-[#3A2508] to-[#0B0703]',
+  },
+  {
+    id: 'bg_sapphire_crystal',
+    name: 'قاعة الياقوت الكريستالية',
+    subtitle: 'ألواح كريستال زرقاء متلألئة مع انعكاسات ألماسية ساطعة',
+    priceCoins: 5000,
+    badgeGlyph: '💠',
+    previewClass: 'bg-gradient-to-b from-[#07142B] via-[#0F2A54] to-[#040814]',
+  },
+  {
+    id: 'bg_emerald_palace',
+    name: 'بلاط الزمرد الإمبراطوري',
+    subtitle: 'ثريات زمردية فاخرة محفورة بالذهب الخالص للسهرات الراقية',
+    priceCoins: 5000,
+    badgeGlyph: '💚',
+    previewClass: 'bg-gradient-to-b from-[#052319] via-[#0B3C2B] to-[#030D09]',
+  },
+  {
+    id: 'bg_ruby_throne',
+    name: 'عرش الياقوت الأحمر',
+    subtitle: 'ستائر مخملية عنابية مرصعة بشهب ذهبية فارهة',
+    priceCoins: 5000,
+    badgeGlyph: '♦️',
+    previewClass: 'bg-gradient-to-b from-[#2E0713] via-[#4C0D20] to-[#0C0307]',
+  },
+  {
+    id: 'bg_celestial_gold',
+    name: 'سماء المجرة الذهبية',
+    subtitle: 'سديم كوني ملكي تتطاير فيه نجوم الذهب والألماس',
+    priceCoins: 5000,
+    badgeGlyph: '🌌',
+    previewClass: 'bg-gradient-to-b from-[#140B2D] via-[#27144D] to-[#070412]',
+  },
+];
+
 export const ROOM_BACKGROUNDS: Array<{
   id: string;
   name: string;
   description: string;
   previewClass: string;
+  priceCoins?: number;
 }> = [
   {
     id: 'dragon_dark',
@@ -121,32 +166,13 @@ export const ROOM_BACKGROUNDS: Array<{
     description: 'فخامة عنابية داكنة مع هالة ذهبية',
     previewClass: 'bg-gradient-to-b from-[#2A0B14] via-[#1B0C1C] to-[#09060A]',
   },
-];
-
-export const ROOM_MUSIC_PRESETS: Array<{
-  id: string;
-  name: string;
-  bpm: number;
-  notes: number[];
-}> = [
-  {
-    id: 'preset_dragon_gold',
-    name: 'سمفونية التنين الذهبي',
-    bpm: 96,
-    notes: [220, 261.63, 329.63, 392, 329.63, 293.66, 261.63, 246.94],
-  },
-  {
-    id: 'preset_arabian_oud',
-    name: 'أنغام السمر الملكية',
-    bpm: 84,
-    notes: [293.66, 311.13, 369.99, 392, 440, 392, 369.99, 311.13],
-  },
-  {
-    id: 'preset_chill_lounge',
-    name: 'موسيقى القصر الهادئة',
-    bpm: 76,
-    notes: [196, 246.94, 293.66, 392, 349.23, 293.66, 246.94, 220],
-  },
+  ...STORE_LUXURY_BACKGROUNDS.map((b) => ({
+    id: b.id,
+    name: b.name,
+    description: b.subtitle,
+    previewClass: b.previewClass,
+    priceCoins: b.priceCoins,
+  })),
 ];
 
 export const ROOM_REACTION_EMOJIS: Array<{
@@ -166,8 +192,42 @@ export const ROOM_REACTION_EMOJIS: Array<{
   { id: 'dice', label: 'نرد عشوائي', emoji: '🎲', isDice: true },
 ];
 
+export const GIFT_LEVEL_STEP_COINS = 500_000;
+
 export function computeLevelFromXp(xp: number): number {
   return Math.max(1, Math.floor(Math.sqrt(Math.max(0, xp) / 120)) + 1);
+}
+
+export function computeGiftLevelStats(sentCoins: number, receivedCoins: number) {
+  const safeSent = Math.max(0, Math.round(sentCoins || 0));
+  const safeRec = Math.max(0, Math.round(receivedCoins || 0));
+
+  const sendLevel = Math.floor(safeSent / GIFT_LEVEL_STEP_COINS) + 1;
+  const sendInTier = safeSent % GIFT_LEVEL_STEP_COINS;
+  const sendProgressPct = Math.min(
+    100,
+    Math.round((sendInTier / GIFT_LEVEL_STEP_COINS) * 100)
+  );
+  const sendRemainingCoins = GIFT_LEVEL_STEP_COINS - sendInTier;
+
+  const receiveLevel = Math.floor(safeRec / GIFT_LEVEL_STEP_COINS) + 1;
+  const recInTier = safeRec % GIFT_LEVEL_STEP_COINS;
+  const receiveProgressPct = Math.min(
+    100,
+    Math.round((recInTier / GIFT_LEVEL_STEP_COINS) * 100)
+  );
+  const receiveRemainingCoins = GIFT_LEVEL_STEP_COINS - recInTier;
+
+  return {
+    sentCoins: safeSent,
+    receivedCoins: safeRec,
+    sendLevel,
+    sendProgressPct,
+    sendRemainingCoins,
+    receiveLevel,
+    receiveProgressPct,
+    receiveRemainingCoins,
+  };
 }
 
 export function getVipTierLabel(level: number, isAdmin = false): string {
@@ -391,6 +451,80 @@ export const FRAME_CATALOG: FrameItem[] = [
     minLevel: 1,
     ringClass: 'ring-[4px] ring-amber-300 animate-dragon-aura',
   },
+  {
+    id: 'frame_emerald_aura',
+    name: 'هالة الزمرد الملكية 3D',
+    description: 'إطار زمردي متحرك ثلاثي الأبعاد يُشترى مباشرة بالكوينز.',
+    priceCoins: 2500,
+    minLevel: 1,
+    ringClass: 'ring-[3px] ring-emerald-400 animate-falcon-aura',
+  },
+  {
+    id: 'frame_royal_phoenix',
+    name: 'طائر العنقاء الذهبي 3D',
+    description: 'إطار لهب العنقاء المضيء ثلاثي الأبعاد يسطع على مقاعد البث.',
+    priceCoins: 6000,
+    minLevel: 1,
+    ringClass: 'ring-[3px] ring-amber-400 animate-dragon-aura',
+  },
+  {
+    id: 'frame_galaxy_sovereign',
+    name: 'سيد المجرة الإمبراطوري 3D',
+    description: 'إطار مجرة ثلاثي الأبعاد + دخولية السيارة الفارهة عند الشراء.',
+    priceCoins: 12000,
+    minLevel: 1,
+    ringClass: 'ring-[4px] ring-violet-400 animate-diamond-aura',
+  },
+  {
+    id: 'frame_host_gift_7d',
+    name: 'إطار مهام المضيف (7 أيام)',
+    description: 'هدية مجانية عند المواظبة 7 أيام متتالية في مهام المضيف.',
+    priceCoins: 0,
+    minLevel: 1,
+    ringClass: 'ring-[3px] ring-rose-400 animate-diamond-aura',
+    isTemporary: true,
+  },
+];
+
+export const STORE_COIN_ITEMS: Store3DItem[] = [
+  {
+    id: 'frame_emerald_aura',
+    name: 'هالة الزمرد الملكية 3D',
+    subtitle: 'إطار زمردي دوّار ثلاثي الأبعاد يبرز هويتك داخل جميع الغرف',
+    kind: 'frame',
+    minRechargeCoins: 0,
+    priceCoins: 2500,
+    purchaseMode: 'coins',
+    badgeGlyph: '💚',
+    previewGradient: 'from-emerald-950 via-teal-900 to-slate-950',
+    ringClass: 'ring-[3px] ring-emerald-400 animate-falcon-aura',
+  },
+  {
+    id: 'frame_royal_phoenix',
+    name: 'طائر العنقاء الذهبي 3D',
+    subtitle: 'أجنحة العنقاء المتوهجة بلهب ذهبي متحرك على المايك والملف الشخصي',
+    kind: 'frame',
+    minRechargeCoins: 0,
+    priceCoins: 6000,
+    purchaseMode: 'coins',
+    badgeGlyph: '🔥',
+    previewGradient: 'from-orange-950 via-amber-900 to-slate-950',
+    ringClass: 'ring-[3px] ring-amber-400 animate-dragon-aura',
+  },
+  {
+    id: 'frame_galaxy_sovereign',
+    name: 'سيد المجرة الإمبراطوري 3D',
+    subtitle: 'إطار مجرة ثلاثي الأبعاد فائق البريق + دخولية السيارة الذهبية في الغرف',
+    kind: 'frame_and_entry',
+    minRechargeCoins: 0,
+    priceCoins: 12000,
+    purchaseMode: 'coins',
+    badgeGlyph: '🌌',
+    entryId: 'entry_car_15d',
+    entryName: 'دخولية السيارة الفارهة 3D',
+    previewGradient: 'from-violet-950 via-indigo-900 to-slate-950',
+    ringClass: 'ring-[4px] ring-violet-400 animate-diamond-aura',
+  },
 ];
 
 export const STORE_3D_ITEMS: Store3DItem[] = [
@@ -400,6 +534,8 @@ export const STORE_3D_ITEMS: Store3DItem[] = [
     subtitle: 'إطار ثلاثي الأبعاد متحرك + دخولية موكب السيارة الفارهة داخل الوكالة',
     kind: 'frame_and_entry',
     minRechargeCoins: 1000,
+    purchaseMode: 'recharge',
+    giftHint: 'مكافأة شحن تراكمي 1,000 كوينز',
     badgeGlyph: '🏎️',
     entryId: 'entry_car_15d',
     entryName: 'دخولية السيارة الفارهة 3D',
@@ -412,6 +548,8 @@ export const STORE_3D_ITEMS: Store3DItem[] = [
     subtitle: 'هالة الصقر الذهبي المجنح بتوهج ملكي متواصل على مقاعد البث',
     kind: 'frame',
     minRechargeCoins: 5000,
+    purchaseMode: 'recharge',
+    giftHint: 'مكافأة شحن تراكمي 5,000 كوينز',
     badgeGlyph: '🦅',
     previewGradient: 'from-amber-950 via-stone-900 to-slate-950',
     ringClass: 'ring-[3px] ring-amber-400 animate-falcon-aura',
@@ -422,6 +560,8 @@ export const STORE_3D_ITEMS: Store3DItem[] = [
     subtitle: 'إطار التاج الألماسي الدوّار + دخولية ملكية متوهجة عند دخول الغرف',
     kind: 'frame_and_entry',
     minRechargeCoins: 20000,
+    purchaseMode: 'recharge',
+    giftHint: 'مكافأة شحن تراكمي 20,000 كوينز',
     badgeGlyph: '👑',
     entryId: 'entry_legendary_30d',
     entryName: 'دخولية التاج الألماسي 3D',
@@ -434,11 +574,25 @@ export const STORE_3D_ITEMS: Store3DItem[] = [
     subtitle: 'أيقونة الفخامة العليا: تنين ناري متحرك ثلاثي الأبعاد + دخولية إمبراطورية',
     kind: 'frame_and_entry',
     minRechargeCoins: 50000,
+    purchaseMode: 'recharge',
+    giftHint: 'مكافأة شحن تراكمي 50,000 كوينز',
     badgeGlyph: '🐉',
     entryId: 'entry_legendary_30d',
     entryName: 'دخولية التنين الإمبراطوري 3D',
     previewGradient: 'from-rose-950 via-amber-950 to-slate-950',
     ringClass: 'ring-[4px] ring-amber-300 animate-dragon-aura',
+  },
+  {
+    id: 'frame_host_gift_7d',
+    name: 'إطار مهام المضيف (7 أيام)',
+    subtitle: 'إطار هدية مجاني يُفتح عند تسجيل الدخول 7 أيام متتالية في مهام المضيف',
+    kind: 'frame',
+    minRechargeCoins: 0,
+    purchaseMode: 'gift',
+    giftHint: 'مكافأة 7 أيام متتالية في مهام المضيف',
+    badgeGlyph: '🎁',
+    previewGradient: 'from-rose-950 via-pink-900 to-slate-950',
+    ringClass: 'ring-[3px] ring-rose-400 animate-diamond-aura',
   },
 ];
 
@@ -493,6 +647,7 @@ export const TEMP_ONLY_FRAME_IDS = new Set([
   'frame_silver_7d',
   'frame_gold_15d',
   'frame_royal_30d',
+  'frame_host_gift_7d',
 ]);
 
 export const REFERRAL_WHEEL_SEGMENTS: ReferralWheelSegment[] = [
@@ -767,13 +922,13 @@ export function createDefaultPlatformSettings(): PlatformSettings {
     luckyGiftMultipliers: LUCKY_GIFT_MULTIPLIERS.map((m) => ({ ...m })),
     rechargeRewardTiers: RECHARGE_REWARD_TIERS.map((t) => ({ ...t })),
     gameRates: {
-      slotsWinRate: 38,
-      doubleDiceWinRate: 42,
-      predictionDiceWinRate: 40,
-      ladderDiceWinRate: 58,
-      speedDiceWinRate: 44,
-      rouletteWinRate: 45,
-      mysteryBoxWinRate: 42,
+      slotsWinRate: 26,
+      doubleDiceWinRate: 38,
+      predictionDiceWinRate: 36,
+      ladderDiceWinRate: 44,
+      speedDiceWinRate: 38,
+      rouletteWinRate: 40,
+      mysteryBoxWinRate: 36,
     },
   };
 }

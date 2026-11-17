@@ -110,8 +110,7 @@ export interface RoomMusicState {
   trackName: string;
   djUserId: string;
   djName: string;
-  sourceType: 'preset' | 'file';
-  presetId?: string;
+  sourceType: 'file';
   audioDataUrl?: string | null;
   updatedAt: number;
 }
@@ -124,12 +123,45 @@ export interface RoomGifterEntry {
   totalCoins: number;
 }
 
+export interface RoomPlayerEntry {
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+  frameId?: string;
+  playCoins: number;
+}
+
+export type RoomModLogActionType =
+  | 'kick_room'
+  | 'unban_room'
+  | 'kick_seat'
+  | 'mute_user'
+  | 'mute_all'
+  | 'clear_all'
+  | 'lock_seat'
+  | 'unlock_seat';
+
+export interface RoomModLogEntry {
+  id: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  actionType: RoomModLogActionType;
+  targetUserId?: string;
+  targetName?: string;
+  details: string;
+  timestamp: string;
+}
+
 export interface RoomExtrasConfig {
   deputyIds: string[];
   moderatorIds: string[];
   kickedUserIds: string[];
+  kickedUserNames?: Record<string, string>;
   mutedUserIds: string[];
   gifters: Record<string, RoomGifterEntry>;
+  players?: Record<string, RoomPlayerEntry>;
+  modLogs?: RoomModLogEntry[];
   playVolumeCoins: number;
   musicState?: RoomMusicState | null;
 }
@@ -252,6 +284,7 @@ export interface PrivateConversationPeer {
   isHost?: boolean;
   is_admin: boolean;
   bio: string;
+  lastSeen?: string;
 }
 
 export interface PrivateConversation {
@@ -271,8 +304,36 @@ export interface AgencyHostSummary {
   gender?: 'female' | 'male';
   diamonds: number;
   hostDiamondsEarned: number;
+  weeklyDiamonds: number;
   hostBadge: string;
   lastSeen: string;
+}
+
+export interface HostJoinApplication {
+  id: string;
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+  frameId: string;
+  agencyId: string;
+  agencyName: string;
+  agencyOwnerId: string;
+  bio: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt?: string | null;
+}
+
+export interface HostTaskProgress {
+  streakDays: number;
+  lastCheckInDate: string | null;
+  claimedDay7: boolean;
+  claimedDay15: boolean;
+}
+
+export interface UserGiftStats {
+  sentCoins: number;
+  receivedCoins: number;
 }
 
 export interface Agency {
@@ -340,7 +401,13 @@ export interface PlatformSettings {
   gameRates?: GameWinRatesSettings;
   roomConfigs?: Record<string, RoomExtrasConfig>;
   userFollows?: Record<string, string[]>;
+  userVisitors?: Record<string, string[]>;
   userMeta?: Record<string, { age?: number; country?: string }>;
+  userFollowedAgencies?: Record<string, string[]>;
+  userOwnedBackgrounds?: Record<string, string[]>;
+  userHostTasks?: Record<string, HostTaskProgress>;
+  userGiftStats?: Record<string, UserGiftStats>;
+  hostJoinApplications?: HostJoinApplication[];
 }
 
 export interface CulturalQuestionAdminItem {
@@ -405,11 +472,23 @@ export interface Store3DItem {
   subtitle: string;
   kind: 'frame_and_entry' | 'frame';
   minRechargeCoins: number;
+  priceCoins?: number;
+  purchaseMode?: 'recharge' | 'coins' | 'gift';
+  giftHint?: string;
   badgeGlyph: string;
   entryId?: 'entry_car_15d' | 'entry_legendary_30d';
   entryName?: string;
   previewGradient: string;
   ringClass: string;
+}
+
+export interface StoreBackgroundItem {
+  id: string;
+  name: string;
+  subtitle: string;
+  priceCoins: number;
+  badgeGlyph: string;
+  previewClass: string;
 }
 
 export interface UsdtDepositRequest {

@@ -17,7 +17,12 @@ import { useMiniProfile } from '../context/MiniProfileContext';
 import { getUserPublicProfileFromSupabase } from '../lib/sadaAuth';
 import { ARAB_COUNTRIES, formatShortNumericId, getVipTierLabel } from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
-import { getFollowStatus, toggleFollowUserInSupabase } from '../lib/sadaSocialService';
+import {
+  getFollowStatus,
+  getUserGiftLevelsFromSupabase,
+  recordProfileVisitInSupabase,
+  toggleFollowUserInSupabase,
+} from '../lib/sadaSocialService';
 import type { User } from '../types';
 import { AvatarWithFrame } from './AvatarWithFrame';
 import { FemaleVerifiedBadge } from './FemaleVoiceVerificationCard';
@@ -29,6 +34,10 @@ export const UserMiniProfileModal: React.FC = () => {
 
   const [fetchedUser, setFetchedUser] = useState<User | null>(null);
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
+  const [giftLevels, setGiftLevels] = useState<{ sendLevel: number; receiveLevel: number }>({
+    sendLevel: 1,
+    receiveLevel: 1,
+  });
   const [togglingFollow, setTogglingFollow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
@@ -40,15 +49,22 @@ export const UserMiniProfileModal: React.FC = () => {
     }
     let active = true;
     setLoading(true);
+    if (currentUser?.id && currentUser.id !== selectedUserId) {
+      void recordProfileVisitInSupabase(selectedUserId, currentUser.id).catch(() => {});
+    }
     Promise.all([
       getUserPublicProfileFromSupabase(selectedUserId),
       getPlatformState().catch(() => null),
+      getUserGiftLevelsFromSupabase(selectedUserId).catch(() => null),
     ])
-      .then(([res, platState]) => {
+      .then(([res, platState, gl]) => {
         if (!active) return;
         if (res) setFetchedUser(res);
         if (platState?.settings?.userFollows) {
           setUserFollows(platState.settings.userFollows);
+        }
+        if (gl) {
+          setGiftLevels({ sendLevel: gl.sendLevel, receiveLevel: gl.receiveLevel });
         }
       })
       .catch(() => {})
@@ -58,7 +74,7 @@ export const UserMiniProfileModal: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [selectedUserId]);
+  }, [selectedUserId, currentUser?.id]);
 
   if (!selectedUserId) return null;
 
@@ -173,7 +189,12 @@ export const UserMiniProfileModal: React.FC = () => {
 
                 <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/25 to-yellow-500/20 border border-amber-300/40 px-2.5 py-0.5 font-bold text-[#FCE9A6] font-mono-num">
                   <Crown className="w-3 h-3" />
-                  Lv.{profile.level}
+                  داعم Lv.{giftLevels.sendLevel}
+                </span>
+
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/20 border border-sky-400/40 px-2.5 py-0.5 font-bold text-sky-200 font-mono-num">
+                  <Gem className="w-3 h-3" />
+                  مضيف Lv.{giftLevels.receiveLevel}
                 </span>
 
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-0.5 font-bold text-emerald-200">

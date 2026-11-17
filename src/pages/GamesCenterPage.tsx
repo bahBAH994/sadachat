@@ -18,6 +18,16 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Royal3DDieCube } from '../components/Royal3DDice';
+import { RoyalSlotSymbol3D } from '../components/RoyalSlotSymbol3D';
+import {
+  fireGoldCoinConfetti,
+  playCoinWinSound,
+  playDiceLandSound,
+  playDiceTumbleSound,
+  playSlotReelStop,
+  playSlotSpinTick,
+} from '../lib/sadaAudio';
 import {
   getLadderStateFromSupabase,
   openMysteryBoxInSupabase,
@@ -25,20 +35,11 @@ import {
   playStandardDiceInSupabase,
   spinRouletteInSupabase,
   spinSlotMachineInSupabase,
+  type SlotGameId,
 } from '../lib/sadaGamesService';
 import type { User } from '../types';
 
 type CenterCategory = 'slots' | 'dice' | 'roulette' | 'mystery';
-
-type SlotGameId =
-  | 'classic_fruits'
-  | 'pharaoh_treasures'
-  | 'neon_galaxy'
-  | 'crown_jewels'
-  | 'olympus_gates'
-  | 'sea_pirates'
-  | 'turbo_racing'
-  | 'desert_gold';
 
 type DiceGameId = 'double_dice' | 'prediction_dice' | 'ladder_dice' | 'speed_dice';
 
@@ -76,24 +77,55 @@ interface SlotMachineConfig {
 
 const SLOT_MACHINES: SlotMachineConfig[] = [
   {
+    id: 'jungle_hunt',
+    title: 'مطاردة الأدغال',
+    subtitle: '15 خط ربح ذهبي (5×3) + تبديل WILD المضاعف في أعماق الغابة',
+    badge: '5×3 أدغال 🔥',
+    cols: 5,
+    rows: 3,
+    maxMultiplier: '×100',
+    symbols: ['10', 'J', 'K', '🐊', '🐘', '🦍', '🦁', 'WILD'],
+    specialRuleTitle: 'برية الأدغال (WILD ×1.5)',
+    specialRuleDesc:
+      '15 خط دفع متقاطع على لوحة 5×3! يستبدل رمز WILD أي رمز على الخط الفائز ويضاعف قيمته ×1.5 فوراً.',
+    paytable: [
+      { combo: 'WILD ×5', mult: '×100', note: 'الجاكبوت الأعظم للأدغال' },
+      { combo: '🦁 ×3 / ×4 / ×5', mult: '×10 / ×28 / ×75', note: 'أسد الأدغال الملكي' },
+      { combo: '🦍 ×3 / ×4 / ×5', mult: '×6 / ×18 / ×45' },
+      { combo: '🐘 ×3 / ×4 / ×5', mult: '×4 / ×12 / ×32' },
+      { combo: '🐊 ×3 / ×4 / ×5', mult: '×3 / ×8 / ×22' },
+      { combo: 'K / J / 10 ×5', mult: '×8 – ×15' },
+    ],
+    cardGradient: 'from-[#0B2E16]/95 via-[#071A0E]/95 to-[#2D1D06]/95',
+    cabinetClass:
+      'border-emerald-400/55 bg-gradient-to-b from-[#0C2613]/96 via-[#08170D]/98 to-[#241807]/96 shadow-[0_0_44px_rgba(34,197,94,0.28)]',
+    headerGradient: 'from-emerald-500/25 via-[#D4AF37]/20 to-transparent',
+    reelCellBg: 'bg-[#07140B]/92 border-emerald-400/25',
+    winCellGlow:
+      'border-[#FCE9A6] bg-gradient-to-b from-emerald-500/40 to-[#D4AF37]/35 shadow-[0_0_26px_rgba(74,222,128,0.6)] scale-[1.04]',
+    accentText: 'text-emerald-200',
+    spinButtonClass:
+      'bg-gradient-to-r from-lime-400 via-emerald-400 to-green-500 text-[#070913] shadow-[0_0_26px_rgba(34,197,94,0.5)]',
+  },
+  {
     id: 'classic_fruits',
     title: 'سلوت الفواكه الكلاسيكي',
-    subtitle: '5 خطوط ربح (أفقية وقطرية) + قاعدة الكرز الذهبي',
-    badge: '3×3 كلاسيكي',
-    cols: 3,
+    subtitle: '15 خط ربح (5×3) + مكافأة ثلاثي الكرز الذهبي',
+    badge: '5×3 كلاسيكي',
+    cols: 5,
     rows: 3,
-    maxMultiplier: '×30',
+    maxMultiplier: '×85',
     symbols: ['🍒', '🍋', '🍇', '🔔', '⭐', '7️⃣'],
-    specialRuleTitle: 'ثنائي الكرز الذهبي (×1.5)',
+    specialRuleTitle: 'ثلاثي الكرز الذهبي (+×2)',
     specialRuleDesc:
-      'بالإضافة إلى الـ 5 خطوط (3 صفوف + القطرين)، ظهور كرزتين 🍒 في الصف الأوسط يمنحك ربحاً فورياً ×1.5.',
+      '15 خط ربح أفقي ومتعرج على 5 بكرات، وظهور 3+ كرز 🍒 في الصف الأوسط يضيف مكافأة +×2 فورية.',
     paytable: [
-      { combo: '7️⃣ 7️⃣ 7️⃣', mult: '×30', note: 'الجاكبوت الكلاسيكي' },
-      { combo: '⭐ ⭐ ⭐', mult: '×15' },
-      { combo: '🔔 🔔 🔔', mult: '×10' },
-      { combo: '🍇 🍇 🍇', mult: '×6' },
-      { combo: '🍋 🍋 🍋', mult: '×4' },
-      { combo: '🍒 🍒 🍒', mult: '×3', note: 'وثنائي الوسط ×1.5' },
+      { combo: '7️⃣ ×3 / ×4 / ×5', mult: '×14 / ×35 / ×85', note: 'الجاكبوت الكلاسيكي' },
+      { combo: '⭐ ×3 / ×4 / ×5', mult: '×8 / ×22 / ×50' },
+      { combo: '🔔 ×3 / ×4 / ×5', mult: '×5 / ×14 / ×32' },
+      { combo: '🍇 ×3 / ×4 / ×5', mult: '×3 / ×8 / ×20' },
+      { combo: '🍋 ×3 / ×4 / ×5', mult: '×2 / ×5 / ×14' },
+      { combo: '🍒 ×3 / ×4 / ×5', mult: '×1.5 / ×3.5 / ×9' },
     ],
     cardGradient: 'from-[#3A0C1B]/90 via-[#190A16]/95 to-[#2D1808]/90',
     cabinetClass:
@@ -108,23 +140,23 @@ const SLOT_MACHINES: SlotMachineConfig[] = [
   },
   {
     id: 'pharaoh_treasures',
-    title: 'كنوز الفراعنة',
-    subtitle: 'معبد النيل المقدس + جعران الحظ المتناثر في أي خانة',
-    badge: '3×3 فرعوني',
-    cols: 3,
+    title: 'سلوت الهرم الملكي',
+    subtitle: 'معبد النيل المقدس 5×3 + جعران الحظ المتناثر',
+    badge: '5×3 فرعوني',
+    cols: 5,
     rows: 3,
-    maxMultiplier: '×32',
+    maxMultiplier: '×75',
     symbols: ['🏺', '🐍', '⚱️', '☀️', '👁️', '🪲'],
     specialRuleTitle: 'جعران الحظ المتناثر (Scatter 🪲)',
     specialRuleDesc:
-      'لا يشترط الجعران 🪲 الاصطفاف! ظهوره مرتين في أي مكان باللوحة يربح ×2.5، و3 مرات ×12، و4+ يربح ×25.',
+      '15 خط ربح فرعوني على 5×3، وظهور 3+ جعارين 🪲 في أي مكان يمنح مكافأة فورية +×6 إلى +×18.',
     paytable: [
-      { combo: '👁️ 👁️ 👁️', mult: '×32', note: 'عين حورس الملكية' },
-      { combo: '☀️ ☀️ ☀️', mult: '×18', note: 'قرص الشمس الذهبي' },
-      { combo: '🪲 متناثر', mult: '×2.5 – ×25', note: 'في أي مكان باللوحة' },
-      { combo: '⚱️ ⚱️ ⚱️', mult: '×9' },
-      { combo: '🐍 🐍 🐍', mult: '×6' },
-      { combo: '🏺 🏺 🏺', mult: '×3' },
+      { combo: '👁️ ×3 / ×4 / ×5', mult: '×12 / ×30 / ×75', note: 'عين حورس الملكية' },
+      { combo: '🪲 متناثر 3 / 4+', mult: '+×6 / +×18', note: 'في أي مكان باللوحة' },
+      { combo: '☀️ ×3 / ×4 / ×5', mult: '×7 / ×18 / ×42', note: 'قرص الشمس الذهبي' },
+      { combo: '⚱️ ×3 / ×4 / ×5', mult: '×4 / ×11 / ×25' },
+      { combo: '🐍 ×3 / ×4 / ×5', mult: '×2.5 / ×7 / ×16' },
+      { combo: '🏺 ×3 / ×4 / ×5', mult: '×1.5 / ×4 / ×10' },
     ],
     cardGradient: 'from-[#2D1F08]/95 via-[#140E05]/95 to-[#291B07]/95',
     cabinetClass:
@@ -170,54 +202,54 @@ const SLOT_MACHINES: SlotMachineConfig[] = [
   },
   {
     id: 'crown_jewels',
-    title: 'جواهر التاج',
-    subtitle: 'متجر الزمرد والياقوت (4×3) + ربح الأعمدة الملكية الكاملة',
-    badge: '4×3 إمبراطوري',
-    cols: 4,
+    title: 'السلوت الملكي 3D',
+    subtitle: 'ماكينة القصر بـ 5 بكرات أسطوانية 3D ورموز ملكية لامعة (تاج، ألماسة، صقر، سبيكة ذهب)',
+    badge: '5×3 ملكي 3D',
+    cols: 5,
     rows: 3,
-    maxMultiplier: '×55',
-    symbols: ['🔮', '⚜️', '💍', '🏆', '💎', '👑'],
-    specialRuleTitle: 'الأعمدة الإمبراطورية + الرباعيات',
+    maxMultiplier: '×90',
+    symbols: ['🪙', '⚜️', '🏆', '🦅', '💎', '👑'],
+    specialRuleTitle: 'الرموز الملكية + 15 خط دفع إمبراطوري',
     specialRuleDesc:
-      'تربح عند تطابق 3 أو 4 رموز متتالية في أي صف، وعند اكتمال أي عمود عمودي بالكامل تحصد مكافأة التاج (+×15 للتيجان)!',
+      '15 خط ربح لاصطفاف التاج المرصع والألماسة الزرقاء والصقر الذهبي وسبيكة الذهب عبر 5 بكرات أسطوانية فاخرة!',
     paytable: [
-      { combo: '👑 👑 👑 👑', mult: '×55', note: 'تاج الإمبراطور الأعظم' },
-      { combo: '💎 💎 💎 💎', mult: '×38', note: 'الألماسة الزرقاء النادرة' },
-      { combo: '🏆 ×3 / ×4', mult: '×8 / ×26' },
-      { combo: '💍 ×3 / ×4', mult: '×5 / ×18' },
-      { combo: '⚜️ ×3 / ×4', mult: '×3.5 / ×12' },
-      { combo: 'عمود عمودي كامل', mult: '×4 – ×15', note: 'أرباح مكدسة فورية' },
+      { combo: '👑 ×3 / ×4 / ×5', mult: '×15 / ×38 / ×90', note: 'التاج المرصع الأعظم' },
+      { combo: '💎 ×3 / ×4 / ×5', mult: '×9 / ×24 / ×55', note: 'الألماسة الزرقاء النادرة' },
+      { combo: '🦅 ×3 / ×4 / ×5', mult: '×6 / ×16 / ×38', note: 'الصقر الذهبي الملكي' },
+      { combo: '🏆 ×3 / ×4 / ×5', mult: '×4 / ×11 / ×26', note: 'كأس القصر' },
+      { combo: '⚜️ ×3 / ×4 / ×5', mult: '×2.5 / ×7 / ×18' },
+      { combo: '🪙 ×3 / ×4 / ×5', mult: '×1.5 / ×4 / ×12', note: 'سبيكة الذهب 999.9' },
     ],
-    cardGradient: 'from-[#0B173D]/95 via-[#140E2E]/95 to-[#221038]/95',
+    cardGradient: 'from-[#2A1D08]/95 via-[#131937]/95 to-[#231036]/95',
     cabinetClass:
-      'border-indigo-300/50 bg-gradient-to-b from-[#0C183B]/95 via-[#120E2B]/98 to-[#221336]/95 shadow-[0_0_42px_rgba(129,140,248,0.28)]',
-    headerGradient: 'from-indigo-500/25 via-[#D4AF37]/20 to-transparent',
-    reelCellBg: 'bg-[#080E26]/90 border-indigo-300/25',
+      'border-[#FCE9A6]/65 bg-gradient-to-b from-[#1E1508]/96 via-[#0C1229]/98 to-[#1B1206]/96 shadow-[0_0_46px_rgba(212,175,55,0.34)]',
+    headerGradient: 'from-[#D4AF37]/30 via-indigo-500/20 to-transparent',
+    reelCellBg: 'bg-[#090D1F]/92 border-[#D4AF37]/30',
     winCellGlow:
-      'border-[#FCE9A6] bg-gradient-to-b from-indigo-500/40 to-[#D4AF37]/35 shadow-[0_0_26px_rgba(165,180,252,0.65)] scale-[1.04]',
-    accentText: 'text-indigo-200',
+      'border-[#FCE9A6] bg-gradient-to-b from-[#D4AF37]/45 to-amber-700/35 shadow-[0_0_28px_rgba(252,233,166,0.75)] scale-[1.04]',
+    accentText: 'text-[#FCE9A6]',
     spinButtonClass:
-      'bg-gradient-to-r from-[#FCE9A6] via-indigo-300 to-[#D4AF37] text-[#070913] shadow-[0_0_26px_rgba(165,180,252,0.45)]',
+      'bg-gradient-to-r from-[#FCE9A6] via-[#D4AF37] to-[#B58922] text-[#070913] shadow-[0_0_28px_rgba(212,175,55,0.55)]',
   },
   {
     id: 'olympus_gates',
     title: 'بوابات الأوليمبوس',
-    subtitle: 'ساحة زيوس 5×4 بنظام التجمّع الحر + صواعق المضاعفات العشوائية',
-    badge: '5×4 أسطوري ⚡',
+    subtitle: 'ساحة زيوس 5×3 بنظام التجمّع الحر + صواعق المضاعفات العشوائية',
+    badge: '5×3 أسطوري ⚡',
     cols: 5,
-    rows: 4,
+    rows: 3,
     maxMultiplier: '×500+',
     symbols: ['🏛️', '⏳', '💍', '🏆', '👑', '⚡'],
     specialRuleTitle: 'صواعق زيوس العشوائية (⚡ ×2 إلى ×25)',
     specialRuleDesc:
-      'تربح عند تجمّع 5 رموز متشابهة أو أكثر في أي مكان باللوحة! وتُطلق كل صاعقة ⚡ مضاعفاً عشوائياً (×2 حتى ×25) يُجمع ويُضرب في كامل ربح الدورة.',
+      'تربح عند تجمّع 4 رموز متشابهة أو أكثر في أي مكان باللوحة! وتُطلق كل صاعقة ⚡ مضاعفاً عشوائياً (×2 حتى ×25) يُجمع ويُضرب في كامل ربح الدورة.',
     paytable: [
       { combo: '⚡ صواعق زيوس', mult: '×2 – ×25 لكل صاعقة', note: 'تُجمع وتضاعف كامل الربح' },
-      { combo: '👑 ×5 / ×7 / ×9+', mult: '×5 / ×16 / ×45' },
-      { combo: '🏆 ×5 / ×7 / ×9+', mult: '×3.5 / ×11 / ×30' },
-      { combo: '💍 ×5 / ×7 / ×9+', mult: '×2.5 / ×8 / ×22' },
-      { combo: '⏳ ×5 / ×7 / ×9+', mult: '×2 / ×6 / ×16' },
-      { combo: '🏛️ ×5 / ×7 / ×9+', mult: '×1.5 / ×4 / ×12' },
+      { combo: '👑 ×4 / ×6 / ×8+', mult: '×5 / ×16 / ×45' },
+      { combo: '🏆 ×4 / ×6 / ×8+', mult: '×3.5 / ×11 / ×30' },
+      { combo: '💍 ×4 / ×6 / ×8+', mult: '×2.5 / ×8 / ×22' },
+      { combo: '⏳ ×4 / ×6 / ×8+', mult: '×2 / ×6 / ×16' },
+      { combo: '🏛️ ×4 / ×6 / ×8+', mult: '×1.5 / ×4 / ×12' },
     ],
     cardGradient: 'from-[#2A1459]/95 via-[#131036]/95 to-[#33220B]/95',
     cabinetClass:
@@ -263,23 +295,23 @@ const SLOT_MACHINES: SlotMachineConfig[] = [
   },
   {
     id: 'turbo_racing',
-    title: 'سباق السيارات',
-    subtitle: 'حلبة التوربو الليلية (4×3) + شعلات نايترو تضاعف سرعة الأرباح',
-    badge: '4×3 توربو 🏎️',
-    cols: 4,
+    title: 'سباق التوربو',
+    subtitle: 'حلبة التوربو الليلية (5×3) + شعلات نايترو تضاعف سرعة الأرباح',
+    badge: '5×3 توربو 🏎️',
+    cols: 5,
     rows: 3,
-    maxMultiplier: '×80+',
+    maxMultiplier: '×95',
     symbols: ['🛞', '⛽', '🏁', '🏆', '🔥', '🏎️'],
-    specialRuleTitle: 'شعلة النايترو 🔥 (+50% للرمز) + الجائزة الكبرى',
+    specialRuleTitle: 'شعلة النايترو 🔥 (×1.5) + انطلاقة التوربو',
     specialRuleDesc:
-      'كل شعلة نايترو 🔥 تظهر في صف رابح تزيد ربحه بنسبة +50% فورياً! وظهور 3 أو 4 سيارات 🏎️ في أي مكان يمنح مكافأة انطلاقة الجائزة الكبرى.',
+      '15 خط سباق! أي شعلة نايترو 🔥 في الخط الفائز تزيد الربح ×1.5، وظهور 3+ سيارات 🏎️ في أي مكان يمنح دفعة +×8.',
     paytable: [
-      { combo: '🏎️ 🏎️ 🏎️ 🏎️', mult: '×50', note: 'انطلاقة الجائزة الكبرى' },
-      { combo: '🏆 ×3 / ×4', mult: '×8 / ×26' },
-      { combo: '🏁 ×3 / ×4', mult: '×5 / ×16' },
-      { combo: '⛽ ×3 / ×4', mult: '×3.5 / ×10' },
-      { combo: '🛞 ×3 / ×4', mult: '×2.5 / ×7' },
-      { combo: '🔥 نايترو + 🏎️ متناثر', mult: '+50% و +×14', note: 'مضاعفات توربو متراكمة' },
+      { combo: '🏎️ ×3 / ×4 / ×5', mult: '×12 / ×32 / ×80', note: 'انطلاقة الجائزة الكبرى' },
+      { combo: '🏆 ×3 / ×4 / ×5', mult: '×7 / ×18 / ×44' },
+      { combo: '🏁 ×3 / ×4 / ×5', mult: '×4 / ×11 / ×28' },
+      { combo: '⛽ ×3 / ×4 / ×5', mult: '×2.5 / ×7 / ×18' },
+      { combo: '🛞 ×3 / ×4 / ×5', mult: '×1.5 / ×4.5 / ×12' },
+      { combo: '🔥 نايترو + 🏎️ متناثر', mult: '×1.5 و +×8' },
     ],
     cardGradient: 'from-[#36090B]/95 via-[#101320]/95 to-[#2D1506]/95',
     cabinetClass:
@@ -295,22 +327,22 @@ const SLOT_MACHINES: SlotMachineConfig[] = [
   {
     id: 'desert_gold',
     title: 'ذهب الصحراء',
-    subtitle: 'واحة الرمال العربية (3×3) + مضاعفة المصباح السحري الأوسط ×2',
-    badge: '3×3 صحراوي 🏜️',
-    cols: 3,
+    subtitle: 'واحة الرمال العربية (5×3) + مضاعفة المصباح السحري ×2',
+    badge: '5×3 صحراوي 🏜️',
+    cols: 5,
     rows: 3,
-    maxMultiplier: '×64',
+    maxMultiplier: '×80',
     symbols: ['🌴', '🐪', '🗡️', '🏜️', '🪔', '🪙'],
-    specialRuleTitle: 'مصباح الواحة 🪔 (×2) + كنز الدنانير 🪙',
+    specialRuleTitle: 'مصباح الواحة 🪔 (×2)',
     specialRuleDesc:
-      '5 خطوط ربح عربية، وإذا استقر المصباح السحري 🪔 في الخانة الوسطى عند أي فوز يتضاعف ربح الدورة بالكامل ×2! و3+ دنانير 🪙 تربح من أي مكان.',
+      '15 خط ربح عربي على 5×3، وإذا ظهر المصباح السحري 🪔 في الخانة الوسطى عند أي فوز يتضاعف ربح الدورة بالكامل ×2!',
     paytable: [
-      { combo: '🪙 🪙 🪙', mult: '×32', note: 'ومبعثر 3+ يربح ×3.5–×12' },
-      { combo: '🪔 🪔 🪔', mult: '×24', note: 'في المنتصف يضاعف الربح ×2' },
-      { combo: '🏜️ 🏜️ 🏜️', mult: '×16' },
-      { combo: '🗡️ 🗡️ 🗡️', mult: '×9' },
-      { combo: '🐪 🐪 🐪', mult: '×5' },
-      { combo: '🌴 🌴 🌴', mult: '×3' },
+      { combo: '🪙 ×3 / ×4 / ×5', mult: '×12 / ×30 / ×80', note: 'دنانير الذهب الملكية' },
+      { combo: '🪔 ×3 / ×4 / ×5', mult: '×9 / ×24 / ×58', note: 'في المنتصف يضاعف الربح ×2' },
+      { combo: '🏜️ ×3 / ×4 / ×5', mult: '×6 / ×16 / ×36' },
+      { combo: '🗡️ ×3 / ×4 / ×5', mult: '×4 / ×10 / ×24' },
+      { combo: '🐪 ×3 / ×4 / ×5', mult: '×2.5 / ×6 / ×15' },
+      { combo: '🌴 ×3 / ×4 / ×5', mult: '×1.5 / ×4 / ×10' },
     ],
     cardGradient: 'from-[#2E1B07]/95 via-[#181007]/95 to-[#0B231B]/95',
     cabinetClass:
@@ -446,49 +478,21 @@ function makeInitialGrid(machine: SlotMachineConfig): string[][] {
   );
 }
 
-const PIP_POSITIONS: Record<number, number[]> = {
-  1: [4],
-  2: [0, 8],
-  3: [0, 4, 8],
-  4: [0, 2, 6, 8],
-  5: [0, 2, 4, 6, 8],
-  6: [0, 2, 3, 5, 6, 8],
-};
-
-const RoyalDieFace: React.FC<{ value: number; rolling?: boolean; accent?: string }> = ({
-  value,
-  rolling,
-  accent = 'border-[#F3D37A]/65',
-}) => {
-  const pips = PIP_POSITIONS[value] || PIP_POSITIONS[1];
-  return (
-    <div
-      className={`w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border-2 ${accent} bg-gradient-to-br from-[#1B223C] via-[#0B0F20] to-[#060913] p-3 shadow-[0_10px_30px_rgba(0,0,0,0.55),inset_0_0_14px_rgba(212,175,55,0.2)] grid grid-cols-3 grid-rows-3 gap-1.5 place-items-center transition-transform duration-200 ${
-        rolling ? 'animate-spin scale-95 opacity-90' : 'scale-100'
-      }`}
-    >
-      {Array.from({ length: 9 }).map((_, idx) => (
-        <span
-          key={idx}
-          className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full transition-all ${
-            pips.includes(idx)
-              ? 'bg-gradient-to-br from-[#FCE9A6] to-[#D4AF37] shadow-[0_0_8px_rgba(252,233,166,0.9)]'
-              : 'bg-transparent'
-          }`}
-        />
-      ))}
-    </div>
-  );
-};
-
 interface GamesCenterPageProps {
   embedded?: boolean;
+  compactRoomMode?: boolean;
   initialCategory?: CenterCategory;
+  onPlaySpent?: (coins: number) => void;
 }
+
+const DEFAULT_SLOT_MACHINE =
+  SLOT_MACHINES.find((m) => m.id === 'crown_jewels') || SLOT_MACHINES[0];
 
 export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   embedded = false,
+  compactRoomMode = false,
   initialCategory = 'slots',
+  onPlaySpent,
 }) => {
   const { user, updateLocalUser } = useAuth();
   const [category, setCategory] = useState<CenterCategory>(initialCategory);
@@ -500,13 +504,18 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   const [history, setHistory] = useState<SpinHistoryItem[]>([]);
 
   // --- SLOTS STATE ---
-  const [selectedId, setSelectedId] = useState<SlotGameId>('classic_fruits');
+  const [selectedId, setSelectedId] = useState<SlotGameId>(DEFAULT_SLOT_MACHINE.id);
   const activeMachine = useMemo(
-    () => SLOT_MACHINES.find((m) => m.id === selectedId) || SLOT_MACHINES[0],
+    () => SLOT_MACHINES.find((m) => m.id === selectedId) || DEFAULT_SLOT_MACHINE,
     [selectedId]
   );
-  const [grid, setGrid] = useState<string[][]>(() => makeInitialGrid(SLOT_MACHINES[0]));
-  const [spinningCols, setSpinningCols] = useState<boolean[]>([false, false, false]);
+  const [grid, setGrid] = useState<string[][]>(() => makeInitialGrid(DEFAULT_SLOT_MACHINE));
+  const [spinningCols, setSpinningCols] = useState<boolean[]>(() =>
+    Array(DEFAULT_SLOT_MACHINE.cols).fill(false)
+  );
+  const [lockedColFlash, setLockedColFlash] = useState<boolean[]>(() =>
+    Array(DEFAULT_SLOT_MACHINE.cols).fill(false)
+  );
   const [isSpinning, setIsSpinning] = useState(false);
   const [winningCellSet, setWinningCellSet] = useState<Set<string>>(new Set());
   const [lightningMap, setLightningMap] = useState<Record<string, number>>({});
@@ -590,6 +599,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
     setSelectedId(machine.id);
     setGrid(makeInitialGrid(machine));
     setSpinningCols(Array(machine.cols).fill(false));
+    setLockedColFlash(Array(machine.cols).fill(false));
     setWinningCellSet(new Set());
     setLightningMap({});
     setLastResult(null);
@@ -598,8 +608,8 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
   const handleSpin = async () => {
     if (!user || isSpinning) return;
-    if (user.coins < bet) {
-      setErrorMsg('رصيد الكوينز غير كافٍ لهذه الدورة. يمكنك شحن محفظتك أو اختيار رهان أقل.');
+    if (user.coins < bet || user.coins <= 0) {
+      setErrorMsg('رصيد الكوينز غير كافٍ للعب. اشحن محفظتك أو اختر رهاناً أقل.');
       return;
     }
 
@@ -612,8 +622,12 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
     const machine = activeMachine;
     const activeFlags = Array(machine.cols).fill(true);
     setSpinningCols([...activeFlags]);
+    setLockedColFlash(Array(machine.cols).fill(false));
 
+    let tickCounter = 0;
     intervalRef.current = window.setInterval(() => {
+      tickCounter++;
+      if (tickCounter % 2 === 0) playSlotSpinTick();
       setGrid((prev) =>
         Array.from({ length: machine.rows }, (_, rIdx) =>
           Array.from({ length: machine.cols }, (__, cIdx) =>
@@ -627,6 +641,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
     try {
       const result = await spinSlotMachineInSupabase(user.id, machine.id, bet);
+      onPlaySpent?.(bet);
 
       const strikesMap: Record<string, number> = {};
       for (const st of result.lightningStrikes || []) {
@@ -634,10 +649,18 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
       }
 
       for (let c = 0; c < machine.cols; c++) {
-        const stopDelay = 500 + c * 220;
+        const stopDelay = 520 + c * 260;
         const tId = window.setTimeout(() => {
           activeFlags[c] = false;
           setSpinningCols([...activeFlags]);
+          playSlotReelStop(c);
+
+          setLockedColFlash((prev) => prev.map((v, idx) => (idx === c ? true : v)));
+          const flashResetId = window.setTimeout(() => {
+            setLockedColFlash((prev) => prev.map((v, idx) => (idx === c ? false : v)));
+          }, 420);
+          timersRef.current.push(flashResetId);
+
           setGrid((prev) =>
             Array.from({ length: machine.rows }, (_, rIdx) =>
               Array.from({ length: machine.cols }, (__, colIdx) =>
@@ -663,6 +686,12 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
             );
             setWinningCellSet(winKeys);
             pushHistory(machine.title, result.bet, result.payout, result.multiplier);
+
+            if (result.payout > 0) {
+              const isBig = result.jackpotHit || result.multiplier >= 10;
+              playCoinWinSound(isBig);
+              fireGoldCoinConfetti(isBig ? 'jackpot' : 'normal');
+            }
           }
         }, stopDelay);
         timersRef.current.push(tId);
@@ -689,7 +718,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
   const handlePlayStandardDice = async () => {
     if (!user || isDiceRolling || diceGame === 'ladder_dice') return;
-    if (user.coins < bet) {
+    if (user.coins < bet || user.coins <= 0) {
       setErrorMsg('رصيد الكوينز غير كافٍ لهذه الجولة.');
       return;
     }
@@ -706,12 +735,15 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         : speedPick;
 
     const count = diceGame === 'double_dice' ? 2 : diceGame === 'prediction_dice' ? 1 : 3;
+    playDiceTumbleSound();
     const rollInterval = window.setInterval(() => {
+      playDiceTumbleSound();
       setDiceValues(Array.from({ length: count }, () => 1 + Math.floor(Math.random() * 6)));
-    }, 80);
+    }, 115);
 
     try {
       const res = await playStandardDiceInSupabase(user.id, diceGame, bet, pick);
+      onPlaySpent?.(bet);
 
       const t = window.setTimeout(() => {
         window.clearInterval(rollInterval);
@@ -719,13 +751,19 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         setDiceValues(res.dice);
         setDiceResult(res);
         updateLocalUser(res.user);
+        playDiceLandSound();
+        if (res.won) {
+          const isBig = res.multiplier >= 4;
+          playCoinWinSound(isBig);
+          fireGoldCoinConfetti(isBig ? 'jackpot' : 'normal');
+        }
         const titleMap: Record<string, string> = {
           double_dice: 'نرد الحظ المزدوج',
           prediction_dice: 'نرد التوقعات',
           speed_dice: 'نرد السرعة',
         };
         pushHistory(titleMap[diceGame] || 'ألعاب النرد', res.bet, res.payout, res.multiplier);
-      }, 650);
+      }, 720);
       timersRef.current.push(t);
     } catch (err) {
       window.clearInterval(rollInterval);
@@ -736,16 +774,20 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
   const handleLadderAction = async (action: 'roll' | 'cashout') => {
     if (!user || isDiceRolling) return;
-    if (action === 'roll' && !ladderSession && user.coins < bet) {
+    if (action === 'roll' && !ladderSession && (user.coins < bet || user.coins <= 0)) {
       setErrorMsg('رصيد الكوينز غير كافٍ لبدء تحدي نرد السلم.');
       return;
     }
 
     setErrorMsg(null);
     setIsDiceRolling(true);
+    if (action === 'roll') playDiceTumbleSound();
     try {
       const res = await playLadderActionInSupabase(user.id, action, bet);
-      const delay = action === 'roll' ? 520 : 120;
+      if (action === 'roll' && !ladderSession) {
+        onPlaySpent?.(bet);
+      }
+      const delay = action === 'roll' ? 600 : 120;
       const t = window.setTimeout(() => {
         setIsDiceRolling(false);
         setLadderDie(res.die);
@@ -753,9 +795,14 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         setLadderMessage(res.message);
         setLadderOutcome(res.status);
         updateLocalUser(res.user);
+        if (action === 'roll') playDiceLandSound();
 
         if (res.status === 'cashed_out' || res.status === 'summit') {
+          playCoinWinSound(res.status === 'summit');
+          fireGoldCoinConfetti(res.status === 'summit' ? 'jackpot' : 'normal');
           pushHistory('نرد السلم التفاعلي', bet, res.payout, res.multiplier);
+        } else if (res.status === 'climbed') {
+          playCoinWinSound(false);
         } else if (res.status === 'fell') {
           pushHistory('نرد السلم التفاعلي', bet, 0, 0);
         }
@@ -770,7 +817,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   // --- HANDLERS: ROULETTE ---
   const handleSpinRoulette = async () => {
     if (!user || isRouletteSpinning) return;
-    if (user.coins < bet) {
+    if (user.coins < bet || user.coins <= 0) {
       setErrorMsg('رصيد الكوينز غير كافٍ لدورة الروليت.');
       return;
     }
@@ -786,6 +833,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         rouletteBetType,
         rouletteBetType === 'straight' ? rouletteStraightNum : undefined
       );
+      onPlaySpent?.(bet);
 
       const sliceAngle = 360 / 37;
       // Align pocket center with top pointer (0deg) while always rotating forward >= 5 turns
@@ -801,6 +849,10 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         setIsRouletteSpinning(false);
         setRouletteResult(res);
         updateLocalUser(res.user);
+        if (res.won) {
+          playCoinWinSound(res.multiplier >= 10);
+          fireGoldCoinConfetti(res.multiplier >= 10 ? 'jackpot' : 'normal');
+        }
         pushHistory(
           `الروليت الملكية (#${res.winningNumber})`,
           res.bet,
@@ -818,7 +870,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   // --- HANDLERS: MYSTERY BOXES ---
   const handleOpenMysteryBox = async (boxIndex: number) => {
     if (!user || isOpeningBox || mysteryResult) return;
-    if (user.coins < bet) {
+    if (user.coins < bet || user.coins <= 0) {
       setErrorMsg('رصيد الكوينز غير كافٍ لفتح صندوق الحظ.');
       return;
     }
@@ -827,8 +879,13 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
     setIsOpeningBox(true);
     try {
       const res = await openMysteryBoxInSupabase(user.id, bet, boxIndex);
+      onPlaySpent?.(bet);
       setMysteryResult(res);
       updateLocalUser(res.user);
+      if (res.won) {
+        playCoinWinSound(res.multiplier >= 5);
+        fireGoldCoinConfetti(res.multiplier >= 5 ? 'jackpot' : 'normal');
+      }
       pushHistory('صناديق الحظ الملكية', res.bet, res.payout, res.multiplier);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'تعذّر فتح الصندوق.');
@@ -844,514 +901,673 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   return (
     <div
       className={
-        embedded
+        compactRoomMode
+          ? 'space-y-2.5'
+          : embedded
           ? 'space-y-4 sm:space-y-5'
           : 'max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6'
       }
     >
-      {/* Header + Live Wallet Sync Strip */}
-      {embedded ? (
-        <section className="rounded-2xl bg-[#070913]/75 border border-[#D4AF37]/25 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Gamepad2 className="w-4 h-4 text-[#FCE9A6]" />
-            <span className="text-xs sm:text-sm font-extrabold text-[#FCE9A6]">
-              14 لعبة حصرية مرتبطة بمحفظتك مباشرة
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="rounded-xl bg-[#0B0F20]/90 border border-[#D4AF37]/30 px-3 py-1.5 flex items-center gap-1.5 text-xs">
-              <Coins className="w-3.5 h-3.5 text-[#D4AF37]" />
-              <span className="font-mono-num font-extrabold text-[#FCE9A6]">
-                {user.coins.toLocaleString('en-US')}
+      {/* Header + Live Wallet Sync Strip (Hidden in compact 45% room mode) */}
+      {!compactRoomMode && (
+        embedded ? (
+          <section className="rounded-2xl bg-[#070913]/75 border border-[#D4AF37]/25 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Gamepad2 className="w-4 h-4 text-[#FCE9A6]" />
+              <span className="text-xs sm:text-sm font-extrabold text-[#FCE9A6]">
+                14 لعبة حصرية مرتبطة بمحفظتك مباشرة
               </span>
             </div>
-            <div className="rounded-xl bg-[#0B0F20]/90 border border-emerald-400/30 px-3 py-1.5 flex items-center gap-1.5 text-xs">
-              <Trophy className="w-3.5 h-3.5 text-emerald-300" />
-              <span className="font-mono-num font-extrabold text-emerald-300">
-                +{sessionTotalWon.toLocaleString('en-US')}
-              </span>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="royal-glass rounded-3xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border border-[#D4AF37]/30">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#FCE9A6]/25 to-[#D4AF37]/10 border border-[#D4AF37]/45 flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.28)]">
-                <Gamepad2 className="w-5 h-5 text-[#FCE9A6]" />
-              </div>
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
-                  مركز الألعاب الملكي — صَدَى
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-300">
-                  14 لعبة حصرية (8 ماكينات سلوت + 4 ألعاب نرد + الروليت الملكية + صناديق الحظ) مرتبطة برصيدك فوراً
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/35 px-4 py-2.5 flex items-center gap-2.5">
-              <Coins className="w-4 h-4 text-[#D4AF37]" />
-              <div>
-                <span className="block text-[10px] text-slate-400">رصيد المحفظة</span>
-                <span className="text-sm sm:text-base font-extrabold font-mono-num text-[#FCE9A6]">
+            <div className="flex items-center gap-2">
+              <div className="rounded-xl bg-[#0B0F20]/90 border border-[#D4AF37]/30 px-3 py-1.5 flex items-center gap-1.5 text-xs">
+                <Coins className="w-3.5 h-3.5 text-[#D4AF37]" />
+                <span className="font-mono-num font-extrabold text-[#FCE9A6]">
                   {user.coins.toLocaleString('en-US')}
                 </span>
               </div>
-            </div>
-
-            <div className="rounded-2xl bg-[#070913]/85 border border-emerald-400/30 px-4 py-2.5 flex items-center gap-2.5">
-              <Trophy className="w-4 h-4 text-emerald-300" />
-              <div>
-                <span className="block text-[10px] text-slate-400">أرباح الجلسة</span>
-                <span className="text-sm sm:text-base font-extrabold font-mono-num text-emerald-300">
+              <div className="rounded-xl bg-[#0B0F20]/90 border border-emerald-400/30 px-3 py-1.5 flex items-center gap-1.5 text-xs">
+                <Trophy className="w-3.5 h-3.5 text-emerald-300" />
+                <span className="font-mono-num font-extrabold text-emerald-300">
                   +{sessionTotalWon.toLocaleString('en-US')}
                 </span>
               </div>
             </div>
-
-            <Link
-              to="/wallet"
-              className="min-h-[44px] rounded-2xl bg-white/5 hover:bg-[#D4AF37]/15 border border-[#D4AF37]/30 px-4 py-2 text-xs font-bold text-[#FCE9A6] flex items-center gap-1.5 transition"
-            >
-              <Wallet className="w-4 h-4" />
-              <span>شحن المحفظة</span>
-            </Link>
-          </div>
-        </section>
-      )}
-
-      {/* Main Category Switcher */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {(
-          [
-            {
-              id: 'slots',
-              title: 'ماكينات السلوت',
-              sub: '8 ألعاب ومضاعفات أسطورية',
-              icon: Crown,
-            },
-            {
-              id: 'dice',
-              title: 'ألعاب النرد الملكية',
-              sub: '4 تحديات نرد ومغامرة السلم',
-              icon: Dices,
-            },
-            {
-              id: 'roulette',
-              title: 'الروليت الملكية',
-              sub: 'عجلة ذهبية 37 خانة حتى ×32',
-              icon: Disc3,
-            },
-            {
-              id: 'mystery',
-              title: 'صناديق الحظ',
-              sub: '9 صناديق مغلقة بجوائز فورية',
-              icon: Box,
-            },
-          ] as const
-        ).map((tabItem) => {
-          const Icon = tabItem.icon;
-          const active = category === tabItem.id;
-          return (
-            <button
-              key={tabItem.id}
-              type="button"
-              disabled={anyBusy}
-              onClick={() => {
-                setCategory(tabItem.id);
-                setErrorMsg(null);
-              }}
-              className={`rounded-3xl p-4 border text-right transition-all cursor-pointer flex items-center gap-3 disabled:opacity-60 ${
-                active
-                  ? 'bg-gradient-to-br from-[#D4AF37]/25 via-[#141A33] to-[#0B0F20] border-[#FCE9A6] shadow-[0_0_26px_rgba(212,175,55,0.3)]'
-                  : 'royal-glass border-[#D4AF37]/20 hover:border-[#D4AF37]/50'
-              }`}
-            >
-              <div
-                className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
-                  active
-                    ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6]'
-                    : 'bg-[#070913]/80 text-[#F3D37A] border-[#D4AF37]/30'
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-sm sm:text-base font-extrabold text-white truncate">
-                  {tabItem.title}
-                </h2>
-                <p className="text-[11px] text-slate-300 truncate">{tabItem.sub}</p>
-              </div>
-            </button>
-          );
-        })}
-      </section>
-
-      {errorMsg && (
-        <div className="rounded-2xl border border-rose-500/45 bg-rose-950/60 px-4 py-3 text-xs sm:text-sm text-rose-200">
-          {errorMsg}
-        </div>
-      )}
-
-      {/* ===================== CATEGORY 1: 8 SLOT MACHINES ===================== */}
-      {category === 'slots' && (
-        <>
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-            {SLOT_MACHINES.map((machine) => {
-              const isSelected = machine.id === activeMachine.id;
-              return (
-                <button
-                  key={machine.id}
-                  type="button"
-                  disabled={isSpinning}
-                  onClick={() => handleSelectMachine(machine)}
-                  className={`text-right rounded-3xl p-4 border bg-gradient-to-br transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 disabled:cursor-wait ${
-                    machine.cardGradient
-                  } ${
-                    isSelected
-                      ? 'border-[#FCE9A6] ring-1 ring-[#D4AF37]/60 shadow-[0_0_28px_rgba(212,175,55,0.3)] -translate-y-0.5'
-                      : 'border-white/15 hover:border-[#D4AF37]/50 opacity-85 hover:opacity-100'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1">
-                      <span className="text-[11px] font-bold font-mono-num text-[#FCE9A6]">
-                        {machine.badge} · أقصى ربح {machine.maxMultiplier}
-                      </span>
-                      <h2 className="text-base font-extrabold text-white">{machine.title}</h2>
-                    </div>
-                    <span className="text-2xl leading-none select-none">
-                      {machine.symbols[machine.symbols.length - 1]}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                    <div className="flex items-center gap-1 text-base leading-none">
-                      {machine.symbols.slice(0, 4).map((s, idx) => (
-                        <span key={idx}>{s}</span>
-                      ))}
-                    </div>
-                    <span
-                      className={`text-xs font-bold ${
-                        isSelected ? 'text-[#FCE9A6]' : 'text-slate-300'
-                      }`}
-                    >
-                      {isSelected ? 'قيد اللعب ✦' : 'اختر اللعبة'}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
           </section>
-
-          <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-            <div
-              className={`lg:col-span-8 rounded-[2rem] border p-5 sm:p-7 space-y-5 relative overflow-hidden transition-all duration-300 ${activeMachine.cabinetClass}`}
-            >
-              <div
-                className={`rounded-2xl bg-gradient-to-r ${activeMachine.headerGradient} border border-white/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3`}
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Crown className={`w-5 h-5 ${activeMachine.accentText}`} />
-                    <h2 className="text-lg sm:text-xl font-extrabold text-white">
-                      {activeMachine.title}
-                    </h2>
-                  </div>
-                  <p className="text-xs text-slate-300 mt-0.5">{activeMachine.subtitle}</p>
+        ) : (
+          <section className="royal-glass rounded-3xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border border-[#D4AF37]/30">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#FCE9A6]/25 to-[#D4AF37]/10 border border-[#D4AF37]/45 flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.28)]">
+                  <Gamepad2 className="w-5 h-5 text-[#FCE9A6]" />
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="rounded-xl bg-[#070913]/80 border border-[#D4AF37]/35 px-3 py-1.5 text-xs font-extrabold font-mono-num text-[#FCE9A6]">
-                    الجائزة الكبرى {activeMachine.maxMultiplier}
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
+                    مركز الألعاب الملكي — صَدَى
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-300">
+                    ماكينات السلوت الثلاثية الأبعاد + طاولة النرد 3D + الروليت الملكية وصناديق الحظ
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/35 px-4 py-2.5 flex items-center gap-2.5">
+                <Coins className="w-4 h-4 text-[#D4AF37]" />
+                <div>
+                  <span className="block text-[10px] text-slate-400">رصيد المحفظة</span>
+                  <span className="text-sm sm:text-base font-extrabold font-mono-num text-[#FCE9A6]">
+                    {user.coins.toLocaleString('en-US')}
                   </span>
                 </div>
               </div>
 
-              <div
-                dir="ltr"
-                className="rounded-3xl bg-[#050711]/90 border border-[#D4AF37]/30 p-3 sm:p-5 shadow-inner relative"
+              <div className="rounded-2xl bg-[#070913]/85 border border-emerald-400/30 px-4 py-2.5 flex items-center gap-2.5">
+                <Trophy className="w-4 h-4 text-emerald-300" />
+                <div>
+                  <span className="block text-[10px] text-slate-400">أرباح الجلسة</span>
+                  <span className="text-sm sm:text-base font-extrabold font-mono-num text-emerald-300">
+                    +{sessionTotalWon.toLocaleString('en-US')}
+                  </span>
+                </div>
+              </div>
+
+              <Link
+                to="/wallet"
+                className="min-h-[44px] rounded-2xl bg-white/5 hover:bg-[#D4AF37]/15 border border-[#D4AF37]/30 px-4 py-2 text-xs font-bold text-[#FCE9A6] flex items-center gap-1.5 transition"
+              >
+                <Wallet className="w-4 h-4" />
+                <span>شحن المحفظة</span>
+              </Link>
+            </div>
+          </section>
+        )
+      )}
+
+      {/* Main Category Switcher (Hidden in compact 45% room mode) */}
+      {!compactRoomMode && (
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {(
+            [
+              {
+                id: 'slots',
+                title: 'السلوت الملكي 3D',
+                sub: '8 ماكينات ثلاثية الأبعاد',
+                icon: Crown,
+              },
+              {
+                id: 'dice',
+                title: 'طاولة النرد 3D',
+                sub: '4 تحديات نرد ومغامرة السلم',
+                icon: Dices,
+              },
+              {
+                id: 'roulette',
+                title: 'الروليت الملكية',
+                sub: 'عجلة ذهبية 37 خانة حتى ×32',
+                icon: Disc3,
+              },
+              {
+                id: 'mystery',
+                title: 'صناديق الحظ',
+                sub: '9 صناديق مغلقة بجوائز فورية',
+                icon: Box,
+              },
+            ] as const
+          ).map((tabItem) => {
+            const Icon = tabItem.icon;
+            const active = category === tabItem.id;
+            return (
+              <button
+                key={tabItem.id}
+                type="button"
+                disabled={anyBusy}
+                onClick={() => {
+                  setCategory(tabItem.id);
+                  setErrorMsg(null);
+                }}
+                className={`rounded-3xl p-4 border text-right transition-all cursor-pointer flex items-center gap-3 disabled:opacity-60 ${
+                  active
+                    ? 'bg-gradient-to-br from-[#D4AF37]/25 via-[#141A33] to-[#0B0F20] border-[#FCE9A6] shadow-[0_0_26px_rgba(212,175,55,0.3)]'
+                    : 'royal-glass border-[#D4AF37]/20 hover:border-[#D4AF37]/50'
+                }`}
               >
                 <div
-                  className="grid gap-2 sm:gap-3"
+                  className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
+                    active
+                      ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6]'
+                      : 'bg-[#070913]/80 text-[#F3D37A] border-[#D4AF37]/30'
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm sm:text-base font-extrabold text-white truncate">
+                    {tabItem.title}
+                  </h2>
+                  <p className="text-[11px] text-slate-300 truncate">{tabItem.sub}</p>
+                </div>
+              </button>
+            );
+          })}
+        </section>
+      )}
+
+      {/* Insufficient Coins Strict Guard Banner */}
+      {user.coins < 100 && (
+        <div className="rounded-2xl border border-amber-400/50 bg-amber-950/55 px-3.5 py-2 flex items-center justify-between gap-2 text-[11px] sm:text-xs text-[#FCE9A6]">
+          <span>رصيدك الحالي ({user.coins.toLocaleString('en-US')} كوينز) لا يكفي للعب — يلزم 100 كوينز على الأقل.</span>
+          <Link
+            to="/wallet"
+            className="shrink-0 rounded-xl bg-[#D4AF37] text-[#070913] px-2.5 py-1 font-extrabold"
+          >
+            شحن الآن
+          </Link>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="rounded-2xl border border-rose-500/45 bg-rose-950/60 px-3.5 py-2 text-xs text-rose-200">
+          {errorMsg}
+        </div>
+      )}
+
+      {/* ===================== CATEGORY 1: ROYAL 3D SLOTS ===================== */}
+      {category === 'slots' && (
+        <>
+          {compactRoomMode ? (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+              {SLOT_MACHINES.map((machine) => {
+                const isSelected = machine.id === activeMachine.id;
+                return (
+                  <button
+                    key={machine.id}
+                    type="button"
+                    disabled={isSpinning}
+                    onClick={() => handleSelectMachine(machine)}
+                    className={`shrink-0 rounded-xl px-2.5 py-1 text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-[#D4AF37]/25 border-[#FCE9A6] text-[#FCE9A6]'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:border-[#D4AF37]/40'
+                    }`}
+                  >
+                    <span>{machine.symbols[machine.symbols.length - 1]}</span>
+                    <span>{machine.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {SLOT_MACHINES.map((machine) => {
+                const isSelected = machine.id === activeMachine.id;
+                return (
+                  <button
+                    key={machine.id}
+                    type="button"
+                    disabled={isSpinning}
+                    onClick={() => handleSelectMachine(machine)}
+                    className={`text-right rounded-3xl p-4 border bg-gradient-to-br transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 disabled:cursor-wait ${
+                      machine.cardGradient
+                    } ${
+                      isSelected
+                        ? 'border-[#FCE9A6] ring-1 ring-[#D4AF37]/60 shadow-[0_0_28px_rgba(212,175,55,0.3)] -translate-y-0.5'
+                        : 'border-white/15 hover:border-[#D4AF37]/50 opacity-85 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-bold font-mono-num text-[#FCE9A6]">
+                          {machine.badge} · أقصى ربح {machine.maxMultiplier}
+                        </span>
+                        <h2 className="text-base font-extrabold text-white">{machine.title}</h2>
+                      </div>
+                      <span className="text-2xl leading-none select-none">
+                        {machine.symbols[machine.symbols.length - 1]}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                      <div className="flex items-center gap-1 text-base leading-none">
+                        {machine.symbols.slice(0, 4).map((s, idx) => (
+                          <span key={idx}>{s}</span>
+                        ))}
+                      </div>
+                      <span
+                        className={`text-xs font-bold ${
+                          isSelected ? 'text-[#FCE9A6]' : 'text-slate-300'
+                        }`}
+                      >
+                        {isSelected ? 'قيد اللعب ✦' : 'اختر اللعبة'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </section>
+          )}
+
+          <section className={compactRoomMode ? 'space-y-2' : 'grid grid-cols-1 lg:grid-cols-12 gap-5 items-start'}>
+            <div
+              className={`${compactRoomMode ? 'rounded-2xl border-2 p-2.5 space-y-2' : 'lg:col-span-8 rounded-[2rem] border-2 p-5 sm:p-7 space-y-5'} relative overflow-hidden transition-all duration-300 ${activeMachine.cabinetClass}`}
+            >
+              {/* Royal Gold Casino Marquee Header (Compact or Full) */}
+              {!compactRoomMode ? (
+                <div
+                  className={`rounded-2xl bg-gradient-to-r ${activeMachine.headerGradient} border border-[#FCE9A6]/25 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3`}
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Crown className={`w-5 h-5 ${activeMachine.accentText}`} />
+                      <h2 className="text-lg sm:text-xl font-extrabold text-white">
+                        {activeMachine.title}
+                      </h2>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-0.5">{activeMachine.subtitle}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="rounded-xl bg-[#070913]/85 border border-[#D4AF37]/45 px-3 py-1.5 text-xs font-extrabold font-mono-num text-[#FCE9A6]">
+                      الجائزة الكبرى {activeMachine.maxMultiplier}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-1.5">
+                    <Crown className="w-3.5 h-3.5 text-[#FCE9A6]" />
+                    <span className="text-xs font-extrabold text-[#FCE9A6]">{activeMachine.title}</span>
+                  </div>
+                  <span className="text-[10px] font-mono-num text-amber-200/85 bg-[#070913]/80 border border-[#D4AF37]/35 rounded-lg px-2 py-0.5">
+                    أقصى ربح {activeMachine.maxMultiplier}
+                  </span>
+                </div>
+              )}
+
+              {/* 3D Cylindrical Reel Drum Cabinet */}
+              <div
+                dir="ltr"
+                className={`rounded-2xl sm:rounded-3xl bg-gradient-to-b from-[#04060E] via-[#0B1024] to-[#04060E] border-2 border-[#D4AF37]/55 ${
+                  compactRoomMode ? 'p-1.5 sm:p-2' : 'p-3 sm:p-4'
+                } shadow-[inset_0_12px_28px_rgba(0,0,0,0.85),0_0_24px_rgba(212,175,55,0.2)] relative overflow-hidden`}
+              >
+                {/* Cylindrical Metallic Top & Bottom Gloss Bevel */}
+                <div
+                  className="pointer-events-none absolute inset-x-0 top-0 h-5 z-10"
+                  style={{
+                    background: 'linear-gradient(to bottom, rgba(0,0,0,0.82), transparent)',
+                  }}
+                />
+                <div
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-5 z-10"
+                  style={{
+                    background: 'linear-gradient(to top, rgba(0,0,0,0.82), transparent)',
+                  }}
+                />
+
+                <div
+                  className="grid gap-1.5 sm:gap-2.5"
                   style={{
                     gridTemplateColumns: `repeat(${activeMachine.cols}, minmax(0, 1fr))`,
                   }}
                 >
-                  {Array.from({ length: activeMachine.rows }).map((_, rIdx) =>
-                    Array.from({ length: activeMachine.cols }).map((__, cIdx) => {
-                      const key = `${rIdx}-${cIdx}`;
-                      const sym =
-                        grid[rIdx]?.[cIdx] ??
-                        activeMachine.symbols[(rIdx + cIdx) % activeMachine.symbols.length];
-                      const colSpinning = Boolean(spinningCols[cIdx]);
-                      const isWinCell = winningCellSet.has(key);
-                      const strikeMult = lightningMap[key];
-
-                      return (
+                  {Array.from({ length: activeMachine.cols }).map((_, cIdx) => {
+                    const colSpinning = Boolean(spinningCols[cIdx]);
+                    const colLocked = Boolean(lockedColFlash[cIdx]);
+                    return (
+                      <div
+                        key={cIdx}
+                        className={`relative rounded-xl sm:rounded-2xl border overflow-hidden transition-all duration-200 ${
+                          colSpinning
+                            ? 'border-amber-300/60 bg-gradient-to-b from-[#070B19] via-[#172042] to-[#070B19] shadow-[inset_0_0_18px_rgba(251,191,36,0.2)]'
+                            : colLocked
+                            ? 'border-[#FCE9A6] bg-gradient-to-b from-[#131934] via-[#1B2449] to-[#0C1022] animate-reel-lock'
+                            : 'border-[#D4AF37]/30 bg-gradient-to-b from-[#080B18] via-[#121836] to-[#080B18]'
+                        }`}
+                      >
+                        {/* Curved Cylindrical Drum Highlight Streak */}
                         <div
-                          key={key}
-                          className={`relative aspect-square sm:aspect-[5/4] rounded-2xl border flex items-center justify-center overflow-hidden transition-all duration-200 select-none ${
-                            isWinCell ? activeMachine.winCellGlow : activeMachine.reelCellBg
-                          }`}
-                        >
-                          {rIdx === 1 && !colSpinning && !isWinCell && (
-                            <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-[1px] bg-white/5" />
-                          )}
+                          className="pointer-events-none absolute inset-0 z-10 opacity-45"
+                          style={{
+                            background:
+                              'linear-gradient(90deg, rgba(0,0,0,0.55) 0%, rgba(255,255,255,0.09) 24%, rgba(255,255,255,0.03) 50%, rgba(0,0,0,0.6) 100%)',
+                          }}
+                        />
 
-                          <span
-                            className={`${
-                              activeMachine.rows >= 4 ? 'text-2xl sm:text-4xl' : 'text-3xl sm:text-5xl'
-                            } transition-transform duration-150 ${
-                              colSpinning
-                                ? 'animate-bounce blur-[0.8px] opacity-85 scale-95'
-                                : isWinCell
-                                ? 'scale-115 drop-shadow-[0_0_16px_rgba(252,233,166,0.9)]'
-                                : 'scale-100'
-                            }`}
-                          >
-                            {sym}
-                          </span>
+                        {/* Column Rows */}
+                        <div className={`flex flex-col ${colSpinning ? 'animate-slot-cylinder' : ''}`}>
+                          {Array.from({ length: activeMachine.rows }).map((__, rIdx) => {
+                            const key = `${rIdx}-${cIdx}`;
+                            const sym =
+                              grid[rIdx]?.[cIdx] ??
+                              activeMachine.symbols[(rIdx + cIdx) % activeMachine.symbols.length];
+                            const isWinCell = winningCellSet.has(key);
+                            const strikeMult = lightningMap[key];
 
-                          {!colSpinning && strikeMult && (
-                            <span className="absolute bottom-1 right-1 rounded-lg bg-[#070913]/90 border border-[#FCE9A6]/80 px-1.5 py-0.5 text-[10px] sm:text-xs font-extrabold font-mono-num text-[#FCE9A6] shadow-[0_0_12px_rgba(252,233,166,0.75)]">
-                              ×{strikeMult}
-                            </span>
-                          )}
+                            return (
+                              <div
+                                key={key}
+                                className={`relative ${
+                                  compactRoomMode
+                                    ? 'h-11 sm:h-12'
+                                    : activeMachine.rows >= 4
+                                    ? 'h-16 sm:h-20'
+                                    : 'h-20 sm:h-24'
+                                } flex items-center justify-center border-b last:border-b-0 border-white/5 transition-all ${
+                                  isWinCell
+                                    ? 'bg-gradient-to-r from-[#D4AF37]/30 via-amber-400/35 to-[#D4AF37]/30 shadow-[inset_0_0_16px_rgba(252,233,166,0.65)] scale-[1.03]'
+                                    : ''
+                                }`}
+                              >
+                                <div className={colSpinning ? 'blur-[1px] opacity-85 scale-90' : ''}>
+                                  <RoyalSlotSymbol3D
+                                    symbol={sym}
+                                    compact={compactRoomMode || activeMachine.rows >= 4}
+                                    winning={isWinCell}
+                                  />
+                                </div>
+                                {!colSpinning && strikeMult && (
+                                  <span className="absolute bottom-0.5 right-0.5 rounded-md bg-[#070913]/90 border border-[#FCE9A6]/80 px-1 py-[1px] text-[9px] font-extrabold font-mono-num text-[#FCE9A6]">
+                                    ×{strikeMult}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })
-                  )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
               {lastResult && !isSpinning && (
                 <div
-                  className={`rounded-2xl border p-4 transition-all ${
+                  className={`rounded-xl sm:rounded-2xl border ${
+                    compactRoomMode ? 'px-3 py-1.5' : 'p-4'
+                  } transition-all ${
                     lastResult.payout > 0
-                      ? 'border-[#FCE9A6]/70 bg-gradient-to-r from-[#D4AF37]/25 via-emerald-950/50 to-[#D4AF37]/20 shadow-[0_0_28px_rgba(212,175,55,0.3)]'
-                      : 'border-white/10 bg-[#070913]/75'
+                      ? 'border-[#FCE9A6]/80 bg-gradient-to-r from-[#D4AF37]/30 via-emerald-950/60 to-[#D4AF37]/25 shadow-[0_0_24px_rgba(212,175,55,0.35)]'
+                      : 'border-white/10 bg-[#070913]/80'
                   }`}
                 >
                   {lastResult.payout > 0 ? (
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-sm sm:text-base font-extrabold text-[#FCE9A6]">
-                          <Sparkles className="w-5 h-5 text-[#F3D37A]" />
-                          <span>
-                            {lastResult.jackpotHit
-                              ? 'فوز أسطوري فائق! 🎉'
-                              : 'مبروك! تمت إضافة الأرباح إلى محفظتك فوراً'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-200">
-                          {lastResult.rulesTriggered.join(' · ')}
-                        </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-xs sm:text-sm font-extrabold text-[#FCE9A6]">
+                        <Sparkles className="w-4 h-4 text-[#F3D37A] shrink-0" />
+                        <span>
+                          {lastResult.jackpotHit
+                            ? 'جاكبوت ملكي فائق! 🎉'
+                            : 'فوز ملكي! أُضيف لمحفظتك'}
+                        </span>
                       </div>
-                      <div className="text-left shrink-0">
-                        <div className="text-xl sm:text-2xl font-extrabold font-mono-num text-emerald-300">
-                          +{lastResult.payout.toLocaleString('en-US')} كوينز
-                        </div>
-                        <div className="text-[11px] font-mono-num text-[#FCE9A6]">
-                          مضاعف ×{lastResult.multiplier} · +{lastResult.xpGain} XP
-                        </div>
+                      <div className="text-left font-mono-num shrink-0">
+                        <span className="text-sm sm:text-xl font-extrabold text-emerald-300">
+                          +{lastResult.payout.toLocaleString('en-US')}
+                        </span>
+                        <span className="text-[10px] text-[#FCE9A6] mr-1.5">
+                          (×{lastResult.multiplier})
+                        </span>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between text-xs text-slate-300">
-                      <span>لم يتطابق خط ربح هذه المرة — حظاً أوفر في الدورة القادمة!</span>
+                    <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-300">
+                      <span>لم يتطابق خط ربح — جرب الدورة التالية!</span>
                       <span className="font-mono-num text-[#F3D37A]">+{lastResult.xpGain} XP</span>
                     </div>
                   )}
                 </div>
               )}
 
-              <div className="rounded-3xl bg-[#070913]/85 border border-[#D4AF37]/25 p-4 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <Flame className="w-4 h-4 text-[#D4AF37]" />
-                    <span>قيمة الرهان للدورة (كوينز):</span>
-                  </span>
-                  <span className="text-xs font-mono-num text-[#FCE9A6]">
-                    الرهان المحدد: {bet.toLocaleString('en-US')} كوينز
-                  </span>
-                </div>
+              {/* Bet Chips + Spin CTA */}
+              <div
+                className={`rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25 ${
+                  compactRoomMode ? 'p-2 space-y-2' : 'p-4 space-y-3.5'
+                }`}
+              >
+                {!compactRoomMode && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Flame className="w-4 h-4 text-[#D4AF37]" />
+                      <span>قيمة الرهان للدورة (كوينز):</span>
+                    </span>
+                    <span className="text-xs font-mono-num text-[#FCE9A6]">
+                      الرهان المحدد: {bet.toLocaleString('en-US')} كوينز
+                    </span>
+                  </div>
+                )}
 
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                <div className="grid grid-cols-6 gap-1.5 sm:gap-2">
                   {BET_AMOUNTS.map((val) => (
                     <button
                       key={val}
                       type="button"
                       disabled={isSpinning}
                       onClick={() => setBet(val)}
-                      className={`min-h-[42px] rounded-xl text-xs font-extrabold font-mono-num border transition cursor-pointer disabled:opacity-50 ${
+                      className={`${
+                        compactRoomMode ? 'min-h-[30px] text-[10px]' : 'min-h-[40px] text-xs'
+                      } rounded-xl font-extrabold font-mono-num border transition cursor-pointer disabled:opacity-50 ${
                         bet === val
-                          ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6] shadow-[0_0_16px_rgba(212,175,55,0.4)]'
+                          ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6] shadow-[0_0_14px_rgba(212,175,55,0.4)]'
                           : 'bg-white/5 border-white/15 text-slate-200 hover:border-[#D4AF37]/50'
                       }`}
                     >
-                      {val.toLocaleString('en-US')}
+                      {val >= 1000 ? `${val / 1000}K` : val}
                     </button>
                   ))}
                 </div>
 
                 <button
                   type="button"
-                  disabled={isSpinning || user.coins < bet}
+                  disabled={isSpinning || user.coins < bet || user.coins <= 0}
                   onClick={handleSpin}
-                  className={`w-full min-h-[54px] rounded-2xl text-base font-extrabold flex items-center justify-center gap-2.5 cursor-pointer transition active:scale-[0.99] disabled:opacity-45 disabled:cursor-not-allowed ${activeMachine.spinButtonClass}`}
+                  className={`w-full ${
+                    compactRoomMode ? 'min-h-[40px] text-xs sm:text-sm' : 'min-h-[52px] text-base'
+                  } rounded-xl sm:rounded-2xl font-extrabold flex items-center justify-center gap-2 cursor-pointer transition active:scale-[0.99] disabled:opacity-45 disabled:cursor-not-allowed ${activeMachine.spinButtonClass}`}
                 >
-                  <RotateCw className={`w-5 h-5 ${isSpinning ? 'animate-spin' : ''}`} />
+                  <RotateCw className={`${compactRoomMode ? 'w-4 h-4' : 'w-5 h-5'} ${isSpinning ? 'animate-spin' : ''}`} />
                   <span>
                     {isSpinning
-                      ? 'البكرات تدور...'
-                      : user.coins < bet
-                      ? 'رصيد المحفظة غير كافٍ'
-                      : `تدوير البكرات الآن (${bet.toLocaleString('en-US')} كوينز)`}
+                      ? 'البكرات 3D تدور...'
+                      : user.coins < bet || user.coins <= 0
+                      ? 'رصيدك غير كافٍ للعب'
+                      : `تدوير السلوت (${bet.toLocaleString('en-US')} كوينز)`}
                   </span>
                 </button>
               </div>
             </div>
 
-            <div className="lg:col-span-4 space-y-4">
-              <section className="royal-glass rounded-3xl p-5 space-y-4 border border-[#D4AF37]/25">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-[#FCE9A6]">
-                    <Zap className="w-4 h-4 text-[#D4AF37]" />
-                    <h3 className="text-sm font-extrabold">قواعد ومضاعفات {activeMachine.title}</h3>
+            {!compactRoomMode && (
+              <div className="lg:col-span-4 space-y-4">
+                <section className="royal-glass rounded-3xl p-5 space-y-4 border border-[#D4AF37]/25">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-[#FCE9A6]">
+                      <Zap className="w-4 h-4 text-[#D4AF37]" />
+                      <h3 className="text-sm font-extrabold">قواعد ومضاعفات {activeMachine.title}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowRules((v) => !v)}
+                      className="text-xs text-slate-300 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                      <span>{showRules ? 'إخفاء' : 'عرض'}</span>
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowRules((v) => !v)}
-                    className="text-xs text-slate-300 hover:text-white flex items-center gap-1 cursor-pointer"
-                  >
-                    <Info className="w-3.5 h-3.5" />
-                    <span>{showRules ? 'إخفاء' : 'عرض'}</span>
-                  </button>
-                </div>
 
-                {showRules && (
-                  <>
-                    <div className="rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/30 p-3.5 space-y-1">
-                      <p className="text-xs font-extrabold text-[#FCE9A6]">
-                        {activeMachine.specialRuleTitle}
-                      </p>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        {activeMachine.specialRuleDesc}
-                      </p>
-                    </div>
+                  {showRules && (
+                    <>
+                      <div className="rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/30 p-3.5 space-y-1">
+                        <p className="text-xs font-extrabold text-[#FCE9A6]">
+                          {activeMachine.specialRuleTitle}
+                        </p>
+                        <p className="text-xs text-slate-300 leading-relaxed">
+                          {activeMachine.specialRuleDesc}
+                        </p>
+                      </div>
 
-                    <div className="space-y-2">
-                      {activeMachine.paytable.map((row, idx) => (
-                        <div
-                          key={idx}
-                          className="rounded-xl bg-[#070913]/75 border border-white/10 px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs"
-                        >
-                          <div className="min-w-0">
-                            <span className="font-bold text-white block">{row.combo}</span>
-                            {row.note && (
-                              <span className="text-[11px] text-slate-400">{row.note}</span>
-                            )}
+                      <div className="space-y-2">
+                        {activeMachine.paytable.map((row, idx) => (
+                          <div
+                            key={idx}
+                            className="rounded-xl bg-[#070913]/75 border border-white/10 px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <span className="font-bold text-white block">{row.combo}</span>
+                              {row.note && (
+                                <span className="text-[11px] text-slate-400">{row.note}</span>
+                              )}
+                            </div>
+                            <span className="font-extrabold font-mono-num text-[#FCE9A6] shrink-0">
+                              {row.mult}
+                            </span>
                           </div>
-                          <span className="font-extrabold font-mono-num text-[#FCE9A6] shrink-0">
-                            {row.mult}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </section>
-            </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </section>
+              </div>
+            )}
           </section>
         </>
       )}
 
-      {/* ===================== CATEGORY 2: 4 ROYAL DICE GAMES ===================== */}
+      {/* ===================== CATEGORY 2: 3D ROYAL DICE GAMES ===================== */}
       {category === 'dice' && (
-        <section className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-            {(
-              [
-                {
-                  id: 'double_dice',
-                  title: 'نرد الحظ المزدوج',
-                  desc: 'نردان ذهبيان: عالي / منخفض / السبعة الذهبية / تطابق',
-                  badge: 'حتى ×4.8',
-                },
-                {
-                  id: 'prediction_dice',
-                  title: 'نرد التوقعات',
-                  desc: 'توقع زوجي/فردي أو الرقم الدقيق من 1 إلى 6',
-                  badge: 'حتى ×5.2',
-                },
-                {
-                  id: 'ladder_dice',
-                  title: 'نرد السلم التفاعلي',
-                  desc: 'اصعد 5 درجات مضاعفة مع خيار سحب الأرباح بأي لحظة',
-                  badge: 'حتى ×12.0',
-                },
-                {
-                  id: 'speed_dice',
-                  title: 'نرد السرعة الخاطف',
-                  desc: '3 نردات سريعة: مجموع 16+ أو الثلاثية المتطابقة',
-                  badge: 'حتى ×12.0',
-                },
-              ] as const
-            ).map((d) => {
-              const selected = diceGame === d.id;
-              return (
-                <button
-                  key={d.id}
-                  type="button"
-                  disabled={isDiceRolling}
-                  onClick={() => handleSelectDiceGame(d.id)}
-                  className={`rounded-3xl p-4 border text-right transition-all cursor-pointer space-y-2 ${
-                    selected
-                      ? 'bg-gradient-to-br from-[#2B1F09]/95 via-[#13172E] to-[#0B0F20] border-[#FCE9A6] shadow-[0_0_26px_rgba(212,175,55,0.28)]'
-                      : 'royal-glass border-[#D4AF37]/20 hover:border-[#D4AF37]/50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-extrabold font-mono-num text-[#FCE9A6]">
-                      {d.badge}
-                    </span>
-                    <Dices className="w-5 h-5 text-[#D4AF37]" />
-                  </div>
-                  <h3 className="text-base font-extrabold text-white">{d.title}</h3>
-                  <p className="text-xs text-slate-300 leading-relaxed">{d.desc}</p>
-                </button>
-              );
-            })}
-          </div>
+        <section className={compactRoomMode ? 'space-y-2' : 'space-y-5'}>
+          {compactRoomMode ? (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {(
+                [
+                  { id: 'double_dice', title: 'نرد مزدوج', badge: '×4.8' },
+                  { id: 'prediction_dice', title: 'نرد التوقعات', badge: '×5.2' },
+                  { id: 'speed_dice', title: 'نرد السرعة', badge: '×12' },
+                  { id: 'ladder_dice', title: 'نرد السلم', badge: '×12' },
+                ] as const
+              ).map((d) => {
+                const selected = diceGame === d.id;
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    disabled={isDiceRolling}
+                    onClick={() => handleSelectDiceGame(d.id)}
+                    className={`shrink-0 rounded-xl px-2.5 py-1 text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                      selected
+                        ? 'bg-[#D4AF37]/25 border-[#FCE9A6] text-[#FCE9A6]'
+                        : 'bg-white/5 border-white/10 text-slate-300'
+                    }`}
+                  >
+                    <Dices className="w-3 h-3" />
+                    <span>{d.title}</span>
+                    <span className="text-[9px] font-mono-num opacity-80">{d.badge}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {(
+                [
+                  {
+                    id: 'double_dice',
+                    title: 'نرد الحظ المزدوج',
+                    desc: 'نردان ثلاثيا الأبعاد: عالي / منخفض / السبعة الذهبية / تطابق',
+                    badge: 'حتى ×4.8',
+                  },
+                  {
+                    id: 'prediction_dice',
+                    title: 'نرد التوقعات',
+                    desc: 'توقع زوجي/فردي أو الرقم الدقيق من 1 إلى 6',
+                    badge: 'حتى ×5.2',
+                  },
+                  {
+                    id: 'ladder_dice',
+                    title: 'نرد السلم التفاعلي',
+                    desc: 'اصعد 5 درجات مضاعفة مع خيار سحب الأرباح بأي لحظة',
+                    badge: 'حتى ×12.0',
+                  },
+                  {
+                    id: 'speed_dice',
+                    title: 'نرد السرعة الخاطف',
+                    desc: '3 نردات 3D سريعة: مجموع 16+ أو الثلاثية المتطابقة',
+                    badge: 'حتى ×12.0',
+                  },
+                ] as const
+              ).map((d) => {
+                const selected = diceGame === d.id;
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    disabled={isDiceRolling}
+                    onClick={() => handleSelectDiceGame(d.id)}
+                    className={`rounded-3xl p-4 border text-right transition-all cursor-pointer space-y-2 ${
+                      selected
+                        ? 'bg-gradient-to-br from-[#2B1F09]/95 via-[#13172E] to-[#0B0F20] border-[#FCE9A6] shadow-[0_0_26px_rgba(212,175,55,0.28)]'
+                        : 'royal-glass border-[#D4AF37]/20 hover:border-[#D4AF37]/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-extrabold font-mono-num text-[#FCE9A6]">
+                        {d.badge}
+                      </span>
+                      <Dices className="w-5 h-5 text-[#D4AF37]" />
+                    </div>
+                    <h3 className="text-base font-extrabold text-white">{d.title}</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed">{d.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-          <div className="royal-glass rounded-[2rem] border border-[#D4AF37]/35 p-5 sm:p-7 space-y-6">
+          <div
+            className={`royal-glass ${
+              compactRoomMode ? 'rounded-2xl p-2.5 space-y-2' : 'rounded-[2rem] p-5 sm:p-7 space-y-5'
+            } border border-[#D4AF37]/35`}
+          >
             {diceGame !== 'ladder_dice' ? (
               <>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-xl font-extrabold text-[#FCE9A6]">
-                      {diceGame === 'double_dice'
-                        ? 'نرد الحظ المزدوج (نردان)'
-                        : diceGame === 'prediction_dice'
-                        ? 'نرد التوقعات الدقيق'
-                        : 'نرد السرعة الخاطف (3 نردات)'}
-                    </h2>
-                    <p className="text-xs text-slate-300 mt-0.5">
-                      اختر توقعك وقيمة الرهان ثم أطلق النرد الملكي لربح فوري إلى محفظتك
-                    </p>
+                {!compactRoomMode && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-xl font-extrabold text-[#FCE9A6]">
+                        {diceGame === 'double_dice'
+                          ? 'نرد الحظ المزدوج 3D (نردان)'
+                          : diceGame === 'prediction_dice'
+                          ? 'نرد التوقعات الدقيق 3D'
+                          : 'نرد السرعة الخاطف 3D (3 نردات)'}
+                      </h2>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        طاولة المخمل الفاخرة — اختر توقعك وقيمة الرهان ثم أطلق النرد ثلاثي الأبعاد
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-[#070913]/85 border border-[#D4AF37]/30 px-3.5 py-2 text-xs font-mono-num text-[#F3D37A]">
+                      المجموع الحالي: {diceValues.reduce((a, b) => a + b, 0)}
+                    </div>
                   </div>
-                  <div className="rounded-xl bg-[#070913]/85 border border-[#D4AF37]/30 px-3.5 py-2 text-xs font-mono-num text-[#F3D37A]">
-                    المجموع الحالي: {diceValues.reduce((a, b) => a + b, 0)}
-                  </div>
-                </div>
+                )}
 
-                {/* Dice Stage */}
-                <div className="rounded-3xl bg-[#060812]/90 border border-[#D4AF37]/25 py-8 px-4 flex flex-wrap items-center justify-center gap-5 sm:gap-8">
+                {/* Luxury Emerald Velvet 3D Dice Stage */}
+                <div
+                  className={`velvet-table-surface rounded-2xl sm:rounded-3xl border-[4px] border-[#4A2511] ${
+                    compactRoomMode ? 'py-4 px-3 gap-4' : 'py-9 px-4 gap-6 sm:gap-10'
+                  } flex flex-wrap items-center justify-center relative overflow-hidden`}
+                >
+                  {/* Subtle Gold Table Ring Accent */}
+                  <div className="pointer-events-none absolute inset-2 rounded-2xl border border-[#FCE9A6]/25" />
+                  <span className="absolute top-2 left-3 rounded-lg bg-black/50 border border-[#D4AF37]/40 px-2 py-0.5 text-[10px] font-mono-num text-[#FCE9A6]">
+                    المجموع: {diceValues.reduce((a, b) => a + b, 0)}
+                  </span>
+
                   {diceValues.map((val, idx) => (
-                    <RoyalDieFace key={idx} value={val} rolling={isDiceRolling} />
+                    <Royal3DDieCube
+                      key={idx}
+                      value={val}
+                      rolling={isDiceRolling}
+                      compact={compactRoomMode}
+                    />
                   ))}
                 </div>
 
@@ -1493,36 +1709,42 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   </div>
                 )}
 
-                <div className="space-y-3 pt-1">
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                <div className="space-y-2 pt-0.5">
+                  <div className="grid grid-cols-6 gap-1.5 sm:gap-2">
                     {BET_AMOUNTS.map((val) => (
                       <button
                         key={val}
                         type="button"
                         disabled={isDiceRolling}
                         onClick={() => setBet(val)}
-                        className={`min-h-[42px] rounded-xl text-xs font-extrabold font-mono-num border cursor-pointer transition ${
+                        className={`${
+                          compactRoomMode ? 'min-h-[30px] text-[10px]' : 'min-h-[40px] text-xs'
+                        } rounded-xl font-extrabold font-mono-num border cursor-pointer transition ${
                           bet === val
                             ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6]'
                             : 'bg-white/5 border-white/15 text-slate-200 hover:border-[#D4AF37]/45'
                         }`}
                       >
-                        {val.toLocaleString('en-US')}
+                        {val >= 1000 ? `${val / 1000}K` : val}
                       </button>
                     ))}
                   </div>
 
                   <button
                     type="button"
-                    disabled={isDiceRolling || user.coins < bet}
+                    disabled={isDiceRolling || user.coins < bet || user.coins <= 0}
                     onClick={handlePlayStandardDice}
-                    className="gold-btn w-full min-h-[54px] rounded-2xl text-base font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-45"
+                    className={`gold-btn w-full ${
+                      compactRoomMode ? 'min-h-[40px] text-xs sm:text-sm' : 'min-h-[52px] text-base'
+                    } rounded-xl sm:rounded-2xl font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed`}
                   >
-                    <Dices className={`w-5 h-5 ${isDiceRolling ? 'animate-spin' : ''}`} />
+                    <Dices className={`${compactRoomMode ? 'w-4 h-4' : 'w-5 h-5'} ${isDiceRolling ? 'animate-spin' : ''}`} />
                     <span>
                       {isDiceRolling
-                        ? 'جارٍ رمي النرد...'
-                        : `إطلاق النرد (${bet.toLocaleString('en-US')} كوينز)`}
+                        ? 'النرد 3D يتدحرج...'
+                        : user.coins < bet || user.coins <= 0
+                        ? 'رصيدك غير كافٍ للعب'
+                        : `رمي النرد 3D (${bet.toLocaleString('en-US')} كوينز)`}
                     </span>
                   </button>
                 </div>
@@ -1588,8 +1810,8 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                     })}
                   </div>
 
-                  <div className="lg:col-span-5 rounded-3xl bg-[#060812]/90 border border-[#D4AF37]/25 p-5 flex flex-col items-center justify-center gap-4">
-                    <RoyalDieFace value={ladderDie} rolling={isDiceRolling} />
+                  <div className="lg:col-span-5 velvet-table-surface rounded-3xl border-[4px] border-[#4A2511] p-5 flex flex-col items-center justify-center gap-4">
+                    <Royal3DDieCube value={ladderDie} rolling={isDiceRolling} compact={compactRoomMode} />
                     {ladderMessage && (
                       <div
                         className={`w-full rounded-2xl border p-3 text-center text-xs font-bold ${
@@ -2014,43 +2236,45 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         </section>
       )}
 
-      {/* Unified Live History Strip across All 14 Games */}
-      <section className="royal-glass rounded-3xl p-5 space-y-3 border border-[#D4AF37]/20">
-        <div className="flex items-center gap-2 text-[#F3D37A]">
-          <History className="w-4 h-4" />
-          <h3 className="text-sm font-extrabold">سجل الدورات والألعاب الفوري</h3>
-        </div>
-        {history.length === 0 ? (
-          <p className="text-xs text-slate-400 py-3 text-center">
-            ابدأ اللعب في السلوت أو النرد أو الروليت أو صناديق الحظ لتظهر نتائجك هنا فوراً.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {history.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-2xl bg-[#070913]/75 border border-white/10 px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs"
-              >
-                <div className="min-w-0">
-                  <p className="font-bold text-white truncate">{item.gameTitle}</p>
-                  <p className="text-[11px] text-slate-400 font-mono-num">
-                    رهان {item.bet.toLocaleString('en-US')} · {item.timestamp}
-                  </p>
-                </div>
-                <div className="text-left shrink-0 font-mono-num">
-                  {item.payout > 0 ? (
-                    <span className="font-extrabold text-emerald-300">
-                      +{item.payout.toLocaleString('en-US')} (×{item.multiplier})
-                    </span>
-                  ) : (
-                    <span className="text-slate-400">-{item.bet.toLocaleString('en-US')}</span>
-                  )}
-                </div>
-              </div>
-            ))}
+      {/* Unified Live History Strip across Games (Hidden in compact 45% room mode) */}
+      {!compactRoomMode && (
+        <section className="royal-glass rounded-3xl p-5 space-y-3 border border-[#D4AF37]/20">
+          <div className="flex items-center gap-2 text-[#F3D37A]">
+            <History className="w-4 h-4" />
+            <h3 className="text-sm font-extrabold">سجل الدورات والألعاب الفوري</h3>
           </div>
-        )}
-      </section>
+          {history.length === 0 ? (
+            <p className="text-xs text-slate-400 py-3 text-center">
+              ابدأ اللعب في السلوت أو النرد أو الروليت أو صناديق الحظ لتظهر نتائجك هنا فوراً.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {history.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl bg-[#070913]/75 border border-white/10 px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs"
+                >
+                  <div className="min-w-0">
+                    <p className="font-bold text-white truncate">{item.gameTitle}</p>
+                    <p className="text-[11px] text-slate-400 font-mono-num">
+                      رهان {item.bet.toLocaleString('en-US')} · {item.timestamp}
+                    </p>
+                  </div>
+                  <div className="text-left shrink-0 font-mono-num">
+                    {item.payout > 0 ? (
+                      <span className="font-extrabold text-emerald-300">
+                        +{item.payout.toLocaleString('en-US')} (×{item.multiplier})
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">-{item.bet.toLocaleString('en-US')}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 };

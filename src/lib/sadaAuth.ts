@@ -6,7 +6,6 @@ import {
 import {
   getPlatformState,
   purgeExpiredRewardsOnUser,
-  recordTransaction,
   rowToUser,
   savePlatformState,
   userToRow,
@@ -147,15 +146,14 @@ async function createUserProfileRow(params: {
   }
 
   const ownReferralCode = `REF-${params.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase()}`;
-  const welcomeCoins = isSuperAdmin ? 250000 : validReferrer ? 12500 : 10000;
 
   const newUser: User = {
     id: params.id,
     email: cleanEmail,
     displayName: params.displayName || (isSuperAdmin ? 'المدير العام — صَدَى' : 'عضو صَدَى'),
     bio: isSuperAdmin
-      ? 'المدير العام ومؤسس منصة صَدَى الملكية.'
-      : 'عضو جديد في وكالات صَدَى الصوتية الفاخرة.',
+      ? 'المدير العام ومؤسس منصة صَدَى - SADA.'
+      : 'عضو جديد في منصة صَدَى - SADA.',
     avatarUrl: isSuperAdmin
       ? 'host_male'
       : userGender === 'female'
@@ -177,20 +175,18 @@ async function createUserProfileRow(params: {
     referredBy: validReferrer ? validReferrer.id : null,
     referralCount: 0,
     referralSpins: 0,
-    frameId: isSuperAdmin ? 'frame_imperial' : 'frame_obsidian',
-    unlockedFrames: isSuperAdmin
-      ? ['frame_obsidian', 'frame_crescent', 'frame_sapphire', 'frame_imperial']
-      : ['frame_obsidian'],
+    frameId: 'frame_obsidian',
+    unlockedFrames: ['frame_obsidian'],
     previousPermanentFrameId: null,
     tempFrameId: null,
     tempFrameExpiresAt: null,
     activeEntryId: null,
     activeEntryName: null,
     tempEntryExpiresAt: null,
-    coins: welcomeCoins,
-    diamonds: isSuperAdmin ? 50000 : 0,
-    level: isSuperAdmin ? 30 : 1,
-    xp: isSuperAdmin ? 120000 : 0,
+    coins: 0,
+    diamonds: 0,
+    level: 1,
+    xp: 0,
     is_admin: isSuperAdmin,
     is_banned: false,
     device_uuid: params.deviceUuid,
@@ -207,17 +203,6 @@ async function createUserProfileRow(params: {
   }
 
   await upsertDeviceLock(newUser, params.deviceUuid);
-
-  await recordTransaction({
-    userId: newUser.id,
-    type: 'admin_grant',
-    amount: newUser.coins,
-    currency: 'coins',
-    description: validReferrer
-      ? 'رصيد ترحيبي + مكافأة كود الدعوة في صَدَى'
-      : 'رصيد ترحيبي للأعضاء الجدد في صَدَى',
-    timestamp: now,
-  });
 
   if (validReferrer) {
     await supabase

@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
-import { resolveAsset } from '../lib/assets';
 import {
   getFollowStatus,
   getPmOverviewFromSupabase,
@@ -43,7 +42,7 @@ import {
 type InboxFilter = 'كامل' | 'غير مقروء' | 'وجوه مألوفة' | 'المجموعات';
 
 export const MessagesPage: React.FC = () => {
-  const { user, updateLocalUser } = useAuth();
+  const { user, updateLocalUser, onlineUserIds } = useAuth();
   const { openMiniProfile } = useMiniProfile();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -156,6 +155,16 @@ export const MessagesPage: React.FC = () => {
       return true;
     });
   }, [conversations, inboxFilter, searchQuery]);
+
+  const isPeerOnline = useCallback(
+    (peer: PrivateConversationPeer) => {
+      if (onlineUserIds.includes(peer.id)) return true;
+      if (!peer.lastSeen) return false;
+      const ms = new Date(peer.lastSeen).getTime();
+      return Number.isFinite(ms) && Date.now() - ms <= 5 * 60 * 1000;
+    },
+    [onlineUserIds]
+  );
 
   const fixedGifts = useMemo(() => gifts.filter((g) => g.category !== 'lucky'), [gifts]);
   const luckyGifts = useMemo(() => gifts.filter((g) => g.category === 'lucky'), [gifts]);
@@ -380,11 +389,11 @@ export const MessagesPage: React.FC = () => {
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-bold">
                   <Sparkles className="w-3 h-3 text-amber-200" />
-                  <span>صَدَى · SADA</span>
+                  <span>صَدَى - SADA</span>
                 </div>
                 <h2 className="text-lg font-extrabold leading-tight">قواعد المستخدم</h2>
                 <p className="text-[11px] text-purple-100">
-                  حافظ على الأجواء الجيدة: نصائح مجتمع صَدَى الملكي
+                  حافظ على الأجواء الجيدة: نصائح مجتمع صَدَى - SADA
                 </p>
               </div>
               <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-3xl shrink-0">
@@ -392,37 +401,48 @@ export const MessagesPage: React.FC = () => {
               </div>
             </button>
 
-            {/* Horizontal Online Users Strip */}
+            {/* Horizontal Users Strip (real online dots only) */}
             <div className="light-card rounded-2xl p-3">
-              <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
-                {recipients.map((rec) => (
-                  <div
-                    key={rec.id}
-                    className="flex flex-col items-center gap-1 shrink-0 w-16"
-                  >
-                    <div className="relative">
-                      <AvatarWithFrame
-                        src={rec.avatarUrl}
-                        alt={rec.displayName}
-                        frameId={rec.frameId}
-                        size="md"
-                        onClick={() => openMiniProfile(rec.id, rec)}
-                      />
-                      <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectPeer(rec.id)}
-                      className="rounded-full bg-sky-500 text-white px-2 py-0.5 text-[9px] font-extrabold cursor-pointer whitespace-nowrap"
-                    >
-                      🎙️ محادثة
-                    </button>
-                    <span className="text-[10px] font-bold text-slate-700 truncate w-full text-center">
-                      {rec.displayName}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              {recipients.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-2">
+                  لا يوجد أعضاء مسجلون آخرون بعد.
+                </p>
+              ) : (
+                <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
+                  {recipients.map((rec) => {
+                    const live = isPeerOnline(rec);
+                    return (
+                      <div
+                        key={rec.id}
+                        className="flex flex-col items-center gap-1 shrink-0 w-16"
+                      >
+                        <div className="relative">
+                          <AvatarWithFrame
+                            src={rec.avatarUrl}
+                            alt={rec.displayName}
+                            frameId={rec.frameId}
+                            size="md"
+                            onClick={() => openMiniProfile(rec.id, rec)}
+                          />
+                          {live && (
+                            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectPeer(rec.id)}
+                          className="rounded-full bg-sky-500 text-white px-2 py-0.5 text-[9px] font-extrabold cursor-pointer whitespace-nowrap"
+                        >
+                          🎙️ محادثة
+                        </button>
+                        <span className="text-[10px] font-bold text-slate-700 truncate w-full text-center">
+                          {rec.displayName}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Filter Chips matching Screenshot 3 */}
@@ -445,31 +465,8 @@ export const MessagesPage: React.FC = () => {
               )}
             </div>
 
-            {/* Conversations List */}
+            {/* Real Conversations List from Supabase */}
             <div className="light-card rounded-3xl divide-y divide-slate-100 overflow-hidden">
-              {/* Official SADA Team Welcome Row */}
-              <button
-                type="button"
-                onClick={() => setShowRulesModal(true)}
-                className="w-full p-3.5 flex items-center gap-3 text-right hover:bg-slate-50 transition cursor-pointer"
-              >
-                <img
-                  src={resolveAsset('emblem')}
-                  alt="فريق صَدَى"
-                  className="w-12 h-12 rounded-full object-cover border border-emerald-200 shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-extrabold text-slate-900">فريق صَدَى</span>
-                    <span className="rounded-full bg-emerald-500 text-white px-2 py-0.5 text-[9px] font-extrabold">
-                      إدارة
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 truncate mt-0.5">
-                    أهلاً بك في مجتمع الوكالات الصوتية الملكية · اضغط لعرض القواعد
-                  </p>
-                </div>
-              </button>
 
               {loading ? (
                 <div className="p-6 text-center text-xs text-slate-400">
@@ -827,7 +824,7 @@ export const MessagesPage: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                <span>قواعد مجتمع صَدَى · SADA</span>
+                <span>قواعد مجتمع صَدَى - SADA</span>
               </h3>
               <button
                 type="button"

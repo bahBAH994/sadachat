@@ -4,6 +4,7 @@ import type {
   Competition,
   CulturalQuizResult,
   CulturalQuizRound,
+  HostJoinApplication,
   PrivateConversation,
   PrivateConversationPeer,
   PrivateMessage,
@@ -12,8 +13,10 @@ import type {
   User,
 } from '../types';
 import {
+  computeGiftLevelStats,
   computeLevelFromXp,
   CULTURAL_QUESTIONS,
+  formatShortNumericId,
   genId,
   GIFT_CATALOG,
   isFemaleVoiceLocked,
@@ -419,9 +422,149 @@ export async function toggleFollowUserInSupabase(
   return { ...relation, userFollows: currentFollows };
 }
 
+export async function recordProfileVisitInSupabase(
+  targetUserId: string,
+  visitorUserId: string
+): Promise<void> {
+  if (!targetUserId || !visitorUserId || targetUserId === visitorUserId) return;
+  const state = await getPlatformState();
+  const currentVisitors = { ...(state.settings.userVisitors || {}) };
+  const list = Array.isArray(currentVisitors[targetUserId])
+    ? [...currentVisitors[targetUserId]]
+    : [];
+  if (list.includes(visitorUserId)) return;
+  list.push(visitorUserId);
+  currentVisitors[targetUserId] = list;
+  await savePlatformState({
+    settings: {
+      ...state.settings,
+      userVisitors: currentVisitors,
+    },
+  });
+}
+
+export async function toggleFollowAgencyInSupabase(
+  userId: string,
+  roomId: string
+): Promise<{ following: boolean; followedAgencyRoomIds: string[] }> {
+  if (!userId || !roomId) {
+    throw new Error('بيانات الوكالة غير مكتملة.');
+  }
+  const state = await getPlatformState();
+  const map = { ...(state.settings.userFollowedAgencies || {}) };
+  const list = Array.isArray(map[userId]) ? [...map[userId]] : [];
+  const idx = list.indexOf(roomId);
+  let following = false;
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    following = false;
+  } else {
+    list.push(roomId);
+    following = true;
+  }
+  map[userId] = list;
+  await savePlatformState({
+    settings: {
+      ...state.settings,
+      userFollowedAgencies: map,
+    },
+  });
+  return { following, followedAgencyRoomIds: list };
+}
+
+export async function getProfileSocialListFromSupabase(
+  userId: string,
+  kind: 'friends' | 'followers' | 'following' | 'visitors'
+): Promise<User[]> {
+  const state = await getPlatformState();
+  const userFollows = state.settings.userFollows || {};
+  const userVisitors = state.settings.userVisitors || {};
+  const userMeta = state.settings.userMeta || {};
+
+  let targetIds: string[] = [];
+  const myFollowing = Array.isArray(userFollows[userId])
+    ? userFollows[userId].filter((id) => id !== userId)
+    : [];
+
+  if (kind === 'following') {
+    targetIds = myFollowing;
+  } else if (kind === 'followers') {
+    for (const [uid, list] of Object.entries(userFollows)) {
+      if (uid !== userId && Array.isArray(list) && list.includes(userId)) {
+        targetIds.push(uid);
+      }
+    }
+  } else if (kind === 'friends') {
+    targetIds = myFollowing.filter(
+      (fid) => Array.isArray(userFollows[fid]) && userFollows[fid].includes(userId)
+    );
+  } else if (kind === 'visitors') {
+    targetIds = Array.isArray(userVisitors[userId])
+      ? [...userVisitors[userId]].filter((id) => id !== userId).reverse()
+      : [];
+  }
+
+  const uniqueIds = Array.from(new Set(targetIds));
+  if (uniqueIds.length === 0) return [];
+
+  const { data: rows } = await supabase
+    .from('sada_users')
+    .select('*')
+    .in('id', uniqueIds);
+
+  const map = new Map(
+    (rows || []).map((r) => {
+      const u = rowToUser(r);
+      const meta = userMeta[u.id];
+      if (meta) {
+        u.age = meta.age;
+        u.country = meta.country;
+      }
+      return [u.id, u];
+    })
+  );
+
+  return uniqueIds
+    .map((id) => map.get(id))
+    .filter((u): u is User => Boolean(u));
+}
+
+export async function getUserGiftLevelsFromSupabase(userId: string) {
+  const [state, { data: txRows }] = await Promise.all([
+    getPlatformState(),
+    supabase
+      .from('sada_transactions')
+      .select('type, amount, currency')
+      .eq('user_id', userId)
+      .in('type', ['gift_sent', 'gift_received']),
+  ]);
+
+  const ratio = state.settings.giftDiamondsRatio || 0.75;
+  let txSentCoins = 0;
+  let txReceivedCoins = 0;
+  for (const t of txRows || []) {
+    if (t.type === 'gift_sent' && t.currency === 'coins') {
+      txSentCoins += Math.abs(Number(t.amount || 0));
+    } else if (t.type === 'gift_received' && t.currency === 'diamonds') {
+      txReceivedCoins += Math.round(Math.max(0, Number(t.amount || 0)) / ratio);
+    }
+  }
+
+  const storedStats = state.settings.userGiftStats?.[userId] || {
+    sentCoins: 0,
+    receivedCoins: 0,
+  };
+
+  return computeGiftLevelStats(
+    Math.max(storedStats.sentCoins || 0, txSentCoins),
+    Math.max(storedStats.receivedCoins || 0, txReceivedCoins)
+  );
+}
+
 export async function getDiscoveryDirectoryFromSupabase(currentUserId: string): Promise<{
   users: User[];
   userFollows: Record<string, string[]>;
+  userMeta: Record<string, { age?: number; country?: string }>;
   seatedUserIds: string[];
 }> {
   const [{ data: usersRows }, { data: activeRooms }, state] = await Promise.all([
@@ -458,6 +601,7 @@ export async function getDiscoveryDirectoryFromSupabase(currentUserId: string): 
   return {
     users,
     userFollows: state.settings.userFollows || {},
+    userMeta,
     seatedUserIds: Array.from(seatedSet),
   };
 }
@@ -527,6 +671,7 @@ export async function getPmOverviewFromSupabase(user: User) {
           isHost: isUserFemaleOrHost(peerUser, hostedUserIds),
           is_admin: peerUser.is_admin,
           bio: peerUser.bio,
+          lastSeen: peerUser.lastSeen,
         },
         messages: msgs,
         pendingDiamondsForMe,
@@ -563,6 +708,7 @@ export async function getPmOverviewFromSupabase(user: User) {
       isHost: isUserFemaleOrHost(u, hostedUserIds),
       is_admin: u.is_admin,
       bio: u.bio,
+      lastSeen: u.lastSeen,
     }));
 
   const pendingDiamondsTotal = conversations.reduce(
@@ -786,6 +932,25 @@ export async function sendPrivateMessageInSupabase(
 
     await applyHostEarningsAndAgencyCommission(recipient, giftDiamondsAwarded, now);
 
+    // Record dual send/receive gift coin totals
+    const nextStats = { ...(state.settings.userGiftStats || {}) };
+    const sCur = nextStats[freshSender.id] || { sentCoins: 0, receivedCoins: 0 };
+    nextStats[freshSender.id] = {
+      sentCoins: (sCur.sentCoins || 0) + selectedGift.coinsCost,
+      receivedCoins: sCur.receivedCoins || 0,
+    };
+    const rCur = nextStats[recipient.id] || { sentCoins: 0, receivedCoins: 0 };
+    nextStats[recipient.id] = {
+      sentCoins: rCur.sentCoins || 0,
+      receivedCoins: (rCur.receivedCoins || 0) + selectedGift.coinsCost,
+    };
+    await savePlatformState({
+      settings: {
+        ...state.settings,
+        userGiftStats: nextStats,
+      },
+    });
+
     return {
       user: freshSender,
       message: pmGift,
@@ -907,37 +1072,64 @@ export async function getAgencyOverviewFromSupabase(user: User): Promise<{
   myAgency: {
     agency: Agency;
     hosts: AgencyHostSummary[];
+    weeklyAgencyTotalDiamonds: number;
+    pendingApplications: HostJoinApplication[];
     commissionTransactions: Transaction[];
   } | null;
   joinedAgency: Agency | null;
+  myApplications: HostJoinApplication[];
   publicAgencies: Array<{
     id: string;
     name: string;
     description: string;
+    code: string;
+    numericId: string;
     ownerName: string;
     ownerAvatar: string;
     commissionRate: number;
+    totalHostDiamonds?: number;
     hostCount: number;
-    sampleCode?: string;
   }>;
 }> {
-  const [{ data: userRow }, { data: agencyRows }, { data: allUsers }, { data: txRows }] =
-    await Promise.all([
-      supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
-      supabase.from('sada_agencies').select('*'),
-      supabase.from('sada_users').select('*'),
-      supabase
-        .from('sada_transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('type', 'agency_commission')
-        .order('timestamp', { ascending: false })
-        .limit(25),
-    ]);
+  const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [
+    { data: userRow },
+    { data: agencyRows },
+    { data: allUsers },
+    { data: txRows },
+    { data: weeklyTxRows },
+    state,
+  ] = await Promise.all([
+    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
+    supabase.from('sada_agencies').select('*'),
+    supabase.from('sada_users').select('*'),
+    supabase
+      .from('sada_transactions')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('type', 'agency_commission')
+      .order('timestamp', { ascending: false })
+      .limit(25),
+    supabase
+      .from('sada_transactions')
+      .select('user_id, amount, currency, type, timestamp')
+      .eq('currency', 'diamonds')
+      .in('type', ['gift_received', 'pm_reply_diamond'])
+      .gte('timestamp', sevenDaysAgoIso),
+    getPlatformState(),
+  ]);
 
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
   const agencies = (agencyRows || []).map(rowToAgency);
   const users = (allUsers || []).map(rowToUser);
+
+  const weeklyDiamondsByUser = new Map<string, number>();
+  for (const row of weeklyTxRows || []) {
+    const uid = String(row.user_id);
+    const amt = Math.max(0, Number(row.amount || 0));
+    weeklyDiamondsByUser.set(uid, (weeklyDiamondsByUser.get(uid) || 0) + amt);
+  }
 
   const myOwnedAgency = agencies.find((a) => a.ownerId === freshUser.id) || null;
   const myJoinedAgency =
@@ -958,21 +1150,31 @@ export async function getAgencyOverviewFromSupabase(user: User): Promise<{
         gender: u.gender || 'male',
         diamonds: u.diamonds,
         hostDiamondsEarned: u.hostDiamondsEarned || 0,
+        weeklyDiamonds: weeklyDiamondsByUser.get(u.id) || 0,
         hostBadge: u.hostBadge || 'مضيف رسمي ✦',
         lastSeen: u.lastSeen,
       }))
-      .sort((a, b) => b.hostDiamondsEarned - a.hostDiamondsEarned);
+      .sort((a, b) => b.weeklyDiamonds - a.weeklyDiamonds || b.hostDiamondsEarned - a.hostDiamondsEarned);
   };
+
+  const allApps = state.settings.hostJoinApplications || [];
+  const myOwnedHosts = myOwnedAgency ? mapHosts(myOwnedAgency.id) : [];
+  const weeklyAgencyTotalDiamonds = myOwnedAgency
+    ? myOwnedHosts.reduce((sum, h) => sum + h.weeklyDiamonds, 0) +
+      (weeklyDiamondsByUser.get(myOwnedAgency.ownerId) || 0)
+    : 0;
 
   const publicAgencies = agencies.map((a) => ({
     id: a.id,
     name: a.name,
     description: a.description,
+    code: a.code,
+    numericId: formatShortNumericId(a.id).slice(0, 6),
     ownerName: a.ownerName,
     ownerAvatar: a.ownerAvatar,
     commissionRate: a.commissionRate,
+    totalHostDiamonds: a.totalHostDiamonds,
     hostCount: a.hostIds.length,
-    sampleCode: a.id === 'agency_royal_divan' ? a.code : undefined,
   }));
 
   return {
@@ -980,13 +1182,96 @@ export async function getAgencyOverviewFromSupabase(user: User): Promise<{
     myAgency: myOwnedAgency
       ? {
           agency: myOwnedAgency,
-          hosts: mapHosts(myOwnedAgency.id),
+          hosts: myOwnedHosts,
+          weeklyAgencyTotalDiamonds,
+          pendingApplications: allApps.filter(
+            (app) => app.agencyId === myOwnedAgency.id && app.status === 'pending'
+          ),
           commissionTransactions: (txRows || []).map(rowToTransaction),
         }
       : null,
     joinedAgency: myJoinedAgency,
+    myApplications: allApps
+      .filter((app) => app.userId === freshUser.id)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     publicAgencies,
   };
+}
+
+export async function lookupAgencyByIdOrCodeInSupabase(
+  agencyInput: string
+): Promise<Agency | null> {
+  const clean = (agencyInput || '').trim();
+  if (!clean) return null;
+  const upper = clean.toUpperCase();
+
+  const { data: rows } = await supabase.from('sada_agencies').select('*');
+  const agencies = (rows || []).map(rowToAgency);
+
+  return (
+    agencies.find(
+      (a) =>
+        a.id.toLowerCase() === clean.toLowerCase() ||
+        a.code.toUpperCase() === upper ||
+        formatShortNumericId(a.id) === clean ||
+        formatShortNumericId(a.id).slice(0, 6) === clean
+    ) || null
+  );
+}
+
+export async function submitHostJoinApplicationInSupabase(
+  user: User,
+  payload: { agencyInput: string; bio: string }
+): Promise<HostJoinApplication> {
+  const cleanBio = (payload.bio || '').trim();
+  if (cleanBio.length < 5) {
+    throw new Error('يرجى كتابة نبذة مختصرة عن المضيف (5 أحرف على الأقل).');
+  }
+
+  const agency = await lookupAgencyByIdOrCodeInSupabase(payload.agencyInput);
+  if (!agency) {
+    throw new Error('لم يتم العثور على وكالة بهذا الرقم أو الكود.');
+  }
+  if (agency.ownerId === user.id) {
+    throw new Error('أنت مالك هذه الوكالة بالفعل.');
+  }
+  if (user.agencyId === agency.id) {
+    throw new Error('أنت مضيف معتمد في هذه الوكالة بالفعل.');
+  }
+
+  const state = await getPlatformState();
+  const apps = [...(state.settings.hostJoinApplications || [])];
+  const existingPending = apps.find(
+    (a) => a.userId === user.id && a.agencyId === agency.id && a.status === 'pending'
+  );
+  if (existingPending) {
+    throw new Error('لديك طلب انضمام معلّق لهذه الوكالة بانتظار موافقة الإدارة بالفعل.');
+  }
+
+  const app: HostJoinApplication = {
+    id: genId('hostapp'),
+    userId: user.id,
+    displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
+    frameId: user.frameId,
+    agencyId: agency.id,
+    agencyName: agency.name,
+    agencyOwnerId: agency.ownerId,
+    bio: cleanBio.slice(0, 320),
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    reviewedAt: null,
+  };
+
+  apps.unshift(app);
+  await savePlatformState({
+    settings: {
+      ...state.settings,
+      hostJoinApplications: apps,
+    },
+  });
+
+  return app;
 }
 
 export async function applyAsAgencyInSupabase(

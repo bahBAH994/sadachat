@@ -6,6 +6,8 @@ import type {
   RoomEntryEvent,
   RoomExtrasConfig,
   RoomMessage,
+  RoomModLogActionType,
+  RoomModLogEntry,
   RoomMusicState,
   User,
 } from '../types';
@@ -17,6 +19,7 @@ import {
   isFemaleVoiceLocked,
   makeEmptySeats,
   rollLuckyGiftMultiplier,
+  STORE_LUXURY_BACKGROUNDS,
 } from './sadaCatalog';
 import {
   applyHostEarningsAndAgencyCommission,
@@ -35,8 +38,11 @@ export function createEmptyRoomExtras(): RoomExtrasConfig {
     deputyIds: [],
     moderatorIds: [],
     kickedUserIds: [],
+    kickedUserNames: {},
     mutedUserIds: [],
     gifters: {},
+    players: {},
+    modLogs: [],
     playVolumeCoins: 0,
     musicState: null,
   };
@@ -53,16 +59,65 @@ export async function getRoomExtrasFromSupabase(roomId: string): Promise<RoomExt
     deputyIds: Array.isArray(raw.deputyIds) ? raw.deputyIds : [],
     moderatorIds: Array.isArray(raw.moderatorIds) ? raw.moderatorIds : [],
     kickedUserIds: Array.isArray(raw.kickedUserIds) ? raw.kickedUserIds : [],
+    kickedUserNames:
+      raw.kickedUserNames && typeof raw.kickedUserNames === 'object' ? raw.kickedUserNames : {},
     mutedUserIds: Array.isArray(raw.mutedUserIds) ? raw.mutedUserIds : [],
     gifters: raw.gifters && typeof raw.gifters === 'object' ? raw.gifters : {},
+    players: raw.players && typeof raw.players === 'object' ? raw.players : {},
+    modLogs: Array.isArray(raw.modLogs) ? raw.modLogs : [],
     playVolumeCoins: Number(raw.playVolumeCoins || 0),
     musicState: raw.musicState || null,
   };
 }
 
+function resolveActorRoleLabel(
+  hostId: string,
+  extras: RoomExtrasConfig,
+  actor: Pick<User, 'id' | 'is_admin'>
+): string {
+  if (actor.id === hostId) return 'الوكيل';
+  if (actor.is_admin) return 'إدارة المنصة';
+  if (extras.deputyIds.includes(actor.id)) return 'نائب الوكيل';
+  if (extras.moderatorIds.includes(actor.id)) return 'مشرف';
+  return 'عضو';
+}
+
+function prependModLog(
+  cur: RoomExtrasConfig,
+  entry: {
+    actorId: string;
+    actorName: string;
+    actorRole: string;
+    actionType: RoomModLogActionType;
+    targetUserId?: string;
+    targetName?: string;
+    details: string;
+  }
+): RoomModLogEntry[] {
+  const existing = Array.isArray(cur.modLogs) ? cur.modLogs : [];
+  const nextEntry: RoomModLogEntry = {
+    id: genId('modlog'),
+    actorId: entry.actorId,
+    actorName: entry.actorName,
+    actorRole: entry.actorRole,
+    actionType: entry.actionType,
+    targetUserId: entry.targetUserId,
+    targetName: entry.targetName,
+    details: entry.details,
+    timestamp: new Date().toISOString(),
+  };
+  return [nextEntry, ...existing].slice(0, 120);
+}
+
 async function saveRoomExtrasConfig(
   roomId: string,
-  updater: (current: RoomExtrasConfig) => RoomExtrasConfig
+  updater: (current: RoomExtrasConfig) => RoomExtrasConfig,
+  giftStatIncrement?: {
+    senderId: string;
+    senderCoinsDelta: number;
+    recipientIds: string[];
+    recipientCoinsEach: number;
+  }
 ): Promise<RoomExtrasConfig> {
   const state = await getPlatformState();
   const configs = { ...(state.settings.roomConfigs || {}) };
@@ -71,10 +126,32 @@ async function saveRoomExtrasConfig(
     : createEmptyRoomExtras();
   const next = updater(current);
   configs[roomId] = next;
+
+  const nextGiftStats = { ...(state.settings.userGiftStats || {}) };
+  if (giftStatIncrement) {
+    const sCur = nextGiftStats[giftStatIncrement.senderId] || {
+      sentCoins: 0,
+      receivedCoins: 0,
+    };
+    nextGiftStats[giftStatIncrement.senderId] = {
+      sentCoins: (sCur.sentCoins || 0) + Math.max(0, giftStatIncrement.senderCoinsDelta),
+      receivedCoins: sCur.receivedCoins || 0,
+    };
+    for (const rid of giftStatIncrement.recipientIds) {
+      const rCur = nextGiftStats[rid] || { sentCoins: 0, receivedCoins: 0 };
+      nextGiftStats[rid] = {
+        sentCoins: rCur.sentCoins || 0,
+        receivedCoins:
+          (rCur.receivedCoins || 0) + Math.max(0, giftStatIncrement.recipientCoinsEach),
+      };
+    }
+  }
+
   await savePlatformState({
     settings: {
       ...state.settings,
       roomConfigs: configs,
+      userGiftStats: nextGiftStats,
     },
   });
   return next;
@@ -171,7 +248,7 @@ export async function createRoomInSupabase(
     password: cleanPin || null,
     max_seats: seatsCount,
     seats,
-    listeners_count: 1,
+    listeners_count: 0,
     is_active: true,
     total_gifts_coins: 0,
     created_at: now,
@@ -263,8 +340,14 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
     deputyIds: Array.isArray(rawExtras?.deputyIds) ? rawExtras!.deputyIds : [],
     moderatorIds: Array.isArray(rawExtras?.moderatorIds) ? rawExtras!.moderatorIds : [],
     kickedUserIds: Array.isArray(rawExtras?.kickedUserIds) ? rawExtras!.kickedUserIds : [],
+    kickedUserNames:
+      rawExtras?.kickedUserNames && typeof rawExtras.kickedUserNames === 'object'
+        ? rawExtras.kickedUserNames
+        : {},
     mutedUserIds: Array.isArray(rawExtras?.mutedUserIds) ? rawExtras!.mutedUserIds : [],
     gifters: rawExtras?.gifters && typeof rawExtras.gifters === 'object' ? rawExtras.gifters : {},
+    players: rawExtras?.players && typeof rawExtras.players === 'object' ? rawExtras.players : {},
+    modLogs: Array.isArray(rawExtras?.modLogs) ? rawExtras!.modLogs : [],
     playVolumeCoins: Number(rawExtras?.playVolumeCoins || 0),
     musicState: rawExtras?.musicState || null,
   };
@@ -502,7 +585,16 @@ export async function updateRoomSeatInSupabase(
         : s
     );
   } else if (action.type === 'lock') {
-    if (String(roomRow.host_id) !== user.id && !user.is_admin) return nextSeats;
+    const extras = await getRoomExtrasFromSupabase(roomId);
+    const isManager =
+      String(roomRow.host_id) === user.id ||
+      user.is_admin ||
+      extras.deputyIds.includes(user.id) ||
+      extras.moderatorIds.includes(user.id);
+    if (!isManager) return nextSeats;
+    const prevSeat = nextSeats.find((s) => s.seatIndex === action.seatIndex);
+    const displacedName = prevSeat?.displayName || undefined;
+    const displacedUserId = prevSeat?.userId || undefined;
     nextSeats = nextSeats.map((s) => {
       if (s.seatIndex !== action.seatIndex) return s;
       if (action.isLocked) {
@@ -520,6 +612,20 @@ export async function updateRoomSeatInSupabase(
       }
       return { ...s, isLocked: false };
     });
+    await saveRoomExtrasConfig(roomId, (cur) => ({
+      ...cur,
+      modLogs: prependModLog(cur, {
+        actorId: user.id,
+        actorName: user.displayName,
+        actorRole: resolveActorRoleLabel(String(roomRow.host_id), cur, user),
+        actionType: action.isLocked ? 'lock_seat' : 'unlock_seat',
+        targetUserId: displacedUserId,
+        targetName: displacedName,
+        details: action.isLocked
+          ? `قفل المايك رقم ${action.seatIndex + 1}${displacedName ? ` (إنزال ${displacedName})` : ''}`
+          : `فتح المايك رقم ${action.seatIndex + 1}`,
+      }),
+    }));
   } else if (action.type === 'speaking') {
     nextSeats = nextSeats.map((s) =>
       s.userId === user.id && !s.isMuted ? { ...s, isSpeaking: action.isSpeaking } : s
@@ -737,24 +843,33 @@ export async function sendRoomGiftInSupabase(
 
   await applyHostEarningsAndAgencyCommission(recipient, dynamicDiamonds, now);
 
-  await saveRoomExtrasConfig(roomId, (cur) => {
-    const prevGifter = cur.gifters[freshSender.id];
-    const nextGifters = {
-      ...cur.gifters,
-      [freshSender.id]: {
-        userId: freshSender.id,
-        displayName: freshSender.displayName,
-        avatarUrl: freshSender.avatarUrl,
-        frameId: freshSender.frameId,
-        totalCoins: (prevGifter?.totalCoins || 0) + gift.coinsCost,
-      },
-    };
-    return {
-      ...cur,
-      gifters: nextGifters,
-      playVolumeCoins: (cur.playVolumeCoins || 0) + gift.coinsCost,
-    };
-  });
+  await saveRoomExtrasConfig(
+    roomId,
+    (cur) => {
+      const prevGifter = cur.gifters[freshSender.id];
+      const nextGifters = {
+        ...cur.gifters,
+        [freshSender.id]: {
+          userId: freshSender.id,
+          displayName: freshSender.displayName,
+          avatarUrl: freshSender.avatarUrl,
+          frameId: freshSender.frameId,
+          totalCoins: (prevGifter?.totalCoins || 0) + gift.coinsCost,
+        },
+      };
+      return {
+        ...cur,
+        gifters: nextGifters,
+        playVolumeCoins: (cur.playVolumeCoins || 0) + gift.coinsCost,
+      };
+    },
+    {
+      senderId: freshSender.id,
+      senderCoinsDelta: gift.coinsCost,
+      recipientIds: [recipient.id],
+      recipientCoinsEach: gift.coinsCost,
+    }
+  );
 
   if (recipient.id === freshSender.id) {
     freshSender.diamonds = recipient.diamonds;
@@ -967,24 +1082,33 @@ export async function sendRoomGiftBatchInSupabase(
     await applyHostEarningsAndAgencyCommission(r, diamondsPerRecipient, now);
   }
 
-  await saveRoomExtrasConfig(roomId, (cur) => {
-    const prevGifter = cur.gifters[freshSender.id];
-    const nextGifters = {
-      ...cur.gifters,
-      [freshSender.id]: {
-        userId: freshSender.id,
-        displayName: freshSender.displayName,
-        avatarUrl: freshSender.avatarUrl,
-        frameId: freshSender.frameId,
-        totalCoins: (prevGifter?.totalCoins || 0) + totalCost,
-      },
-    };
-    return {
-      ...cur,
-      gifters: nextGifters,
-      playVolumeCoins: (cur.playVolumeCoins || 0) + totalCost,
-    };
-  });
+  await saveRoomExtrasConfig(
+    roomId,
+    (cur) => {
+      const prevGifter = cur.gifters[freshSender.id];
+      const nextGifters = {
+        ...cur.gifters,
+        [freshSender.id]: {
+          userId: freshSender.id,
+          displayName: freshSender.displayName,
+          avatarUrl: freshSender.avatarUrl,
+          frameId: freshSender.frameId,
+          totalCoins: (prevGifter?.totalCoins || 0) + totalCost,
+        },
+      };
+      return {
+        ...cur,
+        gifters: nextGifters,
+        playVolumeCoins: (cur.playVolumeCoins || 0) + totalCost,
+      };
+    },
+    {
+      senderId: freshSender.id,
+      senderCoinsDelta: totalCost,
+      recipientIds: recipients.map((r) => r.id),
+      recipientCoinsEach: gift.coinsCost * safeQty,
+    }
+  );
 
   const updated = await getRoomDetailsFromSupabase(roomId);
   return {
@@ -1157,6 +1281,16 @@ export async function updateRoomSettingsInSupabase(
     updates.host_avatar = patch.hostAvatar;
   }
   if (typeof patch.coverImage === 'string' && patch.coverImage.trim()) {
+    const isLuxuryStoreBg = STORE_LUXURY_BACKGROUNDS.some((b) => b.id === patch.coverImage);
+    if (isLuxuryStoreBg && !actor.is_admin) {
+      const platState = await getPlatformState();
+      const actorOwned = platState.settings.userOwnedBackgrounds?.[actor.id] || [];
+      const hostOwned =
+        platState.settings.userOwnedBackgrounds?.[String(roomRow.host_id)] || [];
+      if (!actorOwned.includes(patch.coverImage) && !hostOwned.includes(patch.coverImage)) {
+        throw new Error('هذه الخلفية الفخمة متاحة بعد شرائها من المتجر بـ 5,000 كوينز.');
+      }
+    }
     updates.cover_image = patch.coverImage;
   }
 
@@ -1230,9 +1364,16 @@ export async function adminControlRoomInSupabase(
   }
 
   const currentSeats = (Array.isArray(roomRow.seats) ? roomRow.seats : []) as Room['seats'];
+  const actorRole = resolveActorRoleLabel(String(roomRow.host_id), currentExtras, actor);
   let nextSeats = currentSeats.map((s) => ({ ...s }));
   let nextExtras = { ...currentExtras };
   let systemNotice = '';
+
+  const resolveTargetName = (uid: string, explicit?: string) =>
+    explicit ||
+    currentSeats.find((s) => s.userId === uid)?.displayName ||
+    currentExtras.kickedUserNames?.[uid] ||
+    `عضو (${uid.slice(-4)})`;
 
   if (action.type === 'mute_all') {
     nextSeats = nextSeats.map((s) =>
@@ -1240,6 +1381,16 @@ export async function adminControlRoomInSupabase(
         ? { ...s, isMuted: true, isSpeaking: false }
         : s
     );
+    nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
+      ...cur,
+      modLogs: prependModLog(cur, {
+        actorId: actor.id,
+        actorName: actor.displayName,
+        actorRole,
+        actionType: 'mute_all',
+        details: 'كتم المايكروفون عن جميع المتحدثين',
+      }),
+    }));
     systemNotice = `🔇 قام ${actor.displayName} بكتم المايكروفون عن جميع المتحدثين.`;
   } else if (action.type === 'clear_all') {
     nextSeats = nextSeats.map((s) => ({
@@ -1253,14 +1404,38 @@ export async function adminControlRoomInSupabase(
       isSpeaking: false,
       femaleVerifiedBadge: null,
     }));
+    nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
+      ...cur,
+      modLogs: prependModLog(cur, {
+        actorId: actor.id,
+        actorName: actor.displayName,
+        actorRole,
+        actionType: 'clear_all',
+        details: 'إنزال جميع المتحدثين من المايكات',
+      }),
+    }));
     systemNotice = `🎙️ قام ${actor.displayName} بإنزال جميع المتحدثين من المايكات.`;
   } else if (action.type === 'mute_user') {
+    const targetName = resolveTargetName(action.targetUserId);
     nextSeats = nextSeats.map((s) =>
       s.userId === action.targetUserId
         ? { ...s, isMuted: action.isMuted, isSpeaking: action.isMuted ? false : s.isSpeaking }
         : s
     );
+    nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
+      ...cur,
+      modLogs: prependModLog(cur, {
+        actorId: actor.id,
+        actorName: actor.displayName,
+        actorRole,
+        actionType: 'mute_user',
+        targetUserId: action.targetUserId,
+        targetName,
+        details: action.isMuted ? `كتم مايك ${targetName}` : `فك كتم مايك ${targetName}`,
+      }),
+    }));
   } else if (action.type === 'kick_seat') {
+    const targetName = resolveTargetName(action.targetUserId);
     nextSeats = nextSeats.map((s) =>
       s.userId === action.targetUserId
         ? {
@@ -1276,10 +1451,23 @@ export async function adminControlRoomInSupabase(
           }
         : s
     );
+    nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
+      ...cur,
+      modLogs: prependModLog(cur, {
+        actorId: actor.id,
+        actorName: actor.displayName,
+        actorRole,
+        actionType: 'kick_seat',
+        targetUserId: action.targetUserId,
+        targetName,
+        details: `إنزال ${targetName} من المايك`,
+      }),
+    }));
   } else if (action.type === 'kick_room') {
     if (action.targetUserId === String(roomRow.host_id)) {
       throw new Error('لا يمكن طرد مالك الوكالة.');
     }
+    const targetName = resolveTargetName(action.targetUserId, action.targetName);
     nextSeats = nextSeats.map((s) =>
       s.userId === action.targetUserId
         ? {
@@ -1300,14 +1488,37 @@ export async function adminControlRoomInSupabase(
       kickedUserIds: cur.kickedUserIds.includes(action.targetUserId)
         ? cur.kickedUserIds
         : [...cur.kickedUserIds, action.targetUserId],
+      kickedUserNames: {
+        ...(cur.kickedUserNames || {}),
+        [action.targetUserId]: targetName,
+      },
       deputyIds: cur.deputyIds.filter((id) => id !== action.targetUserId),
       moderatorIds: cur.moderatorIds.filter((id) => id !== action.targetUserId),
+      modLogs: prependModLog(cur, {
+        actorId: actor.id,
+        actorName: actor.displayName,
+        actorRole,
+        actionType: 'kick_room',
+        targetUserId: action.targetUserId,
+        targetName,
+        details: `طرد ${targetName} من الوكالة`,
+      }),
     }));
-    systemNotice = `⛔ تم طرد ${action.targetName || 'عضو'} من الوكالة بواسطة ${actor.displayName}.`;
+    systemNotice = `⛔ تم طرد ${targetName} من الوكالة بواسطة ${actor.displayName}.`;
   } else if (action.type === 'unban_room') {
+    const targetName = resolveTargetName(action.targetUserId);
     nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
       ...cur,
       kickedUserIds: cur.kickedUserIds.filter((id) => id !== action.targetUserId),
+      modLogs: prependModLog(cur, {
+        actorId: actor.id,
+        actorName: actor.displayName,
+        actorRole,
+        actionType: 'unban_room',
+        targetUserId: action.targetUserId,
+        targetName,
+        details: `فك الطرد عن ${targetName}`,
+      }),
     }));
   } else if (action.type === 'toggle_deputy') {
     if (!isOwnerOrAdmin) throw new Error('تعيين نائب الوكيل مخصص لمالك الوكالة فقط.');
@@ -1377,11 +1588,27 @@ export async function updateRoomMusicInSupabase(
 
 export async function incrementRoomPlayVolumeInSupabase(
   roomId: string,
-  coinsAmount: number
+  coinsAmount: number,
+  playerUser?: Pick<User, 'id' | 'displayName' | 'avatarUrl' | 'frameId'> | null
 ): Promise<RoomExtrasConfig> {
   const safeAdd = Math.max(0, Math.round(coinsAmount));
-  return saveRoomExtrasConfig(roomId, (cur) => ({
-    ...cur,
-    playVolumeCoins: (cur.playVolumeCoins || 0) + safeAdd,
-  }));
+  if (safeAdd <= 0) return getRoomExtrasFromSupabase(roomId);
+  return saveRoomExtrasConfig(roomId, (cur) => {
+    const nextPlayers = { ...(cur.players || {}) };
+    if (playerUser?.id) {
+      const prev = nextPlayers[playerUser.id];
+      nextPlayers[playerUser.id] = {
+        userId: playerUser.id,
+        displayName: playerUser.displayName,
+        avatarUrl: playerUser.avatarUrl,
+        frameId: playerUser.frameId,
+        playCoins: (prev?.playCoins || 0) + safeAdd,
+      };
+    }
+    return {
+      ...cur,
+      players: nextPlayers,
+      playVolumeCoins: (cur.playVolumeCoins || 0) + safeAdd,
+    };
+  });
 }

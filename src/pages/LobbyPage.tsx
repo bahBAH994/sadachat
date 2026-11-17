@@ -1,29 +1,32 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Check,
   ChevronDown,
   Flame,
   Gamepad2,
-  Grid,
   Headphones,
+  Heart,
   Lock,
   MessageCircle,
   Mic,
   Mic2,
+  Plus,
   Search,
   Sparkles,
+  Store,
   Trophy,
   Unlock,
   UserCheck,
   UserPlus,
-  Users,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useActiveRoom } from '../context/ActiveRoomContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { resolveAsset } from '../lib/assets';
 import { ARAB_COUNTRIES, formatShortNumericId } from '../lib/sadaCatalog';
+import { getPlatformState } from '../lib/sadaMappers';
 import {
   createRoomInSupabase,
   listActiveRooms,
@@ -39,7 +42,7 @@ import type { Room, User } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge, FemaleVoiceVerificationCard } from '../components/FemaleVoiceVerificationCard';
 
-type FilterChip = 'جديدة' | 'أكثر شعبية' | 'لايف' | 'محادثة' | 'لعبة';
+type FilterChip = 'جديدة' | 'أكثر شعبية' | 'لايف' | 'محادثة';
 
 interface PresenceUser {
   roomId: string;
@@ -61,8 +64,54 @@ const COUNTRY_FILTERS = [
 
 export const LobbyPage: React.FC = () => {
   const { user, onlineUserIds } = useAuth();
+  const { activeRoomId, isMinimized } = useActiveRoom();
   const { openMiniProfile } = useMiniProfile();
   const navigate = useNavigate();
+
+  const [exitToastVisible, setExitToastVisible] = useState(false);
+  const lastBackPressRef = useRef<number>(0);
+  const exitToastTimerRef = useRef<number | null>(null);
+  const isFullScreenRoomRef = useRef<boolean>(false);
+  isFullScreenRoomRef.current = Boolean(activeRoomId && !isMinimized);
+
+  useEffect(() => {
+    if (activeRoomId && !isMinimized) return;
+
+    if (!window.history.state?.homeGuard) {
+      window.history.pushState({ homeGuard: true }, '');
+    }
+
+    const handleHomePopState = () => {
+      if (isFullScreenRoomRef.current) return;
+      const now = Date.now();
+      if (now - lastBackPressRef.current > 2000) {
+        lastBackPressRef.current = now;
+        setExitToastVisible(true);
+        if (exitToastTimerRef.current !== null) {
+          window.clearTimeout(exitToastTimerRef.current);
+        }
+        exitToastTimerRef.current = window.setTimeout(() => {
+          setExitToastVisible(false);
+        }, 2000);
+
+        window.setTimeout(() => {
+          if (!isFullScreenRoomRef.current && !window.history.state?.homeGuard) {
+            window.history.pushState({ homeGuard: true }, '');
+          }
+        }, 0);
+      } else {
+        window.history.back();
+      }
+    };
+
+    window.addEventListener('popstate', handleHomePopState);
+    return () => {
+      window.removeEventListener('popstate', handleHomePopState);
+      if (exitToastTimerRef.current !== null) {
+        window.clearTimeout(exitToastTimerRef.current);
+      }
+    };
+  }, [activeRoomId, isMinimized]);
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +125,9 @@ export const LobbyPage: React.FC = () => {
   const [presenceByRoom, setPresenceByRoom] = useState<Record<string, PresenceUser[]>>({});
   const [directoryUsers, setDirectoryUsers] = useState<User[]>([]);
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
+  const [userMeta, setUserMeta] = useState<Record<string, { age?: number; country?: string }>>({});
+  const [followedAgencyRoomIds, setFollowedAgencyRoomIds] = useState<string[]>([]);
+  const [agencyOwnerMap, setAgencyOwnerMap] = useState<Record<string, string>>({});
   const [seatedUserIds, setSeatedUserIds] = useState<string[]>([]);
   const [togglingFollowId, setTogglingFollowId] = useState<string | null>(null);
 
@@ -120,10 +172,25 @@ export const LobbyPage: React.FC = () => {
   const loadDirectory = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const dir = await getDiscoveryDirectoryFromSupabase(user.id);
+      const [dir, platState, agenciesRes] = await Promise.all([
+        getDiscoveryDirectoryFromSupabase(user.id),
+        getPlatformState().catch(() => null),
+        supabase.from('sada_agencies').select('id, owner_id'),
+      ]);
       setDirectoryUsers(dir.users);
       setUserFollows(dir.userFollows);
+      setUserMeta(dir.userMeta || {});
       setSeatedUserIds(dir.seatedUserIds);
+      if (platState?.settings?.userFollowedAgencies?.[user.id]) {
+        setFollowedAgencyRoomIds(platState.settings.userFollowedAgencies[user.id]);
+      } else {
+        setFollowedAgencyRoomIds([]);
+      }
+      const ownerLookup: Record<string, string> = {};
+      for (const ag of agenciesRes.data || []) {
+        ownerLookup[String(ag.id)] = String(ag.owner_id);
+      }
+      setAgencyOwnerMap(ownerLookup);
     } catch {
       // ignore transient error
     }
@@ -219,55 +286,35 @@ export const LobbyPage: React.FC = () => {
   const getRoomLiveInfo = useCallback(
     (room: Room) => {
       const presUsers = presenceByRoom[room.id] || [];
-      const seatedUsers = room.seats
-        .filter((s) => s.userId)
-        .map((s) => ({
-          userId: s.userId as string,
-          displayName: s.displayName || 'عضو',
-          avatarUrl: s.avatarUrl || 'host_male',
-          frameId: s.frameId || 'frame_obsidian',
-          level: s.level || 1,
-        }));
-
-      const mergedMap = new Map<
-        string,
-        {
-          userId: string;
-          displayName: string;
-          avatarUrl: string;
-          frameId?: string;
-          level?: number;
-        }
-      >();
-      seatedUsers.forEach((u) => mergedMap.set(u.userId, u));
-      presUsers.forEach((u) => mergedMap.set(u.userId, u));
-
-      const members = Array.from(mergedMap.values());
-      const liveCount = Math.max(members.length, room.listenersCount, presUsers.length);
-      return { members, liveCount };
+      return {
+        members: presUsers,
+        liveCount: presUsers.length,
+      };
     },
     [presenceByRoom]
   );
 
+  const myOwnedRooms = useMemo(() => {
+    if (!user) return [];
+    return rooms.filter((r) => r.hostId === user.id);
+  }, [rooms, user]);
+
+  const myFollowedRooms = useMemo(() => {
+    if (!followedAgencyRoomIds.length) return [];
+    return rooms.filter((r) => followedAgencyRoomIds.includes(r.id));
+  }, [rooms, followedAgencyRoomIds]);
+
   const filteredRooms = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = rooms.filter((r) => {
-      if (mainTab === 'mine' && user) {
-        const isHost = r.hostId === user.id;
-        const isSeated = r.seats.some((s) => s.userId === user.id);
-        if (!isHost && !isSeated) return false;
-      }
       if (activeChip === 'محادثة' && r.category !== 'حوار' && r.category !== 'شعر وأدب') {
-        return false;
-      }
-      if (activeChip === 'لعبة' && r.category !== 'مسابقات') {
         return false;
       }
       if (
         selectedCountry.code !== 'AR' &&
         !`${r.title} ${r.description}`.includes(selectedCountry.label)
       ) {
-        // Keep matching rooms first or show all if none explicitly tagged
+        // Keep all rooms accessible unless search excludes
       }
       if (q) {
         return (
@@ -287,7 +334,27 @@ export const LobbyPage: React.FC = () => {
     return [...list].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [rooms, mainTab, user, activeChip, search, selectedCountry, getRoomLiveInfo]);
+  }, [rooms, activeChip, search, selectedCountry, getRoomLiveInfo]);
+
+  const handleGoToAgencyChat = () => {
+    if (!user) return;
+    if (user.agencyId) {
+      const ownerId = agencyOwnerMap[user.agencyId];
+      const agencyRoom =
+        rooms.find((r) => ownerId && r.hostId === ownerId) ||
+        rooms.find((r) => r.hostId === user.id);
+      if (agencyRoom) {
+        enterRoom(agencyRoom);
+        return;
+      }
+    }
+    const ownRoom = rooms.find((r) => r.hostId === user.id);
+    if (ownRoom) {
+      enterRoom(ownRoom);
+      return;
+    }
+    setShowCreate(true);
+  };
 
   const enterRoom = (room: Room) => {
     if (room.hasPassword) {
@@ -343,12 +410,15 @@ export const LobbyPage: React.FC = () => {
       {/* Top App Header matching screenshot */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
-          {/* Right Tabs (حفلة / الخاص بي) */}
-          <div className="flex items-center gap-5">
+          {/* Right Brand + Tabs (حفلة / الخاص بي) */}
+          <div className="flex items-center gap-3.5 sm:gap-5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-black text-emerald-700 shrink-0">
+              صَدَى - SADA
+            </span>
             <button
               type="button"
               onClick={() => setMainTab('party')}
-              className={`relative py-2 text-lg font-extrabold cursor-pointer transition ${
+              className={`relative py-2 text-base sm:text-lg font-extrabold cursor-pointer transition ${
                 mainTab === 'party' ? 'text-slate-900' : 'text-slate-400'
               }`}
             >
@@ -360,7 +430,7 @@ export const LobbyPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setMainTab('mine')}
-              className={`relative py-2 text-base font-bold cursor-pointer transition ${
+              className={`relative py-2 text-sm sm:text-base font-bold cursor-pointer transition ${
                 mainTab === 'mine' ? 'text-slate-900' : 'text-slate-400'
               }`}
             >
@@ -576,33 +646,9 @@ export const LobbyPage: React.FC = () => {
       <div className="max-w-3xl mx-auto px-3.5 sm:px-4 pt-3 space-y-4">
         <FemaleVoiceVerificationCard />
 
-        {/* Lucky Wheel Invitation Banner matching screenshot 1 */}
-        <section
-          onClick={() => navigate('/competitions')}
-          className="relative rounded-3xl overflow-hidden bg-gradient-to-l from-[#0EA5E9] via-[#22D3EE] to-[#38BDF8] p-4 shadow-[0_12px_28px_-10px_rgba(14,165,233,0.5)] cursor-pointer flex items-center justify-between gap-3"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-500 border-2 border-amber-200 shadow-lg flex flex-col items-center justify-center text-white shrink-0">
-              <span className="text-lg font-black leading-none font-mono-num">$100</span>
-              <span className="mt-1 rounded-full bg-amber-300 text-slate-900 px-2 py-0.5 text-[10px] font-extrabold">
-                افتح
-              </span>
-            </div>
-            <div className="text-white space-y-1">
-              <h2 className="text-sm sm:text-base font-extrabold leading-snug drop-shadow-sm">
-                مكافأة دعوة عجلة الحظ
-              </h2>
-              <p className="text-base sm:text-lg font-black text-amber-200 font-mono-num leading-none">
-                ما يصل إلى 1,000,000 🪙
-              </p>
-              <span className="inline-block rounded-full bg-amber-500/90 px-2.5 py-0.5 text-[10px] font-bold text-white">
-                احصل على مكافأة بدعوة صديق واحد الآن
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* 4 Highlight Game & Event Cards */}
+        {mainTab === 'party' && (
+          <>
+        {/* 4 Highlight Agency & Event Cards */}
         <section className="grid grid-cols-4 gap-2">
           <button
             type="button"
@@ -622,8 +668,8 @@ export const LobbyPage: React.FC = () => {
               />
             </div>
             <div>
-              <span className="block text-xs font-extrabold text-slate-800">مضيفة</span>
-              <span className="block text-[10px] text-rose-500 font-semibold">ترتيب</span>
+              <span className="block text-xs font-extrabold text-slate-800">الوكالات</span>
+              <span className="block text-[10px] text-rose-500 font-semibold">المضيفون</span>
             </div>
           </button>
 
@@ -639,7 +685,7 @@ export const LobbyPage: React.FC = () => {
               <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">
                 مركز الأحداث
               </span>
-              <span className="block text-[10px] text-slate-400 font-semibold">جائزة أو مكافأة</span>
+              <span className="block text-[10px] text-slate-400 font-semibold">مسابقات وجوائز</span>
             </div>
           </button>
 
@@ -648,65 +694,56 @@ export const LobbyPage: React.FC = () => {
             onClick={() => navigate('/games')}
             className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-amber-300 transition shadow-sm"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-sm text-lg">
-              🦁
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-sm">
+              <Gamepad2 className="w-5 h-5" />
             </div>
             <div>
               <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">
-                مطاردة الأدغال
+                مركز الألعاب
               </span>
-              <span className="block text-[10px] text-slate-400 font-mono-num">🎮 4207</span>
+              <span className="block text-[10px] text-slate-400 font-semibold">سلوتس ونرد</span>
             </div>
           </button>
 
           <button
             type="button"
-            onClick={() => navigate('/games')}
+            onClick={() => navigate('/store')}
             className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-sky-300 transition shadow-sm"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white shadow-sm text-lg">
-              🐠
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white shadow-sm">
+              <Store className="w-5 h-5" />
             </div>
             <div>
               <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">
-                مطاردة المحيط
+                المتجر الملكي
               </span>
-              <span className="block text-[10px] text-slate-400 font-mono-num">🎮 4147</span>
+              <span className="block text-[10px] text-slate-400 font-semibold">دخوليات 3D</span>
             </div>
           </button>
         </section>
 
-        {/* Category Filter Strip */}
+        {/* Category Filter Strip (cleaned — no 'لعبة' chip & no Grid square button) */}
         <section className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-            {(['جديدة', 'أكثر شعبية', 'لايف', 'محادثة', 'لعبة'] as FilterChip[]).map((chip) => {
+            {(['جديدة', 'أكثر شعبية', 'لايف', 'محادثة'] as FilterChip[]).map((chip) => {
               const active = activeChip === chip;
               return (
                 <button
                   key={chip}
                   type="button"
                   onClick={() => setActiveChip(chip)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-extrabold whitespace-nowrap cursor-pointer transition flex items-center gap-1 ${
+                  className={`rounded-xl px-3.5 py-1.5 text-xs font-extrabold whitespace-nowrap cursor-pointer transition flex items-center gap-1 ${
                     active
                       ? 'bg-amber-50 border border-amber-300 text-amber-900 shadow-sm'
                       : 'bg-white border border-slate-200/70 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {chip === 'أكثر شعبية' && <Flame className="w-3.5 h-3.5 text-orange-500" />}
-                  {chip === 'لعبة' && <Gamepad2 className="w-3.5 h-3.5 text-emerald-600" />}
                   <span>{chip}</span>
                 </button>
               );
             })}
           </div>
-          <button
-            type="button"
-            onClick={() => navigate('/agency')}
-            className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-emerald-600 shrink-0 cursor-pointer"
-            title="دليل الوكالات"
-          >
-            <Grid className="w-4 h-4" />
-          </button>
         </section>
 
         {/* Agencies Rooms List with Real Live Supabase Realtime Presence */}
@@ -764,7 +801,10 @@ export const LobbyPage: React.FC = () => {
                   {/* Middle Info */}
                   <div className="flex-1 min-w-0 space-y-1.5">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm">🇸🇦</span>
+                      <span className="text-sm">
+                        {ARAB_COUNTRIES.find((c) => c.code === userMeta[room.hostId]?.country)
+                          ?.flag || '🎙️'}
+                      </span>
                       <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
                         {room.title}
                       </h3>
@@ -821,12 +861,134 @@ export const LobbyPage: React.FC = () => {
             })
           )}
         </section>
+          </>
+        )}
+
+        {mainTab === 'mine' && (
+          <div className="space-y-4">
+            {/* 1. User's Own Room / Agency at Top */}
+            <section className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <Mic2 className="w-4 h-4 text-emerald-600" />
+                  <span>غرفتي الصوتية</span>
+                </h2>
+                {myOwnedRooms.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreate(true)}
+                    className="emerald-btn rounded-xl px-3 py-1.5 text-xs font-extrabold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>إنشاء غرفتي</span>
+                  </button>
+                )}
+              </div>
+
+              {myOwnedRooms.length === 0 ? (
+                <div className="light-card rounded-3xl p-6 text-center space-y-2.5">
+                  <p className="text-xs sm:text-sm font-bold text-slate-600">
+                    لا توجد غرفة صوتية خاصة بك مفتوحة حالياً
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreate(true)}
+                    className="emerald-btn rounded-2xl px-5 py-2.5 text-xs font-extrabold cursor-pointer"
+                  >
+                    افتتاح غرفتي الآن
+                  </button>
+                </div>
+              ) : (
+                myOwnedRooms.map((room) => {
+                  const { liveCount } = getRoomLiveInfo(room);
+                  return (
+                    <article
+                      key={room.id}
+                      onClick={() => enterRoom(room)}
+                      className="light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer border-emerald-200"
+                    >
+                      <img
+                        src={resolveAsset(room.coverImage || room.hostAvatar)}
+                        alt={room.title}
+                        referrerPolicy="no-referrer"
+                        className="w-20 h-20 rounded-2xl object-cover shrink-0 border border-emerald-200 bg-slate-900"
+                      />
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <span className="inline-block rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-extrabold text-emerald-700">
+                          غرفتي الملكية ✦
+                        </span>
+                        <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
+                          {room.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 truncate">{room.description}</p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-500 text-white px-2.5 py-1 text-[11px] font-extrabold font-mono-num shrink-0">
+                        <Headphones className="w-3 h-3" />
+                        <span>{liveCount}</span>
+                      </span>
+                    </article>
+                  );
+                })
+              )}
+            </section>
+
+            {/* 2. Followed Agencies Directly Underneath */}
+            <section className="space-y-2.5">
+              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-1.5">
+                <Heart className="w-4 h-4 text-rose-500" />
+                <span>الوكالات التي أتابعها ({myFollowedRooms.length})</span>
+              </h2>
+
+              {myFollowedRooms.length === 0 ? (
+                <div className="light-card rounded-3xl p-6 text-center space-y-2">
+                  <p className="text-xs sm:text-sm font-bold text-slate-600">
+                    لم تتابع أي وكالة بعد.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    اضغط على زر (+) أعلى أي غرفة صوتية لإضافتها هنا والوصول إليها فوراً.
+                  </p>
+                </div>
+              ) : (
+                myFollowedRooms.map((room) => {
+                  const { liveCount } = getRoomLiveInfo(room);
+                  return (
+                    <article
+                      key={room.id}
+                      onClick={() => enterRoom(room)}
+                      className="light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer"
+                    >
+                      <img
+                        src={resolveAsset(room.coverImage || room.hostAvatar)}
+                        alt={room.title}
+                        referrerPolicy="no-referrer"
+                        className="w-20 h-20 rounded-2xl object-cover shrink-0 border border-slate-200 bg-slate-900"
+                      />
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
+                          {room.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 truncate">{room.description}</p>
+                        <p className="text-[11px] text-emerald-700 font-bold">
+                          المضيف: {room.hostName}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-500 text-white px-2.5 py-1 text-[11px] font-extrabold font-mono-num shrink-0">
+                        <Headphones className="w-3 h-3" />
+                        <span>{liveCount}</span>
+                      </span>
+                    </article>
+                  );
+                })
+              )}
+            </section>
+          </div>
+        )}
       </div>
 
-      {/* Floating Emerald Button: اذهب الدردشة */}
+      {/* Floating Emerald Button: اذهب الدردشة -> enters user's agency room directly */}
       <button
         type="button"
-        onClick={() => setShowCreate(true)}
+        onClick={handleGoToAgencyChat}
         className="fixed bottom-24 left-4 z-30 emerald-btn rounded-full px-5 py-3 text-sm font-extrabold flex items-center gap-2 cursor-pointer"
       >
         <Mic2 className="w-4 h-4" />
@@ -1041,6 +1203,15 @@ export const LobbyPage: React.FC = () => {
                 تحقق ودخول
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Double-back exit warning toast on Home Page */}
+      {exitToastVisible && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] pointer-events-none">
+          <div className="rounded-full bg-slate-900/95 text-white border border-white/15 px-5 py-2.5 text-xs sm:text-sm font-extrabold shadow-xl whitespace-nowrap">
+            اضغط مرة أخرى للخروج من التطبيق
           </div>
         </div>
       )}

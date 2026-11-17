@@ -37,9 +37,13 @@ export const FloatingMinimizedRoom: React.FC = () => {
       className="fixed bottom-24 left-4 z-[60] flex flex-col items-center select-none touch-none"
     >
       <div className="relative">
-        {(isSomeoneSpeaking || isMusicPlaying) && (
-          <span className="absolute -inset-2 rounded-full border-2 border-[#FCE9A6]/80 animate-gold-wave pointer-events-none" />
-        )}
+        <span
+          className={`absolute -inset-2 rounded-full pointer-events-none ${
+            isSomeoneSpeaking || isMusicPlaying
+              ? 'border-2 border-[#FCE9A6]/90 animate-gold-wave'
+              : 'border border-emerald-400/60 animate-ping opacity-45'
+          }`}
+        />
 
         {/* Main Floating Spinning Agency Orb */}
         <button

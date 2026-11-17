@@ -1,6 +1,7 @@
 import type {
   FemaleVoiceVerificationRequest,
   FrameItem,
+  HostTaskProgress,
   Transaction,
   UsdtDepositRequest,
   UsdtWithdrawalRequest,
@@ -14,6 +15,9 @@ import {
   isFemaleVoiceLocked,
   MIN_WITHDRAW_USDT,
   STORE_3D_ITEMS,
+  STORE_COIN_ITEMS,
+  STORE_LUXURY_BACKGROUNDS,
+  TEMP_ONLY_FRAME_IDS,
 } from './sadaCatalog';
 import {
   getPlatformState,
@@ -24,6 +28,7 @@ import {
   rowToTransaction,
   rowToUser,
   rowToWithdrawal,
+  savePlatformState,
 } from './sadaMappers';
 import { syncUserOnActiveRoomSeats } from './sadaAuth';
 import { supabase } from './supabase';
@@ -546,23 +551,335 @@ export async function computeUserCumulativeRechargeCoins(user: User): Promise<{
 }
 
 export async function getStoreAndBagOverviewFromSupabase(userId: string) {
-  const walletData = await getWalletOverviewFromSupabase(userId);
+  const [walletData, state] = await Promise.all([
+    getWalletOverviewFromSupabase(userId),
+    getPlatformState(),
+  ]);
   const { totalRechargedCoins, user } = await computeUserCumulativeRechargeCoins(
     walletData.user
   );
+
+  const ownedBackgrounds = Array.isArray(state.settings.userOwnedBackgrounds?.[userId])
+    ? state.settings.userOwnedBackgrounds![userId]
+    : [];
+  const rawTask: HostTaskProgress = state.settings.userHostTasks?.[userId] || {
+    streakDays: 0,
+    lastCheckInDate: null,
+    claimedDay7: false,
+    claimedDay15: false,
+  };
 
   return {
     ...walletData,
     user,
     totalRechargedCoins,
     storeItems: STORE_3D_ITEMS,
+    coinStoreItems: STORE_COIN_ITEMS,
+    luxuryBackgrounds: STORE_LUXURY_BACKGROUNDS,
+    ownedBackgrounds,
+    hostTasks: rawTask,
   };
+}
+
+export async function purchaseStoreCoinItemInSupabase(
+  user: User,
+  itemId: string
+): Promise<User> {
+  const item = STORE_COIN_ITEMS.find((s) => s.id === itemId);
+  if (!item) throw new Error('العنصر غير موجود في متجر الكوينز.');
+
+  const { data: userRow } = await supabase
+    .from('sada_users')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle();
+  const freshUser = userRow ? rowToUser(userRow) : { ...user };
+  const alreadyOwned = freshUser.unlockedFrames.includes(item.id);
+  const price = Math.max(0, Number(item.priceCoins || 0));
+
+  if (!alreadyOwned) {
+    if (freshUser.coins < price) {
+      throw new Error(
+        `رصيد الكوينز غير كافٍ. تحتاج إلى ${price.toLocaleString('en-US')} كوينز لشراء "${item.name}".`
+      );
+    }
+    freshUser.coins -= price;
+    freshUser.unlockedFrames = [...freshUser.unlockedFrames, item.id];
+    await recordTransaction({
+      userId: freshUser.id,
+      type: 'store_purchase',
+      amount: -price,
+      currency: 'coins',
+      description: `شراء وتفعيل ${item.name} من المتجر الملكي`,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  freshUser.frameId = item.id;
+  const patch: Record<string, unknown> = {
+    coins: freshUser.coins,
+    unlocked_frames: freshUser.unlockedFrames,
+    frame_id: item.id,
+  };
+
+  if (item.entryId && item.entryName) {
+    const expiresAt = new Date(Date.now() + 30 * 86400 * 1000).toISOString();
+    freshUser.activeEntryId = item.entryId;
+    freshUser.activeEntryName = item.entryName;
+    freshUser.tempEntryExpiresAt = expiresAt;
+    patch.active_entry_id = item.entryId;
+    patch.active_entry_name = item.entryName;
+    patch.temp_entry_expires_at = expiresAt;
+  }
+
+  await supabase.from('sada_users').update(patch).eq('id', freshUser.id);
+  await syncUserOnActiveRoomSeats(freshUser);
+  return freshUser;
+}
+
+export async function purchaseRoomBackgroundInSupabase(
+  user: User,
+  bgId: string
+): Promise<{ user: User; ownedBackgrounds: string[] }> {
+  const bg = STORE_LUXURY_BACKGROUNDS.find((b) => b.id === bgId);
+  if (!bg) throw new Error('خلفية الوكالة غير موجودة.');
+
+  const [{ data: userRow }, state] = await Promise.all([
+    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
+    getPlatformState(),
+  ]);
+  const freshUser = userRow ? rowToUser(userRow) : { ...user };
+  const map = { ...(state.settings.userOwnedBackgrounds || {}) };
+  const owned = Array.isArray(map[freshUser.id]) ? [...map[freshUser.id]] : [];
+
+  if (owned.includes(bg.id)) {
+    throw new Error('أنت تمتلك هذه الخلفية الفخمة بالفعل في حقيبتك.');
+  }
+
+  if (freshUser.coins < bg.priceCoins) {
+    throw new Error(
+      `رصيد الكوينز غير كافٍ. سعر الخلفية ${bg.priceCoins.toLocaleString('en-US')} كوينز.`
+    );
+  }
+
+  freshUser.coins -= bg.priceCoins;
+  owned.push(bg.id);
+  map[freshUser.id] = owned;
+
+  await Promise.all([
+    supabase.from('sada_users').update({ coins: freshUser.coins }).eq('id', freshUser.id),
+    savePlatformState({
+      settings: {
+        ...state.settings,
+        userOwnedBackgrounds: map,
+      },
+    }),
+    recordTransaction({
+      userId: freshUser.id,
+      type: 'store_purchase',
+      amount: -bg.priceCoins,
+      currency: 'coins',
+      description: `شراء خلفية الوكالة الفخمة: ${bg.name}`,
+      timestamp: new Date().toISOString(),
+    }),
+  ]);
+
+  return { user: freshUser, ownedBackgrounds: owned };
+}
+
+export async function applyRoomBackgroundToMyRoomInSupabase(
+  user: User,
+  bgId: string
+): Promise<{ updatedRoomsCount: number }> {
+  const isPaidBg = STORE_LUXURY_BACKGROUNDS.some((b) => b.id === bgId);
+  if (isPaidBg && !user.is_admin) {
+    const state = await getPlatformState();
+    const owned = state.settings.userOwnedBackgrounds?.[user.id] || [];
+    if (!owned.includes(bgId)) {
+      throw new Error('يجب شراء هذه الخلفية من المتجر (5,000 كوينز) قبل تطبيقها.');
+    }
+  }
+
+  const { data: rooms } = await supabase
+    .from('sada_rooms')
+    .select('id')
+    .eq('host_id', user.id)
+    .eq('is_active', true);
+
+  if (!rooms || rooms.length === 0) {
+    throw new Error('لا توجد غرفة صوتية نشطة خاصة بك حالياً — افتح غرفتك ثم طبّق الخلفية.');
+  }
+
+  await supabase
+    .from('sada_rooms')
+    .update({ cover_image: bgId })
+    .eq('host_id', user.id)
+    .eq('is_active', true);
+
+  return { updatedRoomsCount: rooms.length };
+}
+
+function getUtcDateKey(offsetDays = 0): string {
+  return new Date(Date.now() + offsetDays * 86400 * 1000).toISOString().slice(0, 10);
+}
+
+export async function getHostTasksOverviewFromSupabase(userId: string): Promise<{
+  progress: HostTaskProgress;
+  checkedInToday: boolean;
+}> {
+  const state = await getPlatformState();
+  const today = getUtcDateKey(0);
+  const yesterday = getUtcDateKey(-1);
+  const raw = state.settings.userHostTasks?.[userId] || {
+    streakDays: 0,
+    lastCheckInDate: null,
+    claimedDay7: false,
+    claimedDay15: false,
+  };
+
+  // If user missed yesterday and hasn't checked in today, streak resets
+  const streakActive =
+    raw.lastCheckInDate === today || raw.lastCheckInDate === yesterday;
+  const progress: HostTaskProgress = streakActive
+    ? raw
+    : {
+        streakDays: 0,
+        lastCheckInDate: raw.lastCheckInDate,
+        claimedDay7: false,
+        claimedDay15: false,
+      };
+
+  return {
+    progress,
+    checkedInToday: progress.lastCheckInDate === today,
+  };
+}
+
+export async function checkInDailyHostTaskInSupabase(user: User): Promise<{
+  progress: HostTaskProgress;
+  checkedInToday: boolean;
+}> {
+  const state = await getPlatformState();
+  const today = getUtcDateKey(0);
+  const yesterday = getUtcDateKey(-1);
+  const map = { ...(state.settings.userHostTasks || {}) };
+  const raw = map[user.id] || {
+    streakDays: 0,
+    lastCheckInDate: null,
+    claimedDay7: false,
+    claimedDay15: false,
+  };
+
+  if (raw.lastCheckInDate === today) {
+    throw new Error('تم تسجيل دخولك اليوم بالفعل! عد غداً لمواصلة السلسلة.');
+  }
+
+  const continued = raw.lastCheckInDate === yesterday;
+  const nextStreak = continued ? Math.min(30, (raw.streakDays || 0) + 1) : 1;
+  const nextProgress: HostTaskProgress = {
+    streakDays: nextStreak,
+    lastCheckInDate: today,
+    claimedDay7: continued ? Boolean(raw.claimedDay7) : false,
+    claimedDay15: continued ? Boolean(raw.claimedDay15) : false,
+  };
+
+  map[user.id] = nextProgress;
+  await savePlatformState({
+    settings: {
+      ...state.settings,
+      userHostTasks: map,
+    },
+  });
+
+  return { progress: nextProgress, checkedInToday: true };
+}
+
+export async function claimHostTaskMilestoneInSupabase(
+  user: User,
+  milestone: 7 | 15
+): Promise<{ user: User; progress: HostTaskProgress; rewardMessage: string }> {
+  const [{ data: userRow }, state] = await Promise.all([
+    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
+    getPlatformState(),
+  ]);
+  const freshUser = userRow ? rowToUser(userRow) : { ...user };
+  const map = { ...(state.settings.userHostTasks || {}) };
+  const raw = map[freshUser.id] || {
+    streakDays: 0,
+    lastCheckInDate: null,
+    claimedDay7: false,
+    claimedDay15: false,
+  };
+
+  if ((raw.streakDays || 0) < milestone) {
+    throw new Error(`تحتاج إلى إتمام ${milestone} يوماً متتالياً لاستلام هذه الجائزة.`);
+  }
+
+  if (milestone === 7 && raw.claimedDay7) {
+    throw new Error('تم استلام جائزة الـ 7 أيام في هذه السلسلة مسبقاً.');
+  }
+  if (milestone === 15 && raw.claimedDay15) {
+    throw new Error('تم استلام جائزة الـ 15 يوماً في هذه السلسلة مسبقاً.');
+  }
+
+  const sevenDaysExp = new Date(Date.now() + 7 * 86400 * 1000).toISOString();
+  const patch: Record<string, unknown> = {};
+  let rewardMessage = '';
+
+  if (milestone === 7) {
+    const giftFrameId = 'frame_host_gift_7d';
+    if (!TEMP_ONLY_FRAME_IDS.has(freshUser.frameId)) {
+      freshUser.previousPermanentFrameId = freshUser.frameId;
+      patch.previous_permanent_frame_id = freshUser.frameId;
+    }
+    if (!freshUser.unlockedFrames.includes(giftFrameId)) {
+      freshUser.unlockedFrames = [...freshUser.unlockedFrames, giftFrameId];
+    }
+    freshUser.frameId = giftFrameId;
+    freshUser.tempFrameId = giftFrameId;
+    freshUser.tempFrameExpiresAt = sevenDaysExp;
+    patch.unlocked_frames = freshUser.unlockedFrames;
+    patch.frame_id = giftFrameId;
+    patch.temp_frame_id = giftFrameId;
+    patch.temp_frame_expires_at = sevenDaysExp;
+    raw.claimedDay7 = true;
+    rewardMessage = 'مبارك! حصلت على إطار مهام المضيف المجاني لمدة 7 أيام وتم تفعيله!';
+  } else {
+    freshUser.activeEntryId = 'entry_car_15d';
+    freshUser.activeEntryName = 'دخولية مهام المضيف الملكية';
+    freshUser.tempEntryExpiresAt = sevenDaysExp;
+    patch.active_entry_id = 'entry_car_15d';
+    patch.active_entry_name = 'دخولية مهام المضيف الملكية';
+    patch.temp_entry_expires_at = sevenDaysExp;
+    raw.claimedDay15 = true;
+    rewardMessage = 'تهانينا! حصلت على دخولية مهام المضيف الملكية لمدة 7 أيام!';
+  }
+
+  map[freshUser.id] = raw;
+
+  await Promise.all([
+    supabase.from('sada_users').update(patch).eq('id', freshUser.id),
+    savePlatformState({
+      settings: {
+        ...state.settings,
+        userHostTasks: map,
+      },
+    }),
+  ]);
+  await syncUserOnActiveRoomSeats(freshUser);
+
+  return { user: freshUser, progress: raw, rewardMessage };
 }
 
 export async function equipStoreOrBagItemInSupabase(
   user: User,
   itemId: string
 ): Promise<User> {
+  const coinItem = STORE_COIN_ITEMS.find((c) => c.id === itemId);
+  if (coinItem) {
+    return purchaseStoreCoinItemInSupabase(user, itemId);
+  }
+
   const storeItem = STORE_3D_ITEMS.find((s) => s.id === itemId);
   if (storeItem) {
     const { data: userRow } = await supabase
@@ -573,7 +890,13 @@ export async function equipStoreOrBagItemInSupabase(
     const freshUser = userRow ? rowToUser(userRow) : { ...user };
     const { totalRechargedCoins } = await computeUserCumulativeRechargeCoins(freshUser);
 
-    if (
+    if (storeItem.purchaseMode === 'gift') {
+      if (!freshUser.unlockedFrames.includes(storeItem.id)) {
+        throw new Error(
+          `يُفتح "${storeItem.name}" مجاناً عند المواظبة 7 أيام متتالية في مهام المضيف.`
+        );
+      }
+    } else if (
       !freshUser.unlockedFrames.includes(storeItem.id) &&
       totalRechargedCoins < storeItem.minRechargeCoins
     ) {
