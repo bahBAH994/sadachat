@@ -40,6 +40,7 @@ export interface User {
   diamonds: number;
   level: number;
   xp: number;
+  role?: string;
   is_admin: boolean;
   is_banned: boolean;
   device_uuid: string;

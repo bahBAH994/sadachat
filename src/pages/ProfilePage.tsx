@@ -31,7 +31,7 @@ import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { AVATAR_CHOICES } from '../lib/assets';
 import { getUserPublicProfileFromSupabase, updateProfileInSupabase } from '../lib/sadaAuth';
-import { ARAB_COUNTRIES, formatShortNumericId, STORE_3D_ITEMS } from '../lib/sadaCatalog';
+import { ARAB_COUNTRIES, formatShortNumericId, isSuperAdminUser, STORE_3D_ITEMS } from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
 import {
   getProfileSocialListFromSupabase,
@@ -429,7 +429,7 @@ export const ProfilePage: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-2">
-              {user.is_admin && (
+              {isSuperAdminUser(user) && (
                 <button
                   type="button"
                   onClick={() => navigate('/admin')}

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import {
   Ban,
   Building2,
@@ -25,6 +26,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { isSuperAdminUser } from '../lib/sadaCatalog';
 import {
   approveFemaleVoiceInSupabase,
   approveUsdtDepositInSupabase,
@@ -132,7 +134,13 @@ export const AdminPage: React.FC = () => {
   const [settingsDraft, setSettingsDraft] = useState<PlatformSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
 
+  const isSuperAdmin = isSuperAdminUser(user);
+
   const loadOverview = useCallback(async () => {
+    if (!isSuperAdmin) {
+      setLoading(false);
+      return;
+    }
     try {
       const res = await getAdminOverviewFromSupabase();
       setData(res);
@@ -163,7 +171,7 @@ export const AdminPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     loadOverview();
@@ -581,14 +589,8 @@ export const AdminPage: React.FC = () => {
     }
   };
 
-  if (!user?.is_admin) {
-    return (
-      <div className="max-w-xl mx-auto p-8 text-center">
-        <p className="text-rose-300 font-bold">
-          غير مصرح: هذه الصفحة مخصصة للمدير العام فقط.
-        </p>
-      </div>
-    );
+  if (!isSuperAdmin) {
+    return <Navigate to="/" replace />;
   }
 
   const filteredUsers =

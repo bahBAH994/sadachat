@@ -13,6 +13,16 @@ import type {
 } from '../types';
 
 export const SUPER_ADMIN_EMAIL = 'bahaa.f36@gmail.com';
+
+export function isSuperAdminUser(
+  user: Pick<User, 'email' | 'role'> | null | undefined
+): boolean {
+  if (!user) return false;
+  const email = String(user.email || '').trim().toLowerCase();
+  const role = String(user.role || '').trim().toLowerCase();
+  return email === SUPER_ADMIN_EMAIL || role === 'admin';
+}
+
 export const ADMIN_USDT_TRC20_ADDRESS = 'TFXPytN94bSAUzD893hjpSwp6DGWqGkGSa';
 export const USDT_TO_COINS_RATE = 1000;
 export const DIAMONDS_PER_USDT = 100;

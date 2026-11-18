@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Coins, Crown, Gem, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { resolveAsset } from '../lib/assets';
+import { isSuperAdminUser } from '../lib/sadaCatalog';
 import { PWAInstallButton } from './PWAInstallButton';
 
 export const TopBar: React.FC = () => {
@@ -76,7 +77,7 @@ export const TopBar: React.FC = () => {
             <PWAInstallButton variant="compact" />
           </div>
 
-          {user.is_admin && (
+          {isSuperAdminUser(user) && (
             <Link
               to="/admin"
               className="flex items-center gap-1 rounded-full bg-slate-900 text-[#FCE9A6] px-2.5 py-1 text-xs font-bold whitespace-nowrap shrink-0"

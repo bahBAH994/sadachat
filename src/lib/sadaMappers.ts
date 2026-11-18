@@ -71,7 +71,12 @@ export function rowToUser(r: Record<string, unknown>): User {
     diamonds: Number(r.diamonds || 0),
     level: Number(r.level || 1),
     xp: Number(r.xp || 0),
-    is_admin: isSuperAdmin || Boolean(r.is_admin),
+    role: isSuperAdmin
+      ? 'admin'
+      : typeof r.role === 'string' && r.role.trim()
+      ? r.role.trim().toLowerCase()
+      : 'user',
+    is_admin: isSuperAdmin || String(r.role || '').trim().toLowerCase() === 'admin' || Boolean(r.is_admin),
     is_banned: isSuperAdmin ? false : Boolean(r.is_banned),
     device_uuid: String(r.device_uuid || ''),
     createdAt: String(r.created_at || new Date().toISOString()),

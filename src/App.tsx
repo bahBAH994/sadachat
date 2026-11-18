@@ -8,6 +8,7 @@ import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from 'rea
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ActiveRoomProvider, useActiveRoom } from './context/ActiveRoomContext';
 import { MiniProfileProvider } from './context/MiniProfileContext';
+import { isSuperAdminUser } from './lib/sadaCatalog';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
 import { FloatingMinimizedRoom } from './components/FloatingMinimizedRoom';
@@ -68,7 +69,7 @@ const ProtectedShell: React.FC<{
     return <Navigate to="/login" replace />;
   }
 
-  if (requireAdmin && !user.is_admin) {
+  if (requireAdmin && !isSuperAdminUser(user)) {
     return <Navigate to="/" replace />;
   }
 
@@ -100,7 +101,7 @@ const LoginRoute: React.FC = () => {
     );
   }
   if (user) {
-    return <Navigate to={user.is_admin ? '/admin' : '/'} replace />;
+    return <Navigate to={isSuperAdminUser(user) ? '/admin' : '/'} replace />;
   }
   return <LoginPage />;
 };

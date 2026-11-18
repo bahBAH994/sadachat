@@ -1,6 +1,7 @@
 import type { User } from '../types';
 import {
   genId,
+  isSuperAdminUser,
   SUPER_ADMIN_EMAIL,
 } from './sadaCatalog';
 import {
@@ -188,6 +189,7 @@ async function createUserProfileRow(params: {
     diamonds: 0,
     level: 1,
     xp: 0,
+    role: isSuperAdmin ? 'admin' : 'user',
     is_admin: isSuperAdmin,
     is_banned: false,
     device_uuid: params.deviceUuid,
@@ -334,7 +336,7 @@ export async function loginOrRegisterWithSupabase(payload: {
 
     return {
       user: createdUser,
-      redirectTo: createdUser.is_admin ? '/admin' : '/',
+      redirectTo: isSuperAdminUser(createdUser) ? '/admin' : '/',
     };
   }
 
@@ -410,7 +412,7 @@ export async function loginOrRegisterWithSupabase(payload: {
 
   return {
     user: profile,
-    redirectTo: profile.is_admin ? '/admin' : '/',
+    redirectTo: isSuperAdminUser(profile) ? '/admin' : '/',
   };
 }
 
