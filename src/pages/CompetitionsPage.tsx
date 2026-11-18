@@ -103,7 +103,6 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
   const [referralCode, setReferralCode] = useState<string>('');
   const [referralCount, setReferralCount] = useState<number>(0);
   const [referralSpins, setReferralSpins] = useState<number>(0);
-  const [appPrizePoolCoins, setAppPrizePoolCoins] = useState<number>(0);
   const [refSegments, setRefSegments] = useState<ReferralWheelSegment[]>([]);
   const [refSpinning, setRefSpinning] = useState<boolean>(false);
   const [refRotation, setRefRotation] = useState<number>(0);
@@ -126,7 +125,6 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
       setReferralCode(data.referralCode);
       setReferralCount(data.referralCount);
       setReferralSpins(data.referralSpins);
-      setAppPrizePoolCoins(data.appPrizePoolCoins);
       setRefSegments(data.segments);
     } catch {
       // handled silently on init
@@ -247,7 +245,6 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
         setRefWinBanner(res.segment);
         updateLocalUser(res.user);
         setReferralSpins(res.user.referralSpins ?? 0);
-        setAppPrizePoolCoins(res.appPrizePoolCoins);
       }, 4200);
     } catch (err) {
       setRefSpinning(false);
@@ -673,7 +670,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
               </div>
             </div>
 
-            <div className="lg:col-span-5 grid grid-cols-3 gap-3">
+            <div className="lg:col-span-5 grid grid-cols-2 gap-3">
               <div className="royal-glass rounded-3xl p-4 flex flex-col justify-between">
                 <span className="text-[11px] text-slate-400">لفاتك المجانية</span>
                 <p className="text-2xl font-extrabold font-mono-num text-[#FCE9A6] mt-2">
@@ -684,12 +681,6 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                 <span className="text-[11px] text-slate-400">الدعوات الناجحة</span>
                 <p className="text-2xl font-extrabold font-mono-num text-white mt-2">
                   {referralCount}
-                </p>
-              </div>
-              <div className="royal-glass rounded-3xl p-4 flex flex-col justify-between border-[#F3D37A]/40">
-                <span className="text-[11px] text-slate-400">مخزون جوائز التطبيق</span>
-                <p className="text-base sm:text-lg font-extrabold font-mono-num text-emerald-300 mt-2">
-                  {appPrizePoolCoins.toLocaleString('en-US')}
                 </p>
               </div>
             </div>
@@ -802,38 +793,22 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
             <div className="lg:col-span-6 space-y-3">
               <div>
                 <h3 className="text-base font-extrabold text-[#F3D37A]">
-                  خانات الجوائز المرتبطة بمخزون جوائز التطبيق
+                  جوائز دولاب الدعوات الملكي
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  لا يمكن للدولاب منح أي جائزة تتجاوز رصيد المخزون المتاح ({appPrizePoolCoins.toLocaleString('en-US')} كوينز).
+                  احصل على لفة مجانية مقابل كل صديق ينضم عبر رابط دعوتك الخاص.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2.5">
-                {refSegments.map((seg) => {
-                  const available = seg.coinsAmount <= appPrizePoolCoins;
-                  return (
-                    <div
-                      key={seg.id}
-                      className={`rounded-2xl border p-3 flex items-center justify-between gap-2 text-xs ${
-                        available
-                          ? 'border-[#D4AF37]/30 bg-[#070913]/75 text-white'
-                          : 'border-rose-500/30 bg-[#070913]/40 text-slate-500 opacity-65'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-xl">{seg.glyph}</span>
-                        <span className="font-bold truncate">{seg.shortLabel}</span>
-                      </div>
-                      <span
-                        className={`text-[10px] font-bold shrink-0 ${
-                          available ? 'text-emerald-300' : 'text-rose-300'
-                        }`}
-                      >
-                        {available ? 'متاح ✓' : 'خارج المخزون'}
-                      </span>
-                    </div>
-                  );
-                })}
+                {refSegments.map((seg) => (
+                  <div
+                    key={seg.id}
+                    className="rounded-2xl border border-[#D4AF37]/30 bg-[#070913]/75 text-white p-3 flex items-center gap-2 text-xs"
+                  >
+                    <span className="text-xl">{seg.glyph}</span>
+                    <span className="font-bold truncate">{seg.shortLabel}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </section>

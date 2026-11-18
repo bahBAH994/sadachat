@@ -12,7 +12,6 @@ import {
   Copy,
   Crown,
   Flame,
-  Gamepad2,
   Gem,
   Gift,
   LogOut,
@@ -779,7 +778,7 @@ export const ProfilePage: React.FC = () => {
         </section>
 
         {/* Bottom Utility Row */}
-        <section className="light-card rounded-3xl p-4 grid grid-cols-4 gap-2 text-center">
+        <section className="light-card rounded-3xl p-4 grid grid-cols-3 gap-2 text-center">
           <button
             type="button"
             onClick={() => {
@@ -794,15 +793,6 @@ export const ProfilePage: React.FC = () => {
           >
             <UserIcon className="w-5 h-5" />
             <span className="text-xs font-bold">الحساب</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/games')}
-            className="flex flex-col items-center gap-1.5 text-slate-600 hover:text-emerald-600 cursor-pointer transition"
-          >
-            <Gamepad2 className="w-5 h-5" />
-            <span className="text-xs font-bold">الألعاب</span>
           </button>
 
           <button

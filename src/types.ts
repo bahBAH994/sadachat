@@ -153,6 +153,32 @@ export interface RoomModLogEntry {
   timestamp: string;
 }
 
+export interface RoomContestEntry {
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+  frameId?: string;
+  votes: number;
+  note?: string;
+  joinedAt: string;
+}
+
+export interface RoomLiveContest {
+  id: string;
+  title: string;
+  mode: 'open' | 'mics' | 'qa';
+  prizeLabel: string;
+  hostId: string;
+  hostName: string;
+  status: 'active' | 'ended';
+  entries: RoomContestEntry[];
+  voterIds: string[];
+  winnerUserId?: string | null;
+  winnerName?: string | null;
+  createdAt: string;
+  endedAt?: string | null;
+}
+
 export interface RoomExtrasConfig {
   deputyIds: string[];
   moderatorIds: string[];
@@ -164,6 +190,7 @@ export interface RoomExtrasConfig {
   modLogs?: RoomModLogEntry[];
   playVolumeCoins: number;
   musicState?: RoomMusicState | null;
+  activeContest?: RoomLiveContest | null;
 }
 
 export interface Room {
@@ -408,6 +435,7 @@ export interface PlatformSettings {
   userHostTasks?: Record<string, HostTaskProgress>;
   userGiftStats?: Record<string, UserGiftStats>;
   hostJoinApplications?: HostJoinApplication[];
+  globalZeroResetV1Applied?: boolean;
 }
 
 export interface CulturalQuestionAdminItem {

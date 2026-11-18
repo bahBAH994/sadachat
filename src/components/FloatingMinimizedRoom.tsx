@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Mic, MicOff, Music2, X } from 'lucide-react';
@@ -7,6 +7,7 @@ import { resolveAsset } from '../lib/assets';
 
 export const FloatingMinimizedRoom: React.FC = () => {
   const navigate = useNavigate();
+  const wasDraggedRef = useRef(false);
   const {
     room,
     isMinimized,
@@ -23,6 +24,10 @@ export const FloatingMinimizedRoom: React.FC = () => {
   const isMusicPlaying = Boolean(musicState?.isPlaying);
 
   const handleOpenRoom = () => {
+    if (wasDraggedRef.current) {
+      wasDraggedRef.current = false;
+      return;
+    }
     restoreRoom();
     navigate(`/room/${room.id}`);
   };
@@ -32,6 +37,14 @@ export const FloatingMinimizedRoom: React.FC = () => {
       drag
       dragMomentum={false}
       dragElastic={0.12}
+      onDragStart={() => {
+        wasDraggedRef.current = true;
+      }}
+      onDragEnd={() => {
+        window.setTimeout(() => {
+          wasDraggedRef.current = false;
+        }, 180);
+      }}
       initial={{ scale: 0.7, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className="fixed bottom-24 left-4 z-[60] flex flex-col items-center select-none touch-none"
@@ -68,9 +81,12 @@ export const FloatingMinimizedRoom: React.FC = () => {
         {/* Close / Leave Room completely */}
         <button
           type="button"
-          onClick={(e) => {
+          onClick={async (e) => {
             e.stopPropagation();
-            void leaveActiveRoom();
+            await leaveActiveRoom();
+            if (window.location.hash.includes('/room/')) {
+              navigate('/', { replace: true });
+            }
           }}
           className="absolute -top-1.5 -left-1.5 w-6 h-6 rounded-full bg-[#111422] border border-[#F3D37A]/70 text-white hover:bg-rose-600 flex items-center justify-center shadow-md cursor-pointer"
           aria-label="خروج من الوكالة"

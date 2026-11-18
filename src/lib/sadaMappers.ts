@@ -380,12 +380,89 @@ export async function getPlatformState(): Promise<PlatformStateDoc> {
       hostJoinApplications: Array.isArray(rawSettings.hostJoinApplications)
         ? rawSettings.hostJoinApplications
         : [],
+      globalZeroResetV1Applied: Boolean(rawSettings.globalZeroResetV1Applied),
     },
     quizSessions: (data?.quiz_sessions as Record<string, QuizSessionRecord>) || {},
     votedKeys: (data?.voted_keys as Record<string, boolean>) || {},
     ladderSessions:
       (data?.ladder_sessions as PlatformStateDoc['ladderSessions']) || {},
   };
+}
+
+let zeroResetInFlight: Promise<void> | null = null;
+
+export async function ensureGlobalZeroResetInSupabase(): Promise<void> {
+  if (zeroResetInFlight) return zeroResetInFlight;
+
+  zeroResetInFlight = (async () => {
+    try {
+      const state = await getPlatformState();
+      if (state.settings.globalZeroResetV1Applied) return;
+
+      // Zero all user & Super Admin balances/XP/levels/referrals
+      await supabase
+        .from('sada_users')
+        .update({
+          coins: 0,
+          diamonds: 0,
+          xp: 0,
+          level: 1,
+          host_diamonds_earned: 0,
+          referral_count: 0,
+          referral_spins: 0,
+        })
+        .neq('id', '');
+
+      // Clear old transaction history so support/gift levels start at 0
+      await supabase.from('sada_transactions').delete().neq('id', '');
+
+      // Zero room gift totals and seat receivedDiamonds
+      const { data: roomRows } = await supabase
+        .from('sada_rooms')
+        .select('id, seats');
+      for (const r of roomRows || []) {
+        const seats = Array.isArray(r.seats)
+          ? (r.seats as Array<Record<string, unknown>>).map((s) => ({
+              ...s,
+              receivedDiamonds: 0,
+            }))
+          : [];
+        await supabase
+          .from('sada_rooms')
+          .update({ total_gifts_coins: 0, seats })
+          .eq('id', r.id);
+      }
+
+      // Reset roomConfigs gifters/players/playVolumeCoins
+      const cleanedRoomConfigs: NonNullable<PlatformSettings['roomConfigs']> = {};
+      for (const [rid, cfg] of Object.entries(state.settings.roomConfigs || {})) {
+        cleanedRoomConfigs[rid] = {
+          ...cfg,
+          gifters: {},
+          players: {},
+          playVolumeCoins: 0,
+        };
+      }
+
+      await savePlatformState({
+        settings: {
+          ...state.settings,
+          userFollows: {},
+          userVisitors: {},
+          userGiftStats: {},
+          userHostTasks: {},
+          roomConfigs: cleanedRoomConfigs,
+          globalZeroResetV1Applied: true,
+        },
+      });
+    } catch {
+      // ignore transient error; will retry on next session load if flag not persisted
+    } finally {
+      zeroResetInFlight = null;
+    }
+  })();
+
+  return zeroResetInFlight;
 }
 
 export async function savePlatformState(patch: Partial<PlatformStateDoc>): Promise<PlatformStateDoc> {

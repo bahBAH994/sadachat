@@ -12,18 +12,23 @@ import { setAudioMuted } from '../lib/sadaAudio';
 import {
   adminControlRoomInSupabase,
   canManageRoom,
+  clearRoomContestInSupabase,
   createEmptyRoomExtras,
+  finishRoomContestInSupabase,
   getRoomDetailsFromSupabase,
   getRoomExtrasFromSupabase,
   incrementRoomPlayVolumeInSupabase,
+  joinRoomContestInSupabase,
   joinRoomInSupabase,
   leaveRoomInSupabase,
   sendRoomChatInSupabase,
   sendRoomGiftBatchInSupabase,
   sendRoomGiftInSupabase,
+  startRoomContestInSupabase,
   updateRoomMusicInSupabase,
   updateRoomSeatInSupabase,
   updateRoomSettingsInSupabase,
+  voteRoomContestInSupabase,
 } from '../lib/sadaRoomsService';
 import { supabase } from '../lib/supabase';
 import type {
@@ -33,6 +38,7 @@ import type {
   RoomEntryEvent,
   RoomExtrasConfig,
   RoomGifterEntry,
+  RoomLiveContest,
   RoomMessage,
   RoomMusicState,
   RoomSeat,
@@ -170,6 +176,15 @@ interface ActiveRoomContextValue {
   toggleMusicPlayPause: () => Promise<void>;
   stopRoomMusic: () => Promise<void>;
   addPlayVolume: (coinsAmount: number) => Promise<void>;
+  startContest: (payload: {
+    title: string;
+    mode: RoomLiveContest['mode'];
+    prizeLabel: string;
+  }) => Promise<void>;
+  joinContest: (note?: string) => Promise<void>;
+  voteContest: (contestantUserId: string) => Promise<void>;
+  finishContest: (winnerUserId?: string) => Promise<void>;
+  clearContest: () => Promise<void>;
   giftTargetRequest: { userId: string; nonce: number } | null;
   requestGiftForUser: (userId: string) => void;
   clearGiftTargetRequest: () => void;
@@ -440,6 +455,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                   modLogs: Array.isArray(nextRoomCfg.modLogs) ? nextRoomCfg.modLogs : [],
                   playVolumeCoins: Number(nextRoomCfg.playVolumeCoins || 0),
                   musicState: nextRoomCfg.musicState || null,
+                  activeContest: nextRoomCfg.activeContest || null,
                 });
               }
             }
@@ -497,6 +513,10 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           .on('broadcast', { event: 'music:sync' }, ({ payload }) => {
             const m = payload as RoomMusicState | null;
             setExtras((prev) => ({ ...prev, musicState: m }));
+          })
+          .on('broadcast', { event: 'room:contest' }, ({ payload }) => {
+            const nextContest = (payload as RoomLiveContest | null) ?? null;
+            setExtras((prev) => ({ ...prev, activeContest: nextContest }));
           })
           .subscribe();
 
@@ -1096,6 +1116,65 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     [activeRoomId, user]
   );
 
+  const broadcastContest = useCallback((contest: RoomLiveContest | null) => {
+    void roomChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'room:contest',
+      payload: contest,
+    });
+  }, []);
+
+  const startContest = useCallback(
+    async (payload: {
+      title: string;
+      mode: RoomLiveContest['mode'];
+      prizeLabel: string;
+    }) => {
+      if (!room || !user) return;
+      const next = await startRoomContestInSupabase(room.id, user, payload);
+      setExtras(next);
+      broadcastContest(next.activeContest || null);
+    },
+    [broadcastContest, room, user]
+  );
+
+  const joinContest = useCallback(
+    async (note?: string) => {
+      if (!room || !user) return;
+      const next = await joinRoomContestInSupabase(room.id, user, note);
+      setExtras(next);
+      broadcastContest(next.activeContest || null);
+    },
+    [broadcastContest, room, user]
+  );
+
+  const voteContest = useCallback(
+    async (contestantUserId: string) => {
+      if (!room || !user) return;
+      const next = await voteRoomContestInSupabase(room.id, user, contestantUserId);
+      setExtras(next);
+      broadcastContest(next.activeContest || null);
+    },
+    [broadcastContest, room, user]
+  );
+
+  const finishContest = useCallback(
+    async (winnerUserId?: string) => {
+      if (!room || !user) return;
+      const next = await finishRoomContestInSupabase(room.id, user, winnerUserId);
+      setExtras(next);
+      broadcastContest(next.activeContest || null);
+    },
+    [broadcastContest, room, user]
+  );
+
+  const clearContest = useCallback(async () => {
+    if (!room || !user) return;
+    const next = await clearRoomContestInSupabase(room.id, user);
+    setExtras(next);
+    broadcastContest(null);
+  }, [broadcastContest, room, user]);
+
   const canManage = useMemo(
     () => (room ? canManageRoom(room, extras, user) : false),
     [extras, room, user]
@@ -1213,6 +1292,11 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         toggleMusicPlayPause,
         stopRoomMusic,
         addPlayVolume,
+        startContest,
+        joinContest,
+        voteContest,
+        finishContest,
+        clearContest,
         giftTargetRequest,
         requestGiftForUser,
         clearGiftTargetRequest,

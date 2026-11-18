@@ -56,8 +56,8 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
           </h3>
           <p className="text-xs text-slate-300 leading-relaxed">
             {isOnMic
-              ? 'أنت جالس على المايك حالياً. يمكنك الاحتفاظ بالغرفة ككرة عائمة مع استمرار صوتك!'
-              : 'هل تريد الاحتفاظ بالوكالة مصغّرة أثناء التصفح أم الخروج نهائياً؟'}
+              ? 'أنت جالس على المايك حالياً. يمكنك تصغير الوكالة ككرة عائمة مع استمرار صوتك!'
+              : 'هل تريد تصغير الوكالة أثناء التصفح أم الخروج نهائياً؟'}
           </p>
         </div>
 
@@ -68,7 +68,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             className="min-h-[44px] rounded-2xl bg-gradient-to-r from-[#22E568] to-[#0FA958] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-[0_6px_18px_rgba(16,185,129,0.45)] cursor-pointer active:scale-95 transition"
           >
             <Minimize2 className="w-4 h-4" />
-            <span>احتفظ</span>
+            <span>تصغير</span>
           </button>
           <button
             type="button"

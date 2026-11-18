@@ -46,6 +46,7 @@ import { DragonCinemaOverlay } from '../components/DragonCinemaOverlay';
 import { DragonStageBackdrop } from '../components/DragonStageBackdrop';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { LuckyWheelModal } from '../components/LuckyWheelModal';
+import { RoomContestModal } from '../components/RoomContestModal';
 import { RoomExitModal } from '../components/RoomExitModal';
 import { RoomGamesModal } from '../components/RoomGamesModal';
 import { RoomGiftDrawer } from '../components/RoomGiftDrawer';
@@ -120,6 +121,11 @@ export const RoomPage: React.FC = () => {
     toggleMusicPlayPause,
     stopRoomMusic,
     addPlayVolume,
+    startContest,
+    joinContest,
+    voteContest,
+    finishContest,
+    clearContest,
     giftTargetRequest,
     clearGiftTargetRequest,
   } = useActiveRoom();
@@ -145,6 +151,7 @@ export const RoomPage: React.FC = () => {
   );
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [showMusicModal, setShowMusicModal] = useState(false);
+  const [showContestModal, setShowContestModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [seatActionTarget, setSeatActionTarget] = useState<RoomSeat | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -412,7 +419,6 @@ export const RoomPage: React.FC = () => {
   const handleKeepMinimized = () => {
     setShowExitModal(false);
     isMinimizedRef.current = true;
-    window.history.pushState({ inRoom: true }, '');
     minimizeRoom();
     navigate('/');
   };
@@ -491,6 +497,7 @@ export const RoomPage: React.FC = () => {
     );
   }
 
+  const isAgencyOwner = Boolean(room && user && user.id === room.hostId);
   const roomNumericId = formatShortNumericId(room.id).slice(0, 6);
   const comboProgress = Math.max(0, Math.min(1, comboRemainingMs / COMBO_DURATION_MS));
   const comboCircleRadius = 31;
@@ -697,7 +704,7 @@ export const RoomPage: React.FC = () => {
               onClick={() => setShowExitModal(true)}
               className="w-7 h-7 rounded-full bg-black/35 hover:bg-black/60 border border-white/15 text-slate-200 flex items-center justify-center cursor-pointer"
               aria-label="تصغير أو خروج"
-              title="احتفظ أو خروج"
+              title="تصغير أو خروج"
             >
               <Minimize2 className="w-3.5 h-3.5" />
             </button>
@@ -725,7 +732,7 @@ export const RoomPage: React.FC = () => {
               className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-rose-700/80 to-amber-700/80 border border-amber-300/50 px-2 py-1 text-[10px] font-extrabold text-white cursor-pointer"
             >
               <Sparkles className="w-3 h-3 text-amber-200" />
-              <span>دولاب</span>
+              <span>دولاب حظ</span>
             </button>
 
             {/* One-tap Mute Room Audio Toggle */}
@@ -771,26 +778,61 @@ export const RoomPage: React.FC = () => {
                 }`}
               />
               <span className="truncate">
-                {musicState ? musicState.trackName : 'موسيقى الجهاز'}
+                {musicState ? musicState.trackName : 'موسيقى'}
               </span>
             </button>
 
-            {isOwnerOrAdmin && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSettingsInitialTab('logs');
-                  setShowSettingsModal(true);
-                }}
-                className="inline-flex items-center gap-1 rounded-xl bg-amber-500/20 border border-[#F3D37A]/55 px-2.5 py-1 text-[10px] font-extrabold text-[#FCE9A6] hover:bg-amber-500/30 cursor-pointer"
-                title="سجل حركة المشرفين (خاص بالوكيل)"
-              >
-                <ClipboardList className="w-3 h-3" />
-                <span>سجل المشرفين</span>
-              </button>
+            {isAgencyOwner && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowContestModal(true)}
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-emerald-600/85 to-teal-700/85 border border-emerald-300/60 px-2.5 py-1 text-[10px] font-extrabold text-white hover:brightness-110 cursor-pointer"
+                  title="إطلاق أو إدارة مسابقة داخل الوكالة (خاص بالوكيل)"
+                >
+                  <Trophy className="w-3 h-3 text-[#FCE9A6]" />
+                  <span>مسابقة</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsInitialTab('logs');
+                    setShowSettingsModal(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-xl bg-amber-500/20 border border-[#F3D37A]/55 px-2.5 py-1 text-[10px] font-extrabold text-[#FCE9A6] hover:bg-amber-500/30 cursor-pointer"
+                  title="سجل حركة المشرفين (خاص بالوكيل)"
+                >
+                  <ClipboardList className="w-3 h-3" />
+                  <span>سجل المشرفين</span>
+                </button>
+              </>
             )}
           </div>
         </div>
+
+        {/* LIVE CONTEST BANNER FOR ALL ROOM MEMBERS */}
+        {extras.activeContest && (
+          <button
+            type="button"
+            onClick={() => setShowContestModal(true)}
+            className="mb-1.5 w-full rounded-2xl border border-[#FCE9A6]/70 bg-gradient-to-r from-[#2E2107]/95 via-[#181209]/95 to-[#0B2E22]/95 px-3 py-1.5 flex items-center justify-between gap-2 shadow-[0_0_20px_rgba(212,175,55,0.35)] shrink-0 cursor-pointer hover:brightness-110 transition"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Trophy className="w-4 h-4 text-[#FCE9A6] shrink-0" />
+              <p className="text-[11px] font-extrabold text-white truncate">
+                {extras.activeContest.status === 'active'
+                  ? `مسابقة جارية: ${extras.activeContest.title}`
+                  : `الفائز: ${extras.activeContest.winnerName || extras.activeContest.title}`}
+              </p>
+            </div>
+            <span className="rounded-full bg-[#FCE9A6]/20 border border-[#FCE9A6]/50 px-2 py-0.5 text-[10px] font-mono-num font-extrabold text-[#FCE9A6] shrink-0">
+              {extras.activeContest.status === 'active'
+                ? `${extras.activeContest.entries.length} مشارك · شارك/صوّت`
+                : 'عرض النتيجة'}
+            </span>
+          </button>
+        )}
 
         {/* TOAST / ERROR FEEDBACK & CELEBRATION BANNERS */}
         <AnimatePresence>
@@ -1905,12 +1947,28 @@ export const RoomPage: React.FC = () => {
           extras={extras}
           presenceMembers={presenceMembers}
           isOwnerOrAdmin={isOwnerOrAdmin}
+          isAgencyOwner={isAgencyOwner}
           initialTab={settingsInitialTab}
           ownedBackgrounds={ownedBackgrounds}
           isAdmin={Boolean(user?.is_admin)}
           onUpdateSettings={updateSettings}
           onAdminAction={runAdminAction}
           onClose={() => setShowSettingsModal(false)}
+        />
+      )}
+
+      {/* LIVE IN-ROOM CONTEST MODAL */}
+      {showContestModal && (
+        <RoomContestModal
+          contest={extras.activeContest || null}
+          isAgencyOwner={isAgencyOwner}
+          currentUserId={user?.id}
+          onStartContest={startContest}
+          onJoinContest={joinContest}
+          onVoteContest={voteContest}
+          onFinishContest={finishContest}
+          onClearContest={clearContest}
+          onClose={() => setShowContestModal(false)}
         />
       )}
 

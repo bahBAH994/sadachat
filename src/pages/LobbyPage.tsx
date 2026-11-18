@@ -12,6 +12,7 @@ import {
   Mic,
   Mic2,
   Plus,
+  Radio,
   Search,
   Sparkles,
   Store,
@@ -35,10 +36,11 @@ import {
 import {
   getDiscoveryDirectoryFromSupabase,
   getFollowStatus,
+  getPmOverviewFromSupabase,
   toggleFollowUserInSupabase,
 } from '../lib/sadaSocialService';
 import { supabase } from '../lib/supabase';
-import type { Room, User } from '../types';
+import type { PrivateConversation, Room, RoomExtrasConfig, User } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge, FemaleVoiceVerificationCard } from '../components/FemaleVoiceVerificationCard';
 
@@ -128,6 +130,9 @@ export const LobbyPage: React.FC = () => {
   const [userMeta, setUserMeta] = useState<Record<string, { age?: number; country?: string }>>({});
   const [followedAgencyRoomIds, setFollowedAgencyRoomIds] = useState<string[]>([]);
   const [agencyOwnerMap, setAgencyOwnerMap] = useState<Record<string, string>>({});
+  const [roomConfigs, setRoomConfigs] = useState<Record<string, RoomExtrasConfig>>({});
+  const [pmConversations, setPmConversations] = useState<PrivateConversation[]>([]);
+  const [loadingPm, setLoadingPm] = useState(false);
   const [seatedUserIds, setSeatedUserIds] = useState<string[]>([]);
   const [togglingFollowId, setTogglingFollowId] = useState<string | null>(null);
 
@@ -186,6 +191,7 @@ export const LobbyPage: React.FC = () => {
       } else {
         setFollowedAgencyRoomIds([]);
       }
+      setRoomConfigs(platState?.settings?.roomConfigs || {});
       const ownerLookup: Record<string, string> = {};
       for (const ag of agenciesRes.data || []) {
         ownerLookup[String(ag.id)] = String(ag.owner_id);
@@ -196,9 +202,23 @@ export const LobbyPage: React.FC = () => {
     }
   }, [user?.id]);
 
+  const loadPrivateConversations = useCallback(async () => {
+    if (!user) return;
+    setLoadingPm(true);
+    try {
+      const ov = await getPmOverviewFromSupabase(user);
+      setPmConversations(ov.conversations);
+    } catch {
+      // ignore transient error
+    } finally {
+      setLoadingPm(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     void loadRooms();
     void loadDirectory();
+    void loadPrivateConversations();
     const dbChannel = supabase
       .channel('sada-lobby-rooms')
       .on(
@@ -213,6 +233,13 @@ export const LobbyPage: React.FC = () => {
         { event: '*', schema: 'public', table: 'sada_platform_state' },
         () => {
           void loadDirectory();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_private_messages' },
+        () => {
+          void loadPrivateConversations();
         }
       )
       .subscribe();
@@ -244,7 +271,7 @@ export const LobbyPage: React.FC = () => {
       void supabase.removeChannel(dbChannel);
       void supabase.removeChannel(presenceChannel);
     };
-  }, [loadRooms, loadDirectory]);
+  }, [loadRooms, loadDirectory, loadPrivateConversations]);
 
   const targetGender: 'male' | 'female' = user?.gender === 'female' ? 'male' : 'female';
   const onlineDiscoveryUsers = useMemo(() => {
@@ -307,9 +334,6 @@ export const LobbyPage: React.FC = () => {
   const filteredRooms = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = rooms.filter((r) => {
-      if (activeChip === 'محادثة' && r.category !== 'حوار' && r.category !== 'شعر وأدب') {
-        return false;
-      }
       if (
         selectedCountry.code !== 'AR' &&
         !`${r.title} ${r.description}`.includes(selectedCountry.label)
@@ -326,15 +350,36 @@ export const LobbyPage: React.FC = () => {
       return true;
     });
 
-    if (activeChip === 'أكثر شعبية' || activeChip === 'لايف') {
-      return [...list].sort(
-        (a, b) => getRoomLiveInfo(b).liveCount - getRoomLiveInfo(a).liveCount
-      );
+    if (activeChip === 'أكثر شعبية') {
+      const engagementScore = (r: Room) => {
+        const live = getRoomLiveInfo(r).liveCount;
+        const support = Math.max(
+          r.totalGiftsCoins || 0,
+          roomConfigs[r.id]?.playVolumeCoins || 0
+        );
+        return live * 1_000_000 + support + (r.listenersCount || 0) * 10;
+      };
+      return [...list].sort((a, b) => {
+        const diff = engagementScore(b) - engagementScore(a);
+        if (diff !== 0) return diff;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
     }
     return [...list].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [rooms, activeChip, search, selectedCountry, getRoomLiveInfo]);
+  }, [rooms, activeChip, search, selectedCountry, getRoomLiveInfo, roomConfigs]);
+
+  const filteredPmConversations = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return pmConversations;
+    return pmConversations.filter(
+      (c) =>
+        c.peer.displayName.toLowerCase().includes(q) ||
+        formatShortNumericId(c.peer.id).includes(q) ||
+        (c.lastMessage?.text || '').toLowerCase().includes(q)
+    );
+  }, [pmConversations, search]);
 
   const handleGoToAgencyChat = () => {
     if (!user) return;
@@ -746,9 +791,103 @@ export const LobbyPage: React.FC = () => {
           </div>
         </section>
 
-        {/* Agencies Rooms List with Real Live Supabase Realtime Presence */}
+        {/* Agencies / Live / Private Chats Content */}
         <section className="space-y-2.5">
-          {loading ? (
+          {activeChip === 'لايف' ? (
+            <div className="light-card rounded-3xl p-10 text-center space-y-3">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-rose-500/15 to-amber-500/15 border border-rose-200 flex items-center justify-center text-rose-500">
+                <Radio className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900">
+                قريباً - خدمة البث المباشر قيد التفعيل
+              </h3>
+              <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+                نعمل حالياً على تجهيز تجربة البث المرئي المباشر لتنطلق بأعلى جودة قريباً.
+              </p>
+            </div>
+          ) : activeChip === 'محادثة' ? (
+            loadingPm ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="light-card rounded-2xl h-20 animate-pulse" />
+                ))}
+              </div>
+            ) : filteredPmConversations.length === 0 ? (
+              <div className="light-card rounded-3xl p-8 text-center space-y-3">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+                  <MessageCircle className="w-6 h-6" />
+                </div>
+                <p className="text-sm font-bold text-slate-800">
+                  لا توجد محادثات خاصة جارية حالياً
+                </p>
+                <p className="text-xs text-slate-500">
+                  يمكنك اكتشاف الأعضاء المتصلين ومراسلتهم مباشرة من تبويب لقاء.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/meet')}
+                  className="emerald-btn rounded-xl px-5 py-2 text-xs font-extrabold cursor-pointer"
+                >
+                  استكشاف الأشخاص الآن
+                </button>
+              </div>
+            ) : (
+              filteredPmConversations.map((conv) => {
+                const isOnline =
+                  onlineUserIds.includes(conv.peer.id) ||
+                  (conv.peer.lastSeen
+                    ? Date.now() - new Date(conv.peer.lastSeen).getTime() <= 5 * 60 * 1000
+                    : false);
+                const lastTime = conv.lastMessage?.createdAt
+                  ? new Date(conv.lastMessage.createdAt).toLocaleTimeString('ar-EG', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '';
+
+                return (
+                  <article
+                    key={conv.id}
+                    onClick={() => navigate(`/messages?to=${encodeURIComponent(conv.peer.id)}`)}
+                    className="light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer"
+                  >
+                    <div className="relative shrink-0">
+                      <AvatarWithFrame
+                        src={conv.peer.avatarUrl}
+                        alt={conv.peer.displayName}
+                        frameId={conv.peer.frameId}
+                        size="md"
+                      />
+                      {isOnline && (
+                        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <h3 className="text-sm font-extrabold text-slate-900 truncate">
+                            {conv.peer.displayName}
+                          </h3>
+                          {conv.peer.femaleVerifiedBadge && (
+                            <FemaleVerifiedBadge badge={conv.peer.femaleVerifiedBadge} />
+                          )}
+                        </div>
+                        {lastTime && (
+                          <span className="text-[10px] font-mono-num text-slate-400 shrink-0">
+                            {lastTime}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 truncate">
+                        {conv.lastMessage?.text || 'ابدأ المحادثة الخاصة الآن...'}
+                      </p>
+                    </div>
+                  </article>
+                );
+              })
+            )
+          ) : loading ? (
             <div className="space-y-3">
               {[1, 2, 3, 4].map((n) => (
                 <div key={n} className="light-card rounded-2xl h-28 animate-pulse" />

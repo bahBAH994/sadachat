@@ -26,6 +26,7 @@ interface RoomSettingsModalProps {
   extras: RoomExtrasConfig;
   presenceMembers: RoomPresenceMember[];
   isOwnerOrAdmin: boolean;
+  isAgencyOwner?: boolean;
   initialTab?: 'agency' | 'members' | 'logs';
   ownedBackgrounds?: string[];
   isAdmin?: boolean;
@@ -57,6 +58,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   extras,
   presenceMembers,
   isOwnerOrAdmin,
+  isAgencyOwner = false,
   initialTab = 'agency',
   ownedBackgrounds = [],
   isAdmin = false,
@@ -64,8 +66,9 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   onAdminAction,
   onClose,
 }) => {
+  const canSeeLogs = Boolean(isAgencyOwner);
   const [tab, setTab] = useState<'agency' | 'members' | 'logs'>(
-    initialTab === 'logs' && !isOwnerOrAdmin ? 'agency' : initialTab
+    initialTab === 'logs' && !canSeeLogs ? 'agency' : initialTab
   );
   const [titleInput, setTitleInput] = useState(room.title);
   const [announcement, setAnnouncement] = useState(room.description || '');
@@ -218,7 +221,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
         {/* Tabs */}
         <div
           className={`grid ${
-            isOwnerOrAdmin ? 'grid-cols-3' : 'grid-cols-2'
+            canSeeLogs ? 'grid-cols-3' : 'grid-cols-2'
           } gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/20`}
         >
           <button
@@ -243,7 +246,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           >
             المشرفين والأعضاء ({memberList.length})
           </button>
-          {isOwnerOrAdmin && (
+          {canSeeLogs && (
             <button
               type="button"
               onClick={() => setTab('logs')}
@@ -265,7 +268,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           </div>
         )}
 
-        {tab === 'logs' && isOwnerOrAdmin ? (
+        {tab === 'logs' && canSeeLogs ? (
           <div className="space-y-3">
             <div className="rounded-2xl border border-[#D4AF37]/30 bg-[#070913]/85 p-3 flex items-center justify-between">
               <div className="flex items-center gap-2">

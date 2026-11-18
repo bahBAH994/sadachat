@@ -5,6 +5,7 @@ import type {
   Room,
   RoomEntryEvent,
   RoomExtrasConfig,
+  RoomLiveContest,
   RoomMessage,
   RoomModLogActionType,
   RoomModLogEntry,
@@ -45,6 +46,7 @@ export function createEmptyRoomExtras(): RoomExtrasConfig {
     modLogs: [],
     playVolumeCoins: 0,
     musicState: null,
+    activeContest: null,
   };
 }
 
@@ -67,6 +69,7 @@ export async function getRoomExtrasFromSupabase(roomId: string): Promise<RoomExt
     modLogs: Array.isArray(raw.modLogs) ? raw.modLogs : [],
     playVolumeCoins: Number(raw.playVolumeCoins || 0),
     musicState: raw.musicState || null,
+    activeContest: raw.activeContest || null,
   };
 }
 
@@ -350,6 +353,7 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
     modLogs: Array.isArray(rawExtras?.modLogs) ? rawExtras!.modLogs : [],
     playVolumeCoins: Number(rawExtras?.playVolumeCoins || 0),
     musicState: rawExtras?.musicState || null,
+    activeContest: rawExtras?.activeContest || null,
   };
 
   return {
@@ -1611,4 +1615,212 @@ export async function incrementRoomPlayVolumeInSupabase(
       playVolumeCoins: (cur.playVolumeCoins || 0) + safeAdd,
     };
   });
+}
+
+export async function startRoomContestInSupabase(
+  roomId: string,
+  actor: User,
+  payload: {
+    title: string;
+    mode: RoomLiveContest['mode'];
+    prizeLabel: string;
+  }
+): Promise<RoomExtrasConfig> {
+  const { data: roomRow } = await supabase
+    .from('sada_rooms')
+    .select('host_id, title')
+    .eq('id', roomId)
+    .maybeSingle();
+  if (!roomRow) throw new Error('الغرفة غير موجودة.');
+  if (String(roomRow.host_id) !== actor.id) {
+    throw new Error('إنشاء المسابقات داخل الوكالة مخصص لصاحب الوكالة فقط.');
+  }
+
+  const cleanTitle = (payload.title || '').trim().slice(0, 80);
+  if (cleanTitle.length < 3) {
+    throw new Error('يرجى كتابة عنوان واضح للمسابقة (3 أحرف على الأقل).');
+  }
+
+  const cleanPrize = (payload.prizeLabel || '').trim().slice(0, 60) || 'لقب الفائز الملكي 🏆';
+  const now = new Date().toISOString();
+
+  const contest: RoomLiveContest = {
+    id: genId('contest'),
+    title: cleanTitle,
+    mode: payload.mode,
+    prizeLabel: cleanPrize,
+    hostId: actor.id,
+    hostName: actor.displayName,
+    status: 'active',
+    entries: [],
+    voterIds: [],
+    winnerUserId: null,
+    winnerName: null,
+    createdAt: now,
+    endedAt: null,
+  };
+
+  const nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
+    ...cur,
+    activeContest: contest,
+  }));
+
+  await supabase.from('sada_room_messages').insert({
+    id: genId('msg'),
+    room_id: roomId,
+    user_id: actor.id,
+    display_name: actor.displayName,
+    level: actor.level,
+    is_admin: actor.is_admin,
+    vip_tier: null,
+    host_badge: null,
+    female_verified_badge: null,
+    text: `🏆 أطلق الوكيل ${actor.displayName} مسابقة مباشرة: "${cleanTitle}" · الجائزة: ${cleanPrize}`,
+    type: 'system',
+    timestamp: now,
+  });
+
+  return nextExtras;
+}
+
+export async function joinRoomContestInSupabase(
+  roomId: string,
+  user: User,
+  note?: string
+): Promise<RoomExtrasConfig> {
+  const cleanNote = (note || '').trim().slice(0, 100);
+  return saveRoomExtrasConfig(roomId, (cur) => {
+    const contest = cur.activeContest;
+    if (!contest || contest.status !== 'active') {
+      throw new Error('لا توجد مسابقة نشطة حالياً داخل الوكالة.');
+    }
+    if (contest.entries.some((e) => e.userId === user.id)) {
+      return cur;
+    }
+    const nextContest: RoomLiveContest = {
+      ...contest,
+      entries: [
+        ...contest.entries,
+        {
+          userId: user.id,
+          displayName: user.displayName,
+          avatarUrl: user.avatarUrl,
+          frameId: user.frameId,
+          votes: 0,
+          note: cleanNote || undefined,
+          joinedAt: new Date().toISOString(),
+        },
+      ],
+    };
+    return { ...cur, activeContest: nextContest };
+  });
+}
+
+export async function voteRoomContestInSupabase(
+  roomId: string,
+  voter: User,
+  contestantUserId: string
+): Promise<RoomExtrasConfig> {
+  return saveRoomExtrasConfig(roomId, (cur) => {
+    const contest = cur.activeContest;
+    if (!contest || contest.status !== 'active') {
+      throw new Error('التصويت متاح فقط أثناء المسابقة النشطة.');
+    }
+    if (contest.voterIds.includes(voter.id)) {
+      throw new Error('لقد قمت بالتصويت مسبقاً في هذه المسابقة.');
+    }
+    if (!contest.entries.some((e) => e.userId === contestantUserId)) {
+      throw new Error('المتسابق غير مسجل في هذه المسابقة.');
+    }
+    const nextContest: RoomLiveContest = {
+      ...contest,
+      voterIds: [...contest.voterIds, voter.id],
+      entries: contest.entries.map((e) =>
+        e.userId === contestantUserId ? { ...e, votes: (e.votes || 0) + 1 } : e
+      ),
+    };
+    return { ...cur, activeContest: nextContest };
+  });
+}
+
+export async function finishRoomContestInSupabase(
+  roomId: string,
+  actor: User,
+  winnerUserId?: string
+): Promise<RoomExtrasConfig> {
+  const { data: roomRow } = await supabase
+    .from('sada_rooms')
+    .select('host_id')
+    .eq('id', roomId)
+    .maybeSingle();
+  if (!roomRow) throw new Error('الغرفة غير موجودة.');
+  if (String(roomRow.host_id) !== actor.id) {
+    throw new Error('إنهاء المسابقة مخصص لصاحب الوكالة فقط.');
+  }
+
+  let chosenWinnerName: string | null = null;
+  let contestTitle = '';
+
+  const nextExtras = await saveRoomExtrasConfig(roomId, (cur) => {
+    const contest = cur.activeContest;
+    if (!contest) return cur;
+    contestTitle = contest.title;
+
+    const sortedEntries = [...contest.entries].sort((a, b) => (b.votes || 0) - (a.votes || 0));
+    const winner =
+      (winnerUserId ? contest.entries.find((e) => e.userId === winnerUserId) : null) ||
+      sortedEntries[0] ||
+      null;
+    chosenWinnerName = winner?.displayName || null;
+
+    const nextContest: RoomLiveContest = {
+      ...contest,
+      status: 'ended',
+      winnerUserId: winner?.userId || null,
+      winnerName: winner?.displayName || null,
+      endedAt: new Date().toISOString(),
+    };
+    return { ...cur, activeContest: nextContest };
+  });
+
+  if (contestTitle) {
+    await supabase.from('sada_room_messages').insert({
+      id: genId('msg'),
+      room_id: roomId,
+      user_id: actor.id,
+      display_name: actor.displayName,
+      level: actor.level,
+      is_admin: actor.is_admin,
+      vip_tier: null,
+      host_badge: null,
+      female_verified_badge: null,
+      text: chosenWinnerName
+        ? `🎉 انتهت مسابقة "${contestTitle}" — الفائز المعلن: 🏆 ${chosenWinnerName}!`
+        : `🏁 قام الوكيل ${actor.displayName} بإنهاء مسابقة "${contestTitle}".`,
+      type: 'system',
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  return nextExtras;
+}
+
+export async function clearRoomContestInSupabase(
+  roomId: string,
+  actor: User
+): Promise<RoomExtrasConfig> {
+  const { data: roomRow } = await supabase
+    .from('sada_rooms')
+    .select('host_id')
+    .eq('id', roomId)
+    .maybeSingle();
+  if (!roomRow) throw new Error('الغرفة غير موجودة.');
+  if (String(roomRow.host_id) !== actor.id) {
+    throw new Error('إغلاق المسابقة مخصص لصاحب الوكالة فقط.');
+  }
+
+  return saveRoomExtrasConfig(roomId, (cur) => ({
+    ...cur,
+    activeContest: null,
+  }));
 }

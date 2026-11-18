@@ -1,16 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Building2,
   Check,
-  Compass,
-  Gamepad2,
   MessageCircle,
-  Mic2,
   Search,
-  Shuffle,
-  Sparkles,
-  Trophy,
   UserCheck,
   UserPlus,
   Users,
@@ -19,14 +12,13 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { ARAB_COUNTRIES, formatShortNumericId } from '../lib/sadaCatalog';
-import { listActiveRooms } from '../lib/sadaRoomsService';
 import {
   getDiscoveryDirectoryFromSupabase,
   getFollowStatus,
   toggleFollowUserInSupabase,
 } from '../lib/sadaSocialService';
 import { supabase } from '../lib/supabase';
-import type { Room, User } from '../types';
+import type { User } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 
@@ -37,7 +29,6 @@ export const MeetPage: React.FC = () => {
   const { openMiniProfile } = useMiniProfile();
   const navigate = useNavigate();
 
-  const [rooms, setRooms] = useState<Room[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
   const [seatedUserIds, setSeatedUserIds] = useState<string[]>([]);
@@ -49,11 +40,7 @@ export const MeetPage: React.FC = () => {
   const loadDirectory = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [roomsRes, dirRes] = await Promise.all([
-        listActiveRooms().catch(() => []),
-        getDiscoveryDirectoryFromSupabase(user.id),
-      ]);
-      setRooms(roomsRes);
+      const dirRes = await getDiscoveryDirectoryFromSupabase(user.id);
       setAllUsers(dirRes.users);
       setUserFollows(dirRes.userFollows);
       setSeatedUserIds(dirRes.seatedUserIds);
@@ -141,16 +128,6 @@ export const MeetPage: React.FC = () => {
       setUserFollows(nextFollows.userFollows);
     } finally {
       setTogglingFollowId(null);
-    }
-  };
-
-  const handleRandomVoiceMatch = () => {
-    const publicRooms = rooms.filter((r) => !r.hasPassword);
-    if (publicRooms.length > 0) {
-      const picked = publicRooms[Math.floor(Math.random() * publicRooms.length)];
-      navigate(`/room/${picked.id}`);
-    } else {
-      navigate('/');
     }
   };
 
@@ -334,7 +311,7 @@ export const MeetPage: React.FC = () => {
                 لا يوجد حسابات {targetGender === 'female' ? 'بنات' : 'شباب'} متصلة الآن في هذه اللحظة.
               </p>
               <p className="text-[11px] text-slate-500">
-                يمكنك البحث بالاسم أو الـ ID أعلاه أو تجربة اللقاء الصوتي السريع.
+                يمكنك البحث بالاسم أو الـ ID أعلاه للوصول إلى جميع الأعضاء المسجلين.
               </p>
             </div>
           ) : (
@@ -359,111 +336,6 @@ export const MeetPage: React.FC = () => {
             </div>
           )}
         </section>
-
-        {/* Quick Match Hero */}
-        <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#132238] to-[#064E3B] p-5 sm:p-6 text-white shadow-lg relative overflow-hidden">
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-3 py-1 text-[11px] font-bold text-emerald-200">
-                <Compass className="w-3.5 h-3.5" />
-                <span>ساحة اللقاء والاكتشاف الحي</span>
-              </div>
-              <h2 className="text-lg sm:text-xl font-extrabold">
-                لقاء صوتي فوري في الوكالات النشطة
-              </h2>
-              <p className="text-xs text-slate-300">
-                انضم بضغطة واحدة إلى وكالة صوتية عشوائية أو تابع أصدقاءك للدردشة مجاناً.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleRandomVoiceMatch}
-              className="emerald-btn rounded-2xl px-5 py-3 text-sm font-extrabold flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-            >
-              <Shuffle className="w-4 h-4" />
-              <span>لقاء صوتي سريع</span>
-            </button>
-          </div>
-        </section>
-
-        {/* Quick Destination Cards */}
-        <section className="grid grid-cols-3 gap-2.5">
-          <button
-            type="button"
-            onClick={() => navigate('/games')}
-            className="light-card light-card-hover rounded-2xl p-3.5 text-center space-y-1.5 cursor-pointer"
-          >
-            <div className="w-10 h-10 mx-auto rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
-              <Gamepad2 className="w-5 h-5" />
-            </div>
-            <span className="block text-xs font-extrabold text-slate-900">مركز الألعاب</span>
-            <span className="block text-[10px] text-slate-500">سلوتس، نرد، روليت</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/competitions')}
-            className="light-card light-card-hover rounded-2xl p-3.5 text-center space-y-1.5 cursor-pointer"
-          >
-            <div className="w-10 h-10 mx-auto rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
-              <Trophy className="w-5 h-5" />
-            </div>
-            <span className="block text-xs font-extrabold text-slate-900">المسابقات</span>
-            <span className="block text-[10px] text-slate-500">بطولات ودولاب الحظ</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/agency')}
-            className="light-card light-card-hover rounded-2xl p-3.5 text-center space-y-1.5 cursor-pointer"
-          >
-            <div className="w-10 h-10 mx-auto rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-600">
-              <Building2 className="w-5 h-5" />
-            </div>
-            <span className="block text-xs font-extrabold text-slate-900">الوكالات</span>
-            <span className="block text-[10px] text-slate-500">مضيفون ووكلاء</span>
-          </button>
-        </section>
-
-        {/* Active Agencies Quick Join */}
-        {rooms.length > 0 && (
-          <section className="space-y-2.5">
-            <h2 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>وكالات صوتية نشطة الآن</span>
-            </h2>
-            <div className="space-y-2">
-              {rooms.slice(0, 4).map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => navigate(`/room/${r.id}`)}
-                  className="w-full light-card light-card-hover rounded-2xl p-3 flex items-center justify-between gap-3 text-right cursor-pointer"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <AvatarWithFrame
-                      src={r.hostAvatar}
-                      alt={r.hostName}
-                      frameId="frame_crescent"
-                      size="sm"
-                    />
-                    <div className="min-w-0">
-                      <p className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
-                        {r.title}
-                      </p>
-                      <p className="text-[11px] text-slate-500 truncate">{r.hostName}</p>
-                    </div>
-                  </div>
-                  <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-[11px] font-extrabold text-emerald-700 flex items-center gap-1 shrink-0">
-                    <Mic2 className="w-3 h-3" />
-                    دخول
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
       </div>
     </div>
   );

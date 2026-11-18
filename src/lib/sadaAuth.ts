@@ -4,6 +4,7 @@ import {
   SUPER_ADMIN_EMAIL,
 } from './sadaCatalog';
 import {
+  ensureGlobalZeroResetInSupabase,
   getPlatformState,
   purgeExpiredRewardsOnUser,
   rowToUser,
@@ -347,6 +348,8 @@ export async function loginOrRegisterWithSupabase(payload: {
     throw new Error(translateAuthError(signInErr?.message || ''));
   }
 
+  await ensureGlobalZeroResetInSupabase();
+
   const { data: byEmail } = await supabase
     .from('sada_users')
     .select('*')
@@ -420,6 +423,8 @@ export async function fetchCurrentUserFromSupabaseSession(
 
   const cleanEmail = authUser.email.toLowerCase();
   const isSuperAdmin = cleanEmail === SUPER_ADMIN_EMAIL;
+
+  await ensureGlobalZeroResetInSupabase();
 
   const { data: row } = await supabase
     .from('sada_users')
