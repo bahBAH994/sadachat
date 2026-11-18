@@ -74,7 +74,9 @@ export const LobbyPage: React.FC = () => {
   const lastBackPressRef = useRef<number>(0);
   const exitToastTimerRef = useRef<number | null>(null);
   const isFullScreenRoomRef = useRef<boolean>(false);
+  const activeRoomIdRef = useRef<string | null>(activeRoomId);
   isFullScreenRoomRef.current = Boolean(activeRoomId && !isMinimized);
+  activeRoomIdRef.current = activeRoomId;
 
   useEffect(() => {
     if (activeRoomId && !isMinimized) return;
@@ -245,31 +247,64 @@ export const LobbyPage: React.FC = () => {
       .subscribe();
 
     // Real-time live user presence inside agency rooms
-    const presenceChannel = supabase.channel('sada-agencies-presence');
+    const presenceChannelRef: {
+      current: ReturnType<typeof supabase.channel> | null;
+    } = { current: null };
+
+    try {
+      presenceChannelRef.current = supabase.channel('sada-agencies-presence');
+    } catch {
+      presenceChannelRef.current = null;
+    }
+
     const syncPresence = () => {
-      const state = presenceChannel.presenceState<PresenceUser>();
-      const grouped: Record<string, PresenceUser[]> = {};
-      Object.values(state).forEach((entries) => {
-        entries.forEach((entry) => {
-          if (!entry.roomId || !entry.userId) return;
-          if (!grouped[entry.roomId]) grouped[entry.roomId] = [];
-          if (!grouped[entry.roomId].some((x) => x.userId === entry.userId)) {
-            grouped[entry.roomId].push(entry);
-          }
+      if (!presenceChannelRef.current) return;
+      try {
+        const state = presenceChannelRef.current.presenceState<PresenceUser>();
+        const grouped: Record<string, PresenceUser[]> = {};
+        Object.values(state || {}).forEach((entries) => {
+          (entries || []).forEach((entry) => {
+            if (!entry?.roomId || !entry?.userId) return;
+            if (!grouped[entry.roomId]) grouped[entry.roomId] = [];
+            if (!grouped[entry.roomId].some((x) => x.userId === entry.userId)) {
+              grouped[entry.roomId].push(entry);
+            }
+          });
         });
-      });
-      setPresenceByRoom(grouped);
+        setPresenceByRoom(grouped);
+      } catch {
+        // ignore transient presence errors
+      }
     };
 
-    presenceChannel
-      .on('presence', { event: 'sync' }, syncPresence)
-      .on('presence', { event: 'join' }, syncPresence)
-      .on('presence', { event: 'leave' }, syncPresence)
-      .subscribe();
+    if (presenceChannelRef.current) {
+      try {
+        presenceChannelRef.current
+          .on('presence', { event: 'sync' }, syncPresence)
+          .on('presence', { event: 'join' }, syncPresence)
+          .on('presence', { event: 'leave' }, syncPresence)
+          .subscribe();
+      } catch {
+        // ignore presence subscribe errors
+      }
+    }
 
     return () => {
-      void supabase.removeChannel(dbChannel);
-      void supabase.removeChannel(presenceChannel);
+      try {
+        if (dbChannel) {
+          void supabase.removeChannel(dbChannel);
+        }
+      } catch {
+        // ignore
+      }
+      if (presenceChannelRef.current && !activeRoomIdRef.current) {
+        try {
+          void supabase.removeChannel(presenceChannelRef.current);
+        } catch {
+          // ignore
+        }
+      }
+      presenceChannelRef.current = null;
     };
   }, [loadRooms, loadDirectory, loadPrivateConversations]);
 

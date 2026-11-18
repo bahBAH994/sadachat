@@ -541,40 +541,57 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         roomChannelRef.current = sbRoomChannel;
 
         // Shared presence channel for Lobby & Room member count
-        const lobbyPresenceChannel = supabase.channel('sada-agencies-presence', {
-          config: { presence: { key: `${roomId}_${user.id}` } },
-        });
-        const syncRoomPresence = () => {
-          const state = lobbyPresenceChannel.presenceState<RoomPresenceMember>();
-          const membersInRoom: RoomPresenceMember[] = [];
-          Object.values(state).forEach((entries) => {
-            entries.forEach((entry) => {
-              if (entry.roomId === roomId && entry.userId) {
-                if (!membersInRoom.some((m) => m.userId === entry.userId)) {
-                  membersInRoom.push(entry);
-                }
-              }
-            });
+        try {
+          const lobbyPresenceChannel = supabase.channel('sada-agencies-presence', {
+            config: { presence: { key: `${roomId}_${user.id}` } },
           });
-          setPresenceMembers(membersInRoom);
-        };
-        lobbyPresenceChannel
-          .on('presence', { event: 'sync' }, syncRoomPresence)
-          .on('presence', { event: 'join' }, syncRoomPresence)
-          .on('presence', { event: 'leave' }, syncRoomPresence)
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              void lobbyPresenceChannel.track({
-                roomId,
-                userId: user.id,
-                displayName: user.displayName,
-                avatarUrl: user.avatarUrl,
-                frameId: user.frameId,
-                level: user.level,
+          presenceChannelRef.current = lobbyPresenceChannel;
+
+          const syncRoomPresence = () => {
+            if (!presenceChannelRef.current) return;
+            try {
+              const state = presenceChannelRef.current.presenceState<RoomPresenceMember>();
+              const membersInRoom: RoomPresenceMember[] = [];
+              Object.values(state || {}).forEach((entries) => {
+                (entries || []).forEach((entry) => {
+                  if (entry?.roomId === roomId && entry?.userId) {
+                    if (!membersInRoom.some((m) => m.userId === entry.userId)) {
+                      membersInRoom.push(entry);
+                    }
+                  }
+                });
               });
+              setPresenceMembers(membersInRoom);
+            } catch {
+              // ignore transient presence errors
             }
-          });
-        presenceChannelRef.current = lobbyPresenceChannel;
+          };
+
+          if (presenceChannelRef.current) {
+            presenceChannelRef.current
+              .on('presence', { event: 'sync' }, syncRoomPresence)
+              .on('presence', { event: 'join' }, syncRoomPresence)
+              .on('presence', { event: 'leave' }, syncRoomPresence)
+              .subscribe((status) => {
+                if (status === 'SUBSCRIBED' && presenceChannelRef.current) {
+                  try {
+                    void presenceChannelRef.current.track({
+                      roomId,
+                      userId: user.id,
+                      displayName: user.displayName,
+                      avatarUrl: user.avatarUrl,
+                      frameId: user.frameId,
+                      level: user.level,
+                    });
+                  } catch {
+                    // ignore presence track errors
+                  }
+                }
+              });
+          }
+        } catch {
+          presenceChannelRef.current = null;
+        }
 
         // Join room & emit entry banner
         const joinRes = await joinRoomInSupabase(roomId, user);
@@ -584,11 +601,17 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (joinRes.entryEvent) {
           setEntryBanner(joinRes.entryEvent);
           setTimeout(() => setEntryBanner(null), 5500);
-          void sbRoomChannel.send({
-            type: 'broadcast',
-            event: 'room:entry',
-            payload: joinRes.entryEvent,
-          });
+          if (roomChannelRef.current) {
+            try {
+              void roomChannelRef.current.send({
+                type: 'broadcast',
+                event: 'room:entry',
+                payload: joinRes.entryEvent,
+              });
+            } catch {
+              // ignore broadcast errors
+            }
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'تعذّر دخول الغرفة.');

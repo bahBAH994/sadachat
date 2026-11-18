@@ -105,7 +105,7 @@ class AppErrorBoundary extends Component<
                   // ignore sw cleanup errors
                 }
                 this.setState({ hasError: false, error: null });
-                window.location.assign('/');
+                window.location.href = '/';
               }}
               className="emerald-btn w-full min-h-[42px] rounded-2xl text-sm font-extrabold cursor-pointer"
             >

@@ -97,35 +97,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    const onlineChannel = supabase.channel('sada-global-online', {
-      config: { presence: { key: user.id } },
-    });
+    const onlineChannelRef: {
+      current: ReturnType<typeof supabase.channel> | null;
+    } = { current: null };
+
+    try {
+      onlineChannelRef.current = supabase.channel('sada-global-online', {
+        config: { presence: { key: user.id } },
+      });
+    } catch {
+      onlineChannelRef.current = null;
+    }
 
     const syncOnline = () => {
-      const state = onlineChannel.presenceState<{ userId?: string }>();
-      const ids = new Set<string>();
-      Object.entries(state).forEach(([key, entries]) => {
-        if (key) ids.add(key);
-        entries.forEach((entry) => {
-          if (entry?.userId) ids.add(String(entry.userId));
+      if (!onlineChannelRef.current) return;
+      try {
+        const state = onlineChannelRef.current.presenceState<{ userId?: string }>();
+        const ids = new Set<string>();
+        Object.entries(state || {}).forEach(([key, entries]) => {
+          if (key) ids.add(key);
+          (entries || []).forEach((entry) => {
+            if (entry?.userId) ids.add(String(entry.userId));
+          });
         });
-      });
-      setOnlineUserIds(Array.from(ids));
+        setOnlineUserIds(Array.from(ids));
+      } catch {
+        // ignore transient presence errors
+      }
     };
 
-    onlineChannel
-      .on('presence', { event: 'sync' }, syncOnline)
-      .on('presence', { event: 'join' }, syncOnline)
-      .on('presence', { event: 'leave' }, syncOnline)
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          void onlineChannel.track({
-            userId: user.id,
-            gender: user.gender || 'male',
-            onlineAt: Date.now(),
+    if (onlineChannelRef.current) {
+      try {
+        onlineChannelRef.current
+          .on('presence', { event: 'sync' }, syncOnline)
+          .on('presence', { event: 'join' }, syncOnline)
+          .on('presence', { event: 'leave' }, syncOnline)
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED' && onlineChannelRef.current) {
+              try {
+                void onlineChannelRef.current.track({
+                  userId: user.id,
+                  gender: user.gender || 'male',
+                  onlineAt: Date.now(),
+                });
+              } catch {
+                // ignore track errors
+              }
+            }
           });
-        }
-      });
+      } catch {
+        // ignore subscribe errors
+      }
+    }
 
     const updateHeartbeat = () => {
       void supabase
@@ -138,8 +161,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       window.clearInterval(hbInterval);
-      void onlineChannel.untrack().catch(() => {});
-      void supabase.removeChannel(onlineChannel);
+      if (onlineChannelRef.current) {
+        const ch = onlineChannelRef.current;
+        onlineChannelRef.current = null;
+        try {
+          void ch.untrack().catch(() => {});
+        } catch {
+          // ignore
+        }
+        try {
+          void supabase.removeChannel(ch);
+        } catch {
+          // ignore
+        }
+      }
     };
   }, [user?.id, user?.gender]);
 
