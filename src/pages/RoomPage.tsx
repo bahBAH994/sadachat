@@ -495,37 +495,8 @@ export const RoomPage: React.FC<RoomPageProps> = ({
     };
   };
 
-  if (loading && !room) {
-    if (isMinimized) return null;
-    return (
-      <div className="min-h-[100dvh] bg-[#0A0805] flex items-center justify-center p-6 text-center">
-        <div className="royal-glass rounded-3xl px-7 py-5 text-sm font-extrabold text-[#FCE9A6]">
-          جارٍ دخول الوكالة الملكية...
-        </div>
-      </div>
-    );
-  }
-
-  if (!room) {
-    if (isMinimized) return null;
-    return (
-      <div className="min-h-[100dvh] bg-[#0A0805] flex flex-col items-center justify-center p-6 text-center space-y-4">
-        <p className="text-rose-400 font-bold text-sm">
-          {error || 'تعذّر فتح الوكالة الصوتية.'}
-        </p>
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="gold-btn rounded-2xl px-6 py-2.5 text-sm cursor-pointer"
-        >
-          العودة إلى الوكالات
-        </button>
-      </div>
-    );
-  }
-
   const isAgencyOwner = Boolean(room && user && user.id === room.hostId);
-  const roomNumericId = formatShortNumericId(room.id).slice(0, 6);
+  const roomNumericId = room?.id ? formatShortNumericId(room.id).slice(0, 6) : '000000';
   const comboProgress = Math.max(0, Math.min(1, comboRemainingMs / COMBO_DURATION_MS));
   const comboCircleRadius = 31;
   const comboCircumference = 2 * Math.PI * comboCircleRadius;
@@ -535,13 +506,36 @@ export const RoomPage: React.FC<RoomPageProps> = ({
       className={
         isMinimized
           ? 'hidden pointer-events-none'
-          : `relative min-h-[100dvh] h-[100dvh] w-full flex flex-col overflow-hidden text-white ${
+          : `fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#0A0805] text-white ${
               fullscreenGift ? 'animate-dragon-shake' : ''
             }`
       }
     >
-      {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
-      <DragonStageBackdrop coverImage={room.coverImage} />
+      {!room ? (
+        loading ? (
+          <div className="flex-1 flex items-center justify-center p-6 text-center">
+            <div className="royal-glass rounded-3xl px-7 py-5 text-sm font-extrabold text-[#FCE9A6]">
+              جارٍ دخول الوكالة الملكية...
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
+            <p className="text-rose-400 font-bold text-sm">
+              {error || 'تعذّر فتح الوكالة الصوتية.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="gold-btn rounded-2xl px-6 py-2.5 text-sm cursor-pointer"
+            >
+              العودة إلى الوكالات
+            </button>
+          </div>
+        )
+      ) : (
+        <>
+          {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
+          <DragonStageBackdrop coverImage={room.coverImage} />
 
       <div className="relative z-10 flex-1 flex flex-col max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2 min-h-0">
         {/* 1. ROOM TOP BAR */}
@@ -2022,21 +2016,23 @@ export const RoomPage: React.FC<RoomPageProps> = ({
         />
       )}
 
-      {/* EXIT / KEEP MINIMIZED MODAL (Portaled at z-[999999] with pointer-events-auto) */}
-      {exitModalOpen && (
-        <RoomExitModal
-          roomTitle={room.title}
-          roomAvatar={room.hostAvatar}
-          isOnMic={Boolean(mySeat)}
-          onMinimizeRoom={handleKeepMinimized}
-          onLeaveRoom={handleConfirmLeave}
-          onCancel={() => {
-            setExitModalOpen(false);
-            if (!window.history.state?.inRoom) {
-              window.history.pushState({ inRoom: true }, '');
-            }
-          }}
-        />
+          {/* EXIT / KEEP MINIMIZED MODAL (Portaled at z-[999999] with pointer-events-auto) */}
+          {exitModalOpen && (
+            <RoomExitModal
+              roomTitle={room?.title || 'الوكالة'}
+              roomAvatar={room?.hostAvatar || ''}
+              isOnMic={Boolean(mySeat)}
+              onMinimizeRoom={handleKeepMinimized}
+              onLeaveRoom={handleConfirmLeave}
+              onCancel={() => {
+                setExitModalOpen(false);
+                if (!window.history.state?.inRoom) {
+                  window.history.pushState({ inRoom: true }, '');
+                }
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   );

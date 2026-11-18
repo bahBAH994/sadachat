@@ -1,14 +1,17 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'motion/react';
 import { Mic, MicOff, Music2, X } from 'lucide-react';
 import { useActiveRoom } from '../context/ActiveRoomContext';
 import { resolveAsset } from '../lib/assets';
 
 export const FloatingMinimizedRoom: React.FC = () => {
   const navigate = useNavigate();
+  const dragStartRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const wasDraggedRef = useRef(false);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+
   const {
+    activeRoomId,
     room,
     isMinimized,
     mySeat,
@@ -18,9 +21,15 @@ export const FloatingMinimizedRoom: React.FC = () => {
     handleToggleMute,
   } = useActiveRoom();
 
-  if (!room || !isMinimized) return null;
+  const targetRoomId = room?.id || activeRoomId || '';
+  if (!isMinimized || !targetRoomId) return null;
 
-  const isSomeoneSpeaking = room.seats.some((s) => s.userId && s.isSpeaking && !s.isMuted);
+  const safeTitle = room?.title || 'الوكالة';
+  const safeAvatar = resolveAsset(room?.hostAvatar || room?.coverImage || null);
+  const safeSeats = Array.isArray(room?.seats) ? room.seats : [];
+  const isSomeoneSpeaking = safeSeats.some(
+    (s) => Boolean(s?.userId && s?.isSpeaking && !s?.isMuted)
+  );
   const isMusicPlaying = Boolean(musicState?.isPlaying);
 
   const handleOpenRoom = () => {
@@ -29,25 +38,49 @@ export const FloatingMinimizedRoom: React.FC = () => {
       return;
     }
     restoreRoom();
-    navigate(`/room/${room.id}`);
+    if (targetRoomId) {
+      navigate(`/room/${targetRoomId}`);
+    }
   };
 
   return (
-    <motion.div
-      drag
-      dragMomentum={false}
-      dragElastic={0.12}
-      onDragStart={() => {
-        wasDraggedRef.current = true;
+    <div
+      onPointerDown={(e) => {
+        dragStartRef.current = {
+          x: e.clientX,
+          y: e.clientY,
+          ox: offset.x,
+          oy: offset.y,
+        };
+        wasDraggedRef.current = false;
       }}
-      onDragEnd={() => {
-        window.setTimeout(() => {
-          wasDraggedRef.current = false;
-        }, 180);
+      onPointerMove={(e) => {
+        if (!dragStartRef.current) return;
+        const dx = e.clientX - dragStartRef.current.x;
+        const dy = e.clientY - dragStartRef.current.y;
+        if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+          wasDraggedRef.current = true;
+          setOffset({
+            x: dragStartRef.current.ox + dx,
+            y: dragStartRef.current.oy + dy,
+          });
+        }
       }}
-      initial={{ scale: 0.7, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      className="fixed bottom-24 left-4 z-[60] flex flex-col items-center select-none touch-none"
+      onPointerUp={() => {
+        dragStartRef.current = null;
+        if (wasDraggedRef.current) {
+          window.setTimeout(() => {
+            wasDraggedRef.current = false;
+          }, 120);
+        }
+      }}
+      onPointerCancel={() => {
+        dragStartRef.current = null;
+      }}
+      style={{
+        transform: `translate3d(${offset.x}px, ${offset.y}px, 0)`,
+      }}
+      className="fixed bottom-24 left-4 z-[60] flex flex-col items-center select-none touch-none pointer-events-auto"
     >
       <div className="relative">
         <span
@@ -63,11 +96,11 @@ export const FloatingMinimizedRoom: React.FC = () => {
           type="button"
           onClick={handleOpenRoom}
           className="relative w-16 h-16 rounded-full p-0.5 bg-gradient-to-br from-[#FCE9A6] via-[#D4AF37] to-[#78350F] shadow-[0_8px_28px_rgba(212,175,55,0.65)] cursor-pointer active:scale-95 transition-transform"
-          title={`العودة إلى ${room.title}`}
+          title={`العودة إلى ${safeTitle}`}
         >
           <img
-            src={resolveAsset(room.hostAvatar)}
-            alt={room.title}
+            src={safeAvatar}
+            alt={safeTitle}
             referrerPolicy="no-referrer"
             className="w-full h-full rounded-full object-cover animate-spin-slow bg-[#0B0906]"
           />
@@ -130,8 +163,8 @@ export const FloatingMinimizedRoom: React.FC = () => {
         onClick={handleOpenRoom}
         className="mt-1.5 px-2.5 py-0.5 rounded-full bg-[#11100C]/90 border border-[#D4AF37]/50 text-[10px] font-bold text-[#FCE9A6] max-w-[100px] truncate shadow-md cursor-pointer"
       >
-        {room.title}
+        {safeTitle}
       </button>
-    </motion.div>
+    </div>
   );
 };

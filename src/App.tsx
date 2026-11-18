@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { Component, useCallback, useEffect, useRef } from 'react';
 import {
   HashRouter,
   Navigate,
@@ -38,6 +38,52 @@ import { AgencyPage } from './pages/AgencyPage';
 import { GamesCenterPage } from './pages/GamesCenterPage';
 import { AdminPage } from './pages/AdminPage';
 
+class AppErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('SADA Runtime ErrorBoundary caught:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#F5F6FA] flex flex-col items-center justify-center p-6 text-center space-y-4">
+          <div className="light-card rounded-3xl p-6 max-w-sm space-y-3">
+            <h2 className="text-base font-extrabold text-slate-900">
+              حدث خطأ غير متوقع في العرض
+            </h2>
+            <p className="text-xs text-slate-600">
+              اضغط الزر بالأسفل للعودة السريعة إلى الواجهة الرئيسية دون فقدان بياناتك.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false });
+                window.location.hash = '#/';
+              }}
+              className="emerald-btn w-full min-h-[42px] rounded-2xl text-sm font-extrabold cursor-pointer"
+            >
+              العودة للرئيسية
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const RoomRouteBridge: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -60,13 +106,28 @@ const RoomRouteBridge: React.FC = () => {
   return null;
 };
 
-const ProtectedShell: React.FC<{
-  children: React.ReactNode;
-  requireAdmin?: boolean;
-}> = ({ children, requireAdmin = false }) => {
+const LoginRoute: React.FC = () => {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F5F6FA] flex items-center justify-center">
+        <div className="light-card rounded-2xl px-6 py-4 text-sm font-extrabold text-emerald-700">
+          جارٍ التحقق من الجلسة...
+        </div>
+      </div>
+    );
+  }
+  if (user) {
+    return <Navigate to={isSuperAdminUser(user) ? '/admin' : '/'} replace />;
+  }
+  return <LoginPage />;
+};
+
+const AuthenticatedAppShell: React.FC = () => {
   const { user, loading } = useAuth();
   const {
     activeRoomId,
+    room,
     isMinimized: isRoomMinimized,
     setExitModalOpen,
     minimizeRoom,
@@ -123,23 +184,46 @@ const ProtectedShell: React.FC<{
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
+  if (location.pathname === '/login') {
+    return <LoginRoute />;
   }
 
-  if (requireAdmin && !isSuperAdminUser(user)) {
-    return <Navigate to="/" replace />;
+  if (!user) {
+    return <Navigate to="/login" replace />;
   }
 
   const isOnRoomRoute = location.pathname.startsWith('/room/');
   const isFullScreenRoom =
     Boolean(activeRoomId && !isRoomMinimized) || (isOnRoomRoute && !isRoomMinimized);
-  const shouldKeepRoomMounted = Boolean(activeRoomId) || isOnRoomRoute;
+  const shouldKeepRoomMounted = Boolean(activeRoomId || room || isOnRoomRoute);
 
   return (
     <div className="min-h-screen flex flex-col">
       {!isFullScreenRoom && <TopBar />}
-      <main className={isFullScreenRoom ? 'hidden' : 'flex-1'}>{children}</main>
+      <main className={isFullScreenRoom ? 'hidden' : 'flex-1'}>
+        <Routes>
+          <Route path="/" element={<LobbyPage />} />
+          <Route path="/meet" element={<MeetPage />} />
+          <Route path="/room/:id" element={<RoomRouteBridge />} />
+          <Route path="/competitions" element={<CompetitionsPage />} />
+          <Route path="/games" element={<GamesCenterPage />} />
+          <Route path="/store" element={<StorePage />} />
+          <Route path="/bag" element={<BagPage />} />
+          <Route path="/diamond-wallet" element={<DiamondWalletPage />} />
+          <Route path="/my-level" element={<MyLevelPage />} />
+          <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/messages" element={<MessagesPage />} />
+          <Route path="/agency" element={<AgencyPage />} />
+          <Route
+            path="/admin"
+            element={
+              isSuperAdminUser(user) ? <AdminPage /> : <Navigate to="/" replace />
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
       {!isFullScreenRoom && <BottomNav />}
       {shouldKeepRoomMounted && (
         <RoomPage
@@ -153,149 +237,19 @@ const ProtectedShell: React.FC<{
   );
 };
 
-const LoginRoute: React.FC = () => {
-  const { user, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#F5F6FA] flex items-center justify-center">
-        <div className="light-card rounded-2xl px-6 py-4 text-sm font-extrabold text-emerald-700">
-          جارٍ التحقق من الجلسة...
-        </div>
-      </div>
-    );
-  }
-  if (user) {
-    return <Navigate to={isSuperAdminUser(user) ? '/admin' : '/'} replace />;
-  }
-  return <LoginPage />;
-};
-
 export default function App() {
   return (
-    <AuthProvider>
-      <ActiveRoomProvider>
-        <MiniProfileProvider>
-          <OfflineIndicator />
-          <HashRouter>
-          <Routes>
-            <Route path="/login" element={<LoginRoute />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedShell>
-                  <LobbyPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/meet"
-              element={
-                <ProtectedShell>
-                  <MeetPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/room/:id"
-              element={
-                <ProtectedShell>
-                  <RoomRouteBridge />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/competitions"
-              element={
-                <ProtectedShell>
-                  <CompetitionsPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/games"
-              element={
-                <ProtectedShell>
-                  <GamesCenterPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/store"
-              element={
-                <ProtectedShell>
-                  <StorePage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/bag"
-              element={
-                <ProtectedShell>
-                  <BagPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/diamond-wallet"
-              element={
-                <ProtectedShell>
-                  <DiamondWalletPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/my-level"
-              element={
-                <ProtectedShell>
-                  <MyLevelPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/wallet"
-              element={
-                <ProtectedShell>
-                  <WalletPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedShell>
-                  <ProfilePage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/messages"
-              element={
-                <ProtectedShell>
-                  <MessagesPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/agency"
-              element={
-                <ProtectedShell>
-                  <AgencyPage />
-                </ProtectedShell>
-              }
-            />
-            <Route
-              path="/admin"
-              element={
-                <ProtectedShell requireAdmin>
-                  <AdminPage />
-                </ProtectedShell>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </HashRouter>
-        </MiniProfileProvider>
-      </ActiveRoomProvider>
-    </AuthProvider>
+    <AppErrorBoundary>
+      <AuthProvider>
+        <ActiveRoomProvider>
+          <MiniProfileProvider>
+            <OfflineIndicator />
+            <HashRouter>
+              <AuthenticatedAppShell />
+            </HashRouter>
+          </MiniProfileProvider>
+        </ActiveRoomProvider>
+      </AuthProvider>
+    </AppErrorBoundary>
   );
 }

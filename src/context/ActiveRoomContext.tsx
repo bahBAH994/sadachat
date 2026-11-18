@@ -275,48 +275,67 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const teardownActiveChannels = useCallback(async () => {
-    cleanupMicMonitor();
-    stopMusicEngines();
-    const prevId = activeRoomIdRef.current;
-    activeRoomIdRef.current = null;
-    const presenceChannel = presenceChannelRef.current;
-    const roomChannel = roomChannelRef.current;
-    presenceChannelRef.current = null;
-    roomChannelRef.current = null;
+    try {
+      cleanupMicMonitor();
+      stopMusicEngines();
+      const prevId = activeRoomIdRef.current;
+      activeRoomIdRef.current = null;
+      const presenceChannel = presenceChannelRef.current;
+      const roomChannel = roomChannelRef.current;
+      presenceChannelRef.current = null;
+      roomChannelRef.current = null;
 
-    const tasks: Promise<unknown>[] = [];
-    if (prevId && user?.id) {
-      tasks.push(leaveRoomInSupabase(prevId, user.id).catch(() => {}));
+      if (prevId && user?.id) {
+        try {
+          await leaveRoomInSupabase(prevId, user.id);
+        } catch (err) {
+          console.warn('leaveRoomInSupabase error:', err);
+        }
+      }
+      if (presenceChannel) {
+        try {
+          await presenceChannel.untrack();
+        } catch {
+          // ignore
+        }
+        try {
+          await supabase.removeChannel(presenceChannel);
+        } catch {
+          // ignore
+        }
+      }
+      if (roomChannel) {
+        try {
+          await supabase.removeChannel(roomChannel);
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore any teardown failure
     }
-    if (presenceChannel) {
-      tasks.push(
-        presenceChannel
-          .untrack()
-          .catch(() => {})
-          .finally(() => supabase.removeChannel(presenceChannel).catch(() => {}))
-      );
-    }
-    if (roomChannel) {
-      tasks.push(supabase.removeChannel(roomChannel).catch(() => {}));
-    }
-    await Promise.allSettled(tasks);
   }, [cleanupMicMonitor, stopMusicEngines, user?.id]);
 
   const leaveActiveRoom = useCallback(async () => {
     cleanupMicMonitor();
     stopMusicEngines();
     setExitModalOpen(false);
+    setIsMinimized(false);
     setActiveRoomId(null);
     setRoom(null);
     setExtras(createEmptyRoomExtras());
-    setIsMinimized(false);
     setPresenceMembers([]);
     setGiftBanner(null);
     setWheelBanner(null);
     setEntryBanner(null);
     setError(null);
     setRoomAudioMuted(false);
-    void teardownActiveChannels();
+
+    try {
+      void teardownActiveChannels();
+    } catch {
+      // ignore
+    }
   }, [cleanupMicMonitor, setRoomAudioMuted, stopMusicEngines, teardownActiveChannels]);
 
   const enterRoom = useCallback(
