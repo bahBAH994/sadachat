@@ -106,8 +106,6 @@ export const RoomPage: React.FC = () => {
     setMusicVolume,
     setMusicMutedLocally,
     setRoomAudioMuted,
-    minimizeRoom,
-    leaveActiveRoom,
     handleSeatClick,
     handleToggleLock,
     handleToggleMute,
@@ -426,18 +424,6 @@ export const RoomPage: React.FC = () => {
     }
   };
 
-  const handleKeepMinimized = () => {
-    setExitModalOpen?.(false);
-    isMinimizedRef.current = true;
-    minimizeRoom?.();
-  };
-
-  const handleConfirmLeave = () => {
-    setExitModalOpen?.(false);
-    isMinimizedRef.current = true;
-    void leaveActiveRoom?.();
-  };
-
   // Resolve exact viewport start & destination coordinates for flying gifts
   const resolveFlyStartPoint = () => {
     const rect = giftBtnRef.current?.getBoundingClientRect();
@@ -486,10 +472,9 @@ export const RoomPage: React.FC = () => {
 
   return (
     <div
-      style={{ display: isMinimized ? 'none' : 'flex' }}
-      className={`fixed inset-0 z-40 flex-col overflow-hidden bg-[#0A0805] text-white ${
-        isMinimized ? 'pointer-events-none' : ''
-      } ${fullscreenGift ? 'animate-dragon-shake' : ''}`}
+      className={`flex-1 flex flex-col overflow-hidden bg-[#0A0805] text-white ${
+        fullscreenGift ? 'animate-dragon-shake' : ''
+      }`}
     >
       {!room ? (
         loading ? (
@@ -1747,12 +1732,12 @@ export const RoomPage: React.FC = () => {
             onSend={handleSendGiftBatch}
             onOpenPM={(uid) => {
               setShowGiftModal(false);
-              minimizeRoom();
+              window.dispatchEvent(new Event('sada:minimize'));
               navigate(`/messages?to=${uid}`);
             }}
             onRecharge={() => {
               setShowGiftModal(false);
-              minimizeRoom();
+              window.dispatchEvent(new Event('sada:minimize'));
               navigate('/wallet');
             }}
             onClose={() => setShowGiftModal(false)}
@@ -1780,7 +1765,7 @@ export const RoomPage: React.FC = () => {
                 onCloseEmbedded={() => setShowInboxOverlay(false)}
                 onRechargeCoins={() => {
                   setShowInboxOverlay(false);
-                  minimizeRoom();
+                  window.dispatchEvent(new Event('sada:minimize'));
                   navigate('/wallet');
                 }}
               />
@@ -1816,12 +1801,12 @@ export const RoomPage: React.FC = () => {
             onToggleMute={() => void handleToggleMute()}
             onRecharge={() => {
               setShowGamesOverlay(false);
-              minimizeRoom();
+              window.dispatchEvent(new Event('sada:minimize'));
               navigate('/wallet');
             }}
             onOpenAgency={() => {
               setShowGamesOverlay(false);
-              minimizeRoom();
+              window.dispatchEvent(new Event('sada:minimize'));
               navigate('/agency');
             }}
             onPlaySpent={(coins) => void addPlayVolume(coins)}
@@ -2006,8 +1991,6 @@ export const RoomPage: React.FC = () => {
               roomTitle={room?.title || 'الوكالة'}
               roomAvatar={room?.hostAvatar || ''}
               isOnMic={Boolean(mySeat)}
-              onMinimizeRoom={handleKeepMinimized}
-              onLeaveRoom={handleConfirmLeave}
               onCancel={() => {
                 setExitModalOpen(false);
                 if (!window.history.state?.inRoom) {

@@ -7,8 +7,6 @@ interface RoomExitModalProps {
   roomTitle: string;
   roomAvatar: string;
   isOnMic: boolean;
-  onMinimizeRoom: () => void;
-  onLeaveRoom: () => void;
   onCancel: () => void;
 }
 
@@ -16,8 +14,6 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
   roomTitle,
   roomAvatar,
   isOnMic,
-  onMinimizeRoom,
-  onLeaveRoom,
   onCancel,
 }) => {
   const modalContent = (
@@ -27,11 +23,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        try {
-          onCancel?.();
-        } catch {
-          // ignore
-        }
+        onCancel?.();
       }}
       role="dialog"
       aria-modal="true"
@@ -47,11 +39,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              try {
-                onCancel?.();
-              } catch {
-                // ignore
-              }
+              onCancel?.();
             }}
             className="w-8 h-8 rounded-full bg-white/10 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer pointer-events-auto touch-manipulation"
             aria-label="إلغاء"
@@ -83,7 +71,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              onMinimizeRoom?.();
+              window.dispatchEvent(new Event('sada:minimize'));
             }}
             className="min-h-[46px] rounded-2xl bg-gradient-to-r from-[#22E568] to-[#0FA958] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-[0_6px_18px_rgba(16,185,129,0.45)] cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
           >
@@ -95,7 +83,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              onLeaveRoom?.();
+              window.dispatchEvent(new Event('sada:leave'));
             }}
             className="min-h-[46px] rounded-2xl bg-rose-600/30 border border-rose-500/60 text-rose-100 hover:bg-rose-600/45 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
           >

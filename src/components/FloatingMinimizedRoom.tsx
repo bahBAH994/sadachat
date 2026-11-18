@@ -8,7 +8,6 @@ export const FloatingMinimizedRoom: React.FC = () => {
     room,
     isMinimized,
     restoreRoom,
-    leaveActiveRoom,
   } = useActiveRoom();
 
   try {
@@ -26,7 +25,7 @@ export const FloatingMinimizedRoom: React.FC = () => {
     const handleExitRoom = (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      void leaveActiveRoom?.();
+      window.dispatchEvent(new Event('sada:leave'));
     };
 
     return (

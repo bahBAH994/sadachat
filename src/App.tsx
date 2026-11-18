@@ -105,7 +105,7 @@ class AppErrorBoundary extends Component<
                   // ignore sw cleanup errors
                 }
                 this.setState({ hasError: false, error: null });
-                window.location.replace(window.location.origin);
+                window.location.assign('/');
               }}
               className="emerald-btn w-full min-h-[42px] rounded-2xl text-sm font-extrabold cursor-pointer"
             >
@@ -189,8 +189,28 @@ const AuthenticatedAppShell: React.FC = () => {
     room,
     loading: roomLoading,
     isMinimized: isRoomMinimized,
+    setExitModalOpen,
+    minimizeRoom,
+    leaveActiveRoom,
   } = useActiveRoom();
   const location = useLocation();
+
+  useEffect(() => {
+    const handleMinimizeEvent = () => {
+      setExitModalOpen(false);
+      minimizeRoom();
+    };
+    const handleLeaveEvent = () => {
+      setExitModalOpen(false);
+      void leaveActiveRoom();
+    };
+    window.addEventListener('sada:minimize', handleMinimizeEvent);
+    window.addEventListener('sada:leave', handleLeaveEvent);
+    return () => {
+      window.removeEventListener('sada:minimize', handleMinimizeEvent);
+      window.removeEventListener('sada:leave', handleLeaveEvent);
+    };
+  }, [leaveActiveRoom, minimizeRoom, setExitModalOpen]);
 
   if (loading) {
     return (
@@ -241,7 +261,14 @@ const AuthenticatedAppShell: React.FC = () => {
         </Routes>
       </main>
       {!isFullScreenRoom && <BottomNav />}
-      {shouldKeepRoomMounted && <RoomPage />}
+      {shouldKeepRoomMounted && (
+        <div
+          style={{ display: isRoomMinimized ? 'none' : 'flex' }}
+          className="fixed inset-0 z-40 flex-col overflow-hidden bg-[#0A0805] text-white"
+        >
+          <RoomPage />
+        </div>
+      )}
       <FloatingMinimizedRoom />
       <UserMiniProfileModal />
     </div>
