@@ -88,6 +88,8 @@ export const RoomPage: React.FC<RoomPageProps> = ({
     error,
     clearError,
     isMinimized,
+    exitModalOpen,
+    setExitModalOpen,
     mySeat,
     canManage,
     isOwnerOrAdmin,
@@ -160,7 +162,6 @@ export const RoomPage: React.FC<RoomPageProps> = ({
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [showMusicModal, setShowMusicModal] = useState(false);
   const [showContestModal, setShowContestModal] = useState(false);
-  const [showExitModal, setShowExitModal] = useState(false);
   const [seatActionTarget, setSeatActionTarget] = useState<RoomSeat | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isFollowingAgency, setIsFollowingAgency] = useState(false);
@@ -204,9 +205,9 @@ export const RoomPage: React.FC<RoomPageProps> = ({
 
   useEffect(() => {
     if (!activeRoomId || isMinimized) {
-      setShowExitModal(false);
+      setExitModalOpen(false);
     }
-  }, [activeRoomId, isMinimized]);
+  }, [activeRoomId, isMinimized, setExitModalOpen]);
 
   // Scroll chat smoothly when room is visible
   useEffect(() => {
@@ -244,7 +245,7 @@ export const RoomPage: React.FC<RoomPageProps> = ({
 
     const handlePopState = () => {
       if (isMinimizedRef.current || !activeRoomIdRef.current) return;
-      setShowExitModal(true);
+      setExitModalOpen(true);
       window.setTimeout(() => {
         if (!isMinimizedRef.current && activeRoomIdRef.current && !window.history.state?.inRoom) {
           window.history.pushState({ inRoom: true }, '');
@@ -256,7 +257,7 @@ export const RoomPage: React.FC<RoomPageProps> = ({
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [activeRoomId, isMinimized]);
+  }, [activeRoomId, isMinimized, setExitModalOpen]);
 
   const topSpeakerSeatIndex = useMemo(() => {
     if (!room?.seats?.length) return -1;
@@ -431,9 +432,11 @@ export const RoomPage: React.FC<RoomPageProps> = ({
   };
 
   const handleKeepMinimized = () => {
-    setShowExitModal(false);
+    setExitModalOpen(false);
     isMinimizedRef.current = true;
-    if (onMinimizeRoom) {
+    if (window.minimizeCurrentRoom) {
+      window.minimizeCurrentRoom();
+    } else if (onMinimizeRoom) {
       onMinimizeRoom();
     } else {
       minimizeRoom();
@@ -442,9 +445,11 @@ export const RoomPage: React.FC<RoomPageProps> = ({
   };
 
   const handleConfirmLeave = () => {
-    setShowExitModal(false);
+    setExitModalOpen(false);
     isMinimizedRef.current = true;
-    if (onLeaveRoom) {
+    if (window.exitCurrentRoom) {
+      void window.exitCurrentRoom();
+    } else if (onLeaveRoom) {
       void onLeaveRoom();
     } else {
       navigate('/', { replace: true });
@@ -723,7 +728,7 @@ export const RoomPage: React.FC<RoomPageProps> = ({
             {/* Discreet Minimize / Leave trigger (complements hardware back trap) */}
             <button
               type="button"
-              onClick={() => setShowExitModal(true)}
+              onClick={() => setExitModalOpen(true)}
               className="w-7 h-7 rounded-full bg-black/35 hover:bg-black/60 border border-white/15 text-slate-200 flex items-center justify-center cursor-pointer"
               aria-label="تصغير أو خروج"
               title="تصغير أو خروج"
@@ -2017,8 +2022,8 @@ export const RoomPage: React.FC<RoomPageProps> = ({
         />
       )}
 
-      {/* EXIT / KEEP MINIMIZED MODAL (Portaled at z-[99999] with pointer-events-auto) */}
-      {showExitModal && (
+      {/* EXIT / KEEP MINIMIZED MODAL (Portaled at z-[999999] with pointer-events-auto) */}
+      {exitModalOpen && (
         <RoomExitModal
           roomTitle={room.title}
           roomAvatar={room.hostAvatar}
@@ -2026,7 +2031,7 @@ export const RoomPage: React.FC<RoomPageProps> = ({
           onMinimizeRoom={handleKeepMinimized}
           onLeaveRoom={handleConfirmLeave}
           onCancel={() => {
-            setShowExitModal(false);
+            setExitModalOpen(false);
             if (!window.history.state?.inRoom) {
               window.history.pushState({ inRoom: true }, '');
             }

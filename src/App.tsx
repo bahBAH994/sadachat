@@ -68,6 +68,7 @@ const ProtectedShell: React.FC<{
   const {
     activeRoomId,
     isMinimized: isRoomMinimized,
+    setExitModalOpen,
     minimizeRoom,
     leaveActiveRoom,
   } = useActiveRoom();
@@ -75,18 +76,42 @@ const ProtectedShell: React.FC<{
   const navigate = useNavigate();
 
   const handleMinimizeRoom = useCallback(() => {
+    setExitModalOpen(false);
     minimizeRoom();
     if (location.pathname.startsWith('/room/')) {
       navigate('/', { replace: true });
     }
-  }, [location.pathname, minimizeRoom, navigate]);
+  }, [location.pathname, minimizeRoom, navigate, setExitModalOpen]);
 
   const handleLeaveRoom = useCallback(async () => {
+    setExitModalOpen(false);
     if (location.pathname !== '/') {
       navigate('/', { replace: true });
     }
-    await leaveActiveRoom();
-  }, [leaveActiveRoom, location.pathname, navigate]);
+    void leaveActiveRoom();
+  }, [leaveActiveRoom, location.pathname, navigate, setExitModalOpen]);
+
+  const handlersRef = useRef({
+    handleMinimizeRoom,
+    handleLeaveRoom,
+  });
+  handlersRef.current = {
+    handleMinimizeRoom,
+    handleLeaveRoom,
+  };
+
+  useEffect(() => {
+    window.minimizeCurrentRoom = () => {
+      handlersRef.current.handleMinimizeRoom();
+    };
+    window.exitCurrentRoom = async () => {
+      await handlersRef.current.handleLeaveRoom();
+    };
+    return () => {
+      delete window.minimizeCurrentRoom;
+      delete window.exitCurrentRoom;
+    };
+  }, []);
 
   if (loading) {
     return (

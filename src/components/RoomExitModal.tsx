@@ -1,6 +1,5 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { motion } from 'motion/react';
 import { LogOut, Minimize2, X } from 'lucide-react';
 import { resolveAsset } from '../lib/assets';
 
@@ -23,8 +22,10 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
 }) => {
   const modalContent = (
     <div
-      className="fixed inset-0 z-[99999] pointer-events-auto flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+      style={{ zIndex: 999999 }}
+      className="fixed inset-0 z-[999999] pointer-events-auto flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
       onClick={(e) => {
+        e.preventDefault();
         e.stopPropagation();
         onCancel();
       }}
@@ -32,10 +33,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
       aria-modal="true"
       aria-label="خيارات الخروج من الوكالة"
     >
-      <motion.div
-        initial={{ scale: 0.92, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.16 }}
+      <div
         onClick={(e) => e.stopPropagation()}
         className="royal-glass pointer-events-auto relative z-10 w-full max-w-xs rounded-3xl p-5 text-center space-y-4 border border-[#F3D37A]/50 shadow-[0_18px_50px_rgba(0,0,0,0.7)]"
       >
@@ -43,6 +41,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
           <button
             type="button"
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               onCancel();
             }}
@@ -74,8 +73,13 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
           <button
             type="button"
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
-              onMinimizeRoom();
+              if (window.minimizeCurrentRoom) {
+                window.minimizeCurrentRoom();
+              } else {
+                onMinimizeRoom();
+              }
             }}
             className="min-h-[46px] rounded-2xl bg-gradient-to-r from-[#22E568] to-[#0FA958] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-[0_6px_18px_rgba(16,185,129,0.45)] cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
           >
@@ -85,8 +89,13 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
           <button
             type="button"
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
-              onLeaveRoom();
+              if (window.exitCurrentRoom) {
+                void window.exitCurrentRoom();
+              } else {
+                onLeaveRoom();
+              }
             }}
             className="min-h-[46px] rounded-2xl bg-rose-600/30 border border-rose-500/60 text-rose-100 hover:bg-rose-600/45 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
           >
@@ -94,7 +103,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             <span>خروج من الوكالة</span>
           </button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 

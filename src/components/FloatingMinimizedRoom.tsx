@@ -81,11 +81,16 @@ export const FloatingMinimizedRoom: React.FC = () => {
         {/* Close / Leave Room completely */}
         <button
           type="button"
-          onClick={async (e) => {
+          onClick={(e) => {
+            e.preventDefault();
             e.stopPropagation();
-            await leaveActiveRoom();
-            if (window.location.hash.includes('/room/')) {
-              navigate('/', { replace: true });
+            if (window.exitCurrentRoom) {
+              void window.exitCurrentRoom();
+            } else {
+              if (window.location.hash.includes('/room/')) {
+                navigate('/', { replace: true });
+              }
+              void leaveActiveRoom();
             }
           }}
           className="absolute -top-1.5 -left-1.5 w-6 h-6 rounded-full bg-[#111422] border border-[#F3D37A]/70 text-white hover:bg-rose-600 flex items-center justify-center shadow-md cursor-pointer"

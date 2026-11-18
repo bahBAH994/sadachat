@@ -98,6 +98,8 @@ interface ActiveRoomContextValue {
   error: string | null;
   clearError: () => void;
   isMinimized: boolean;
+  exitModalOpen: boolean;
+  setExitModalOpen: (open: boolean) => void;
   mySeat: RoomSeat | null;
   canManage: boolean;
   isOwnerOrAdmin: boolean;
@@ -204,6 +206,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isMinimized, setIsMinimized] = useState<boolean>(false);
+  const [exitModalOpen, setExitModalOpen] = useState<boolean>(false);
 
   const [presenceMembers, setPresenceMembers] = useState<RoomPresenceMember[]>([]);
   const [micActive, setMicActive] = useState(false);
@@ -302,6 +305,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const leaveActiveRoom = useCallback(async () => {
     cleanupMicMonitor();
     stopMusicEngines();
+    setExitModalOpen(false);
     setActiveRoomId(null);
     setRoom(null);
     setExtras(createEmptyRoomExtras());
@@ -312,7 +316,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setEntryBanner(null);
     setError(null);
     setRoomAudioMuted(false);
-    await teardownActiveChannels();
+    void teardownActiveChannels();
   }, [cleanupMicMonitor, setRoomAudioMuted, stopMusicEngines, teardownActiveChannels]);
 
   const enterRoom = useCallback(
@@ -724,10 +728,12 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [musicVolume, musicMutedLocally, roomAudioMuted]);
 
   const minimizeRoom = useCallback(() => {
+    setExitModalOpen(false);
     setIsMinimized(true);
   }, []);
 
   const restoreRoom = useCallback(() => {
+    setExitModalOpen(false);
     setIsMinimized(false);
   }, []);
 
@@ -1247,6 +1253,8 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         error,
         clearError: () => setError(null),
         isMinimized,
+        exitModalOpen,
+        setExitModalOpen,
         mySeat,
         canManage,
         isOwnerOrAdmin,
