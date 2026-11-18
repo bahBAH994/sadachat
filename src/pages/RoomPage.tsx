@@ -9,6 +9,7 @@ import {
   Gift,
   Heart,
   Lock,
+  Mail,
   MessageCircle,
   MessageSquareText,
   Mic,
@@ -27,6 +28,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
+import { MessagesPage } from './MessagesPage';
 import { useAuth } from '../context/AuthContext';
 import { useActiveRoom } from '../context/ActiveRoomContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
@@ -118,6 +120,8 @@ export const RoomPage: React.FC = () => {
     toggleMusicPlayPause,
     stopRoomMusic,
     addPlayVolume,
+    giftTargetRequest,
+    clearGiftTargetRequest,
   } = useActiveRoom();
 
   const [chatText, setChatText] = useState('');
@@ -134,6 +138,7 @@ export const RoomPage: React.FC = () => {
 
   const [showWheelModal, setShowWheelModal] = useState(false);
   const [showGamesOverlay, setShowGamesOverlay] = useState(false);
+  const [showInboxOverlay, setShowInboxOverlay] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'agency' | 'members' | 'logs'>(
     'agency'
@@ -158,6 +163,14 @@ export const RoomPage: React.FC = () => {
       })
       .catch(() => {});
   }, [user?.id, room?.id]);
+
+  // Open room gift drawer directly targeting user when clicked from Mini Profile
+  useEffect(() => {
+    if (!giftTargetRequest) return;
+    setGiftInitialTargets([giftTargetRequest.userId]);
+    setShowGiftModal(true);
+    clearGiftTargetRequest();
+  }, [giftTargetRequest, clearGiftTargetRequest]);
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const giftBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -1278,6 +1291,17 @@ export const RoomPage: React.FC = () => {
               <Gift className="w-5 h-5 stroke-[2.4]" />
             </button>
 
+            {/* 3b. External Chats / Inbox Button (صندوق الوارد) without leaving room */}
+            <button
+              type="button"
+              onClick={() => setShowInboxOverlay(true)}
+              className="w-10 h-10 rounded-full bg-black/60 border border-[#D4AF37]/45 text-[#FCE9A6] hover:border-[#FCE9A6] hover:bg-[#D4AF37]/20 flex items-center justify-center cursor-pointer shrink-0 transition"
+              aria-label="الدردشات الخارجية"
+              title="الدردشات الخارجية / صندوق الوارد"
+            >
+              <Mail className="w-4 h-4" />
+            </button>
+
             {/* 4. Games Button directly adjacent (🎮) */}
             <button
               type="button"
@@ -1681,8 +1705,42 @@ export const RoomPage: React.FC = () => {
               minimizeRoom();
               navigate(`/messages?to=${uid}`);
             }}
+            onRecharge={() => {
+              setShowGiftModal(false);
+              minimizeRoom();
+              navigate('/wallet');
+            }}
             onClose={() => setShowGiftModal(false)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* FLOATING IN-ROOM INBOX OVERLAY (Read/Reply PMs without leaving voice room!) */}
+      <AnimatePresence>
+        {showInboxOverlay && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowInboxOverlay(false)}
+          >
+            <motion.div
+              initial={{ y: 70, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 70, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-4xl h-[86dvh] rounded-t-[28px] overflow-hidden shadow-2xl border-t border-x border-[#D4AF37]/40 bg-[#F5F6FA]"
+            >
+              <MessagesPage
+                embedded
+                onCloseEmbedded={() => setShowInboxOverlay(false)}
+                onRechargeCoins={() => {
+                  setShowInboxOverlay(false);
+                  minimizeRoom();
+                  navigate('/wallet');
+                }}
+              />
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

@@ -606,6 +606,47 @@ export async function getDiscoveryDirectoryFromSupabase(currentUserId: string): 
   };
 }
 
+export async function searchUsersForFriendInSupabase(
+  currentUserId: string,
+  query: string
+): Promise<User[]> {
+  const clean = (query || '').trim().toLowerCase();
+  const [{ data: usersRows }, state] = await Promise.all([
+    supabase
+      .from('sada_users')
+      .select('*')
+      .eq('is_banned', false)
+      .order('last_seen', { ascending: false }),
+    getPlatformState(),
+  ]);
+
+  const userMeta = state.settings.userMeta || {};
+  const list = (usersRows || [])
+    .map(rowToUser)
+    .filter((u) => u.id !== currentUserId)
+    .map((u) => {
+      const meta = userMeta[u.id];
+      return {
+        ...u,
+        age: meta?.age,
+        country: meta?.country,
+      };
+    });
+
+  if (!clean) return list.slice(0, 20);
+
+  return list
+    .filter((u) => {
+      const numId = formatShortNumericId(u.id).toLowerCase();
+      return (
+        u.displayName.toLowerCase().includes(clean) ||
+        numId.includes(clean) ||
+        u.id.toLowerCase().includes(clean)
+      );
+    })
+    .slice(0, 25);
+}
+
 // ======================== PRIVATE MESSAGES & DIAMONDS ========================
 
 function isUserFemaleOrHost(u: User, hostedUserIds: Set<string>): boolean {
@@ -730,7 +771,13 @@ export async function getPmOverviewFromSupabase(user: User) {
 
 export async function sendPrivateMessageInSupabase(
   sender: User,
-  payload: { recipientId: string; text?: string; giftId?: string }
+  payload: {
+    recipientId: string;
+    text?: string;
+    giftId?: string;
+    quantity?: number;
+    comboCount?: number;
+  }
 ): Promise<{
   user: User;
   message: PrivateMessage;
@@ -761,12 +808,6 @@ export async function sendPrivateMessageInSupabase(
     recipient.id
   );
   const isMutualFollow = followStatus.isMutual;
-
-  if (isFemaleVoiceLocked(recipient) && (payload.giftId || !isMutualFollow)) {
-    throw new Error(
-      'حساب هذه العضوة بانتظار التوثيق الصوتي من الإدارة — استقبال الألماس والرسائل المدفوعة مقفل مؤقتاً (يمكنكما المراسلة مجاناً بعد المتابعة المتبادلة).'
-    );
-  }
 
   const cleanText = (payload.text || '').trim().slice(0, 400);
   if (!cleanText && !payload.giftId) {
@@ -829,26 +870,33 @@ export async function sendPrivateMessageInSupabase(
   }
 
   if (selectedGift) {
-    if (freshSender.coins < selectedGift.coinsCost) {
+    const qty = Math.max(1, Math.min(100, Math.floor(payload.quantity || 1)));
+    const comboCount = Math.max(1, Math.floor(payload.comboCount || 1));
+    const totalCost = selectedGift.coinsCost * qty;
+
+    if (freshSender.coins < totalCost) {
       throw new Error('رصيد الكوينز غير كافٍ لإرسال هذه الهدية الخاصة.');
     }
-    freshSender.coins -= selectedGift.coinsCost;
-    freshSender.xp += selectedGift.xpGain;
+    freshSender.coins -= totalCost;
+    freshSender.xp += selectedGift.xpGain * qty;
     freshSender.level = computeLevelFromXp(freshSender.xp);
 
     let luckyMultiplier: number | null = null;
     let luckyBonusCoins = 0;
     if (selectedGift.category === 'lucky') {
       luckyMultiplier = rollLuckyGiftMultiplier(state.settings.luckyGiftMultipliers);
-      luckyBonusCoins = Math.round(selectedGift.coinsCost * luckyMultiplier);
+      luckyBonusCoins = Math.round(totalCost * luckyMultiplier);
       freshSender.coins += luckyBonusCoins;
     }
 
     const giftDiamondsAwarded = Math.max(
       1,
-      Math.round(selectedGift.coinsCost * (state.settings.giftDiamondsRatio || 0.75))
+      Math.round(totalCost * (state.settings.giftDiamondsRatio || 0.75))
     );
     recipient.diamonds += giftDiamondsAwarded;
+
+    const qtyLabel = qty > 1 ? ` ×${qty}` : '';
+    const comboLabel = comboCount > 1 ? ` · Combo ×${comboCount}` : '';
 
     const pmGift: PrivateMessage = {
       id: genId('pm'),
@@ -857,15 +905,15 @@ export async function sendPrivateMessageInSupabase(
       recipientId: recipient.id,
       text:
         cleanText ||
-        `أرسل لك ${selectedGift.glyph} ${selectedGift.name}${
+        `أرسل لك ${selectedGift.glyph} ${selectedGift.name}${qtyLabel}${comboLabel}${
           luckyMultiplier ? ` (مضاعف حظ ×${luckyMultiplier})` : ''
         }`,
-      coinsPaid: selectedGift.coinsCost,
+      coinsPaid: totalCost,
       diamondsPotential: giftDiamondsAwarded,
       diamondsClaimed: true,
       diamondsAwarded: giftDiamondsAwarded,
       giftId: selectedGift.id,
-      giftName: selectedGift.name,
+      giftName: qty > 1 ? `${selectedGift.name} ×${qty}` : selectedGift.name,
       giftGlyph: selectedGift.glyph,
       createdAt: now,
       repliedAt: now,
@@ -904,9 +952,9 @@ export async function sendPrivateMessageInSupabase(
       recordTransaction({
         userId: freshSender.id,
         type: 'gift_sent',
-        amount: -selectedGift.coinsCost,
+        amount: -totalCost,
         currency: 'coins',
-        description: `هدية خاصة (${selectedGift.name}) إلى ${recipient.displayName}`,
+        description: `هدية خاصة (${selectedGift.name}${qtyLabel}${comboLabel}) إلى ${recipient.displayName}`,
         timestamp: now,
       }),
       recordTransaction({
@@ -914,7 +962,7 @@ export async function sendPrivateMessageInSupabase(
         type: 'gift_received',
         amount: giftDiamondsAwarded,
         currency: 'diamonds',
-        description: `استلام هدية خاصة (${selectedGift.name}) من ${freshSender.displayName}`,
+        description: `استلام هدية خاصة (${selectedGift.name}${qtyLabel}${comboLabel}) من ${freshSender.displayName}`,
         timestamp: now,
       }),
     ]);
@@ -925,7 +973,7 @@ export async function sendPrivateMessageInSupabase(
         type: 'lucky_gift_bonus',
         amount: luckyBonusCoins,
         currency: 'coins',
-        description: `مضاعف هدية الحظ الخاصة (${selectedGift.name} ×${luckyMultiplier})`,
+        description: `مضاعف هدية الحظ الخاصة (${selectedGift.name}${qtyLabel} ×${luckyMultiplier})`,
         timestamp: now,
       });
     }
@@ -936,13 +984,13 @@ export async function sendPrivateMessageInSupabase(
     const nextStats = { ...(state.settings.userGiftStats || {}) };
     const sCur = nextStats[freshSender.id] || { sentCoins: 0, receivedCoins: 0 };
     nextStats[freshSender.id] = {
-      sentCoins: (sCur.sentCoins || 0) + selectedGift.coinsCost,
+      sentCoins: (sCur.sentCoins || 0) + totalCost,
       receivedCoins: sCur.receivedCoins || 0,
     };
     const rCur = nextStats[recipient.id] || { sentCoins: 0, receivedCoins: 0 };
     nextStats[recipient.id] = {
       sentCoins: rCur.sentCoins || 0,
-      receivedCoins: (rCur.receivedCoins || 0) + selectedGift.coinsCost,
+      receivedCoins: (rCur.receivedCoins || 0) + totalCost,
     };
     await savePlatformState({
       settings: {
@@ -963,9 +1011,13 @@ export async function sendPrivateMessageInSupabase(
     };
   }
 
-  // Mutual follow => completely FREE (0 coins); Before mutual follow => paid coins!
+  // Gender-based PM Billing:
+  // - Female -> Male is ALWAYS FREE (0 coins)
+  // - Mutual follow is ALWAYS FREE (0 coins)
+  // - Male -> Female (or non-mutual paid PM) charges pmCost and awards diamonds to recipient
   const pmCost = Math.max(0, Number(state.settings.pmMessageCost ?? 50));
-  const shouldChargeCoins = !isMutualFollow && pmCost > 0;
+  const isFemaleToMale = freshSender.gender === 'female' && recipient.gender === 'male';
+  const shouldChargeCoins = !isFemaleToMale && !isMutualFollow && pmCost > 0;
 
   if (shouldChargeCoins && freshSender.coins < pmCost) {
     throw new Error(
@@ -1278,10 +1330,9 @@ export async function applyAsAgencyInSupabase(
   user: User,
   payload: { name: string; description?: string; commissionRate?: number }
 ): Promise<{ user: User; agency: Agency }> {
-  const [{ data: existingOwned }, { data: allAgencies }, state] = await Promise.all([
+  const [{ data: existingOwned }, { data: allAgencies }] = await Promise.all([
     supabase.from('sada_agencies').select('id').eq('owner_id', user.id).maybeSingle(),
     supabase.from('sada_agencies').select('id, code, host_ids'),
-    getPlatformState(),
   ]);
 
   if (existingOwned) {
@@ -1292,14 +1343,6 @@ export async function applyAsAgencyInSupabase(
   if (cleanName.length < 3) {
     throw new Error('يرجى إدخال اسم الوكالة (3 أحرف على الأقل).');
   }
-
-  const rateNum = Number(payload.commissionRate);
-  const minRate = state.settings.minAgencyCommissionRate || 0.05;
-  const maxRate = state.settings.maxAgencyCommissionRate || 0.35;
-  const cleanRate =
-    Number.isFinite(rateNum) && rateNum >= minRate && rateNum <= maxRate
-      ? rateNum
-      : state.settings.defaultAgencyCommissionRate || 0.15;
 
   const existingCodes = new Set((allAgencies || []).map((a) => String(a.code)));
   let code = '';
@@ -1318,7 +1361,7 @@ export async function applyAsAgencyInSupabase(
     ownerId: user.id,
     ownerName: user.displayName,
     ownerAvatar: user.avatarUrl,
-    commissionRate: cleanRate,
+    commissionRate: 0,
     totalCommissionDiamonds: 0,
     totalHostDiamonds: 0,
     hostIds: [],

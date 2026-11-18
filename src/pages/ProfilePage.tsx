@@ -766,7 +766,7 @@ export const ProfilePage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => navigate('/competitions')}
+            onClick={() => navigate('/competitions?tab=referral')}
             className={`${
               !canViewMyAgency ? 'col-span-2' : ''
             } rounded-2xl bg-rose-50/90 hover:bg-rose-100/80 border border-rose-100 p-4 flex items-center justify-between cursor-pointer transition`}

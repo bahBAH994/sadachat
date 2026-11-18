@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Award,
@@ -64,7 +65,19 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
 }) => {
   const { user, updateLocalUser } = useAuth();
   const { openMiniProfile } = useMiniProfile();
-  const [activeTab, setActiveTab] = useState<CompTab>(initialTab);
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const resolvedInitialTab: CompTab =
+    !embedded && (tabParam === 'referral' || tabParam === 'voice' || tabParam === 'cultural')
+      ? tabParam
+      : initialTab;
+  const [activeTab, setActiveTab] = useState<CompTab>(resolvedInitialTab);
+
+  useEffect(() => {
+    if (!embedded && (tabParam === 'referral' || tabParam === 'voice' || tabParam === 'cultural')) {
+      setActiveTab(tabParam);
+    }
+  }, [embedded, tabParam]);
 
   // Voice competitions state
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -627,7 +640,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                     كود ورابط الدعوة الملكي
                   </h2>
                   <p className="text-xs text-slate-300 mt-0.5">
-                    كل صديق يسجل عبر كودك يمنحك لفة مجانية في دولاب جوائز حتى 100,000 كوينز!
+                    كل صديق يسجل عبر كودك يمنحك لفة مجانية في دولاب جوائز حتى 50,000 كوينز!
                   </p>
                 </div>
                 <Gift className="w-6 h-6 text-[#F3D37A] shrink-0" />

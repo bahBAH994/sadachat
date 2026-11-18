@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Check, Coins, MessageCircleHeart, Sparkles, Users, X } from 'lucide-react';
+import { Check, Coins, MessageCircleHeart, Plus, Sparkles, Users, X } from 'lucide-react';
 import { resolveAsset } from '../lib/assets';
 import type { GiftItem, Room } from '../types';
 
@@ -13,6 +13,7 @@ interface RoomGiftDrawerProps {
   sending: boolean;
   onSend: (giftId: string, targetUserIds: string[], quantity: number) => Promise<void>;
   onOpenPM: (userId: string) => void;
+  onRecharge: () => void;
   onClose: () => void;
 }
 
@@ -37,6 +38,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
   sending,
   onSend,
   onOpenPM,
+  onRecharge,
   onClose,
 }) => {
   const seatedSpeakers = useMemo(
@@ -54,6 +56,13 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
   }, [currentUserId, initialTargets, room.hostId, seatedSpeakers]);
 
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>(defaultSelection);
+
+  useEffect(() => {
+    if (initialTargets && initialTargets.length > 0) {
+      setSelectedTargetIds(initialTargets);
+    }
+  }, [initialTargets]);
+
   const [giftTab, setGiftTab] = useState<'fixed' | 'lucky' | 'history'>('fixed');
   const [quantity, setQuantity] = useState<number>(1);
   const [selectedGiftId, setSelectedGiftId] = useState<string>(() => {
@@ -448,7 +457,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
           )}
         </div>
 
-        {/* Sticky Bottom Quantity & Send Bar */}
+        {/* Sticky Bottom Quantity & Send Bar + Bottom-Left Coins Balance & (+) Recharge */}
         {giftTab !== 'history' && selectedGift && (
           <div className="px-4 pt-2.5 pb-[max(env(safe-area-inset-bottom,0px),12px)] bg-black/75 border-t border-[#D4AF37]/30 space-y-2 shrink-0">
             <div className="flex items-center justify-between gap-2">
@@ -481,27 +490,49 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              disabled={sending || !canAfford}
-              onClick={() => void onSend(selectedGift.id, selectedTargetIds, quantity)}
-              className={`w-full min-h-[44px] rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 transition cursor-pointer ${
-                canAfford
-                  ? 'bg-gradient-to-r from-[#FDE047] via-[#D4AF37] to-[#B45309] text-[#070913] shadow-[0_0_24px_rgba(243,211,122,0.55)] hover:brightness-105 active:scale-[0.99]'
-                  : 'bg-rose-950/70 border border-rose-400/40 text-rose-200 cursor-not-allowed'
-              }`}
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>
-                {sending
-                  ? 'جارٍ الإرسال...'
-                  : !canAfford
-                  ? 'رصيد الكوينز غير كافٍ'
-                  : `إرسال ${selectedGift.glyph} (${selectedGift.name}) ×${quantity}${
-                      effectiveTargetCount > 1 ? ` إلى ${effectiveTargetCount}` : ''
-                    } · ${totalCost.toLocaleString('en-US')}`}
-              </span>
-            </button>
+            <div className="flex items-center justify-between gap-2.5">
+              <button
+                type="button"
+                disabled={sending || !canAfford}
+                onClick={() => void onSend(selectedGift.id, selectedTargetIds, quantity)}
+                className={`flex-1 min-h-[44px] rounded-2xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 px-3 transition cursor-pointer ${
+                  canAfford
+                    ? 'bg-gradient-to-r from-[#FDE047] via-[#D4AF37] to-[#B45309] text-[#070913] shadow-[0_0_24px_rgba(243,211,122,0.55)] hover:brightness-105 active:scale-[0.99]'
+                    : 'bg-rose-950/70 border border-rose-400/40 text-rose-200 cursor-not-allowed'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span className="truncate">
+                  {sending
+                    ? 'جارٍ الإرسال...'
+                    : !canAfford
+                    ? 'رصيد الكوينز غير كافٍ'
+                    : `إرسال ${selectedGift.glyph} (${selectedGift.name}) ×${quantity}${
+                        effectiveTargetCount > 1 ? ` إلى ${effectiveTargetCount}` : ''
+                      }`}
+                </span>
+              </button>
+
+              {/* Real User Coins Balance + (+) Quick Recharge on Bottom-Left (RTL end) */}
+              <div
+                onClick={onRecharge}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') onRecharge();
+                }}
+                className="flex items-center gap-1.5 rounded-2xl bg-[#1A1308] border border-[#F3D37A]/50 px-2.5 py-1.5 shadow-[0_0_12px_rgba(212,175,55,0.22)] shrink-0 cursor-pointer hover:border-[#FCE9A6]"
+                title="رصيدك الحالي · اضغط للشحن السريع"
+              >
+                <span className="text-sm leading-none">🪙</span>
+                <span className="text-xs sm:text-sm font-mono-num font-black text-[#FCE9A6]">
+                  {userCoins.toLocaleString('en-US')}
+                </span>
+                <span className="w-6 h-6 rounded-full bg-gradient-to-br from-[#FDE047] to-[#D4AF37] text-[#070913] flex items-center justify-center shadow-sm">
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                </span>
+              </div>
+            </div>
           </div>
         )}
       </motion.div>

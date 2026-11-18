@@ -672,9 +672,71 @@ export async function updateAgencyInSupabase(
   const patch: Record<string, unknown> = {};
   if (payload.status) patch.status = payload.status;
   if (typeof payload.commissionRate === 'number') {
-    patch.commission_rate = Math.max(0.01, Math.min(0.5, payload.commissionRate));
+    patch.commission_rate = Math.max(0, Math.min(0.5, payload.commissionRate));
   }
   await supabase.from('sada_agencies').update(patch).eq('id', agencyId);
+}
+
+export async function payoutAgencyCommissionInSupabase(
+  agencyId: string,
+  explicitDiamonds?: number,
+  note?: string
+): Promise<{ paidDiamonds: number; agencyName: string }> {
+  const { data: agRow } = await supabase
+    .from('sada_agencies')
+    .select('*')
+    .eq('id', agencyId)
+    .maybeSingle();
+  if (!agRow) throw new Error('الوكالة غير موجودة.');
+
+  const agency = rowToAgency(agRow);
+  const suggestedPending = Math.max(
+    0,
+    Math.round(agency.totalHostDiamonds * agency.commissionRate) - agency.totalCommissionDiamonds
+  );
+  const amount =
+    typeof explicitDiamonds === 'number' && Number.isFinite(explicitDiamonds)
+      ? Math.floor(explicitDiamonds)
+      : suggestedPending;
+
+  if (amount <= 0) {
+    throw new Error('يرجى إدخال مبلغ عمولة صحيح أكبر من 0 لصرفه للوكيل.');
+  }
+
+  const { data: ownerRow } = await supabase
+    .from('sada_users')
+    .select('id, diamonds, display_name')
+    .eq('id', agency.ownerId)
+    .maybeSingle();
+  if (!ownerRow) throw new Error('حساب مالك الوكالة غير موجود.');
+
+  const nextOwnerDiamonds = Number(ownerRow.diamonds || 0) + amount;
+  const nextTotalComm = agency.totalCommissionDiamonds + amount;
+  const now = new Date().toISOString();
+  const pct = Math.round(agency.commissionRate * 100);
+
+  await Promise.all([
+    supabase
+      .from('sada_users')
+      .update({ diamonds: nextOwnerDiamonds })
+      .eq('id', agency.ownerId),
+    supabase
+      .from('sada_agencies')
+      .update({ total_commission_diamonds: nextTotalComm })
+      .eq('id', agency.id),
+    recordTransaction({
+      userId: agency.ownerId,
+      type: 'agency_commission',
+      amount,
+      currency: 'diamonds',
+      description:
+        (note && note.trim()) ||
+        `صرف عمولة وكالة (${pct}%) من الإدارة العليا لوكالة ${agency.name}`,
+      timestamp: now,
+    }),
+  ]);
+
+  return { paidDiamonds: amount, agencyName: agency.name };
 }
 
 export async function updateHostApprovalInSupabase(

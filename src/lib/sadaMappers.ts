@@ -476,7 +476,7 @@ export async function recordTransaction(tx: Omit<Transaction, 'id' | 'timestamp'
 export async function applyHostEarningsAndAgencyCommission(
   hostUser: User,
   diamondsEarned: number,
-  now: string
+  _now: string
 ): Promise<number> {
   if (diamondsEarned <= 0) return 0;
   const nextHostDiamonds = (hostUser.hostDiamondsEarned || 0) + diamondsEarned;
@@ -490,7 +490,7 @@ export async function applyHostEarningsAndAgencyCommission(
 
   const { data: agencyRow } = await supabase
     .from('sada_agencies')
-    .select('*')
+    .select('id, owner_id, status, total_host_diamonds')
     .eq('id', hostUser.agencyId)
     .maybeSingle();
 
@@ -498,39 +498,12 @@ export async function applyHostEarningsAndAgencyCommission(
   const ownerId = String(agencyRow.owner_id);
   if (ownerId === hostUser.id) return 0;
 
-  const { data: agentRow } = await supabase
-    .from('sada_users')
-    .select('id, diamonds')
-    .eq('id', ownerId)
-    .maybeSingle();
-  if (!agentRow) return 0;
+  await supabase
+    .from('sada_agencies')
+    .update({
+      total_host_diamonds: Number(agencyRow.total_host_diamonds || 0) + diamondsEarned,
+    })
+    .eq('id', agencyRow.id);
 
-  const rate = Number(agencyRow.commission_rate || 0.15);
-  const commissionDiamonds = Math.max(1, Math.round(diamondsEarned * rate));
-  const nextAgentDiamonds = Number(agentRow.diamonds || 0) + commissionDiamonds;
-
-  await Promise.all([
-    supabase
-      .from('sada_users')
-      .update({ diamonds: nextAgentDiamonds })
-      .eq('id', ownerId),
-    supabase
-      .from('sada_agencies')
-      .update({
-        total_host_diamonds: Number(agencyRow.total_host_diamonds || 0) + diamondsEarned,
-        total_commission_diamonds:
-          Number(agencyRow.total_commission_diamonds || 0) + commissionDiamonds,
-      })
-      .eq('id', agencyRow.id),
-    recordTransaction({
-      userId: ownerId,
-      type: 'agency_commission',
-      amount: commissionDiamonds,
-      currency: 'diamonds',
-      description: `عمولة وكالة تلقائية (${Math.round(rate * 100)}%) من أرباح المضيف ${hostUser.displayName}`,
-      timestamp: now,
-    }),
-  ]);
-
-  return commissionDiamonds;
+  return 0;
 }

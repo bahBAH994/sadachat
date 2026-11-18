@@ -37,6 +37,7 @@ import {
   finishCompetitionInSupabase,
   getAdminOverviewFromSupabase,
   importQuestionsInSupabase,
+  payoutAgencyCommissionInSupabase,
   rejectFemaleVoiceInSupabase,
   rejectUsdtDepositInSupabase,
   rejectUsdtWithdrawalInSupabase,
@@ -118,6 +119,7 @@ export const AdminPage: React.FC = () => {
 
   // Agencies & Host management
   const [agencyRateDrafts, setAgencyRateDrafts] = useState<Record<string, string>>({});
+  const [agencyPayoutDrafts, setAgencyPayoutDrafts] = useState<Record<string, string>>({});
   const [hostAgencyDrafts, setHostAgencyDrafts] = useState<Record<string, string>>({});
 
   // Questions CSV/Excel import
@@ -136,10 +138,18 @@ export const AdminPage: React.FC = () => {
       setData(res);
       setSettingsDraft(res.settings);
       const rates: Record<string, string> = {};
+      const payouts: Record<string, string> = {};
       for (const ag of res.agencies || []) {
-        rates[ag.id] = String(Math.round((ag.commissionRate || 0.15) * 100));
+        rates[ag.id] = String(Math.round((ag.commissionRate || 0) * 100));
+        const pending = Math.max(
+          0,
+          Math.round((ag.totalHostDiamonds || 0) * (ag.commissionRate || 0)) -
+            (ag.totalCommissionDiamonds || 0)
+        );
+        payouts[ag.id] = String(pending);
       }
       setAgencyRateDrafts(rates);
+      setAgencyPayoutDrafts(payouts);
       const userAgencies: Record<string, string> = {};
       for (const u of res.users || []) {
         if (u.agencyId) userAgencies[u.id] = u.agencyId;
@@ -347,6 +357,20 @@ export const AdminPage: React.FC = () => {
       await Promise.all([loadOverview(), refreshUser()]);
     } catch (err) {
       showErr(err, 'تعذّر تحديث الوكالة.');
+    }
+  };
+
+  const handlePayoutAgencyCommission = async (agencyId: string) => {
+    try {
+      const raw = agencyPayoutDrafts[agencyId];
+      const parsed = raw !== undefined && raw.trim() !== '' ? Number(raw) : undefined;
+      const res = await payoutAgencyCommissionInSupabase(agencyId, parsed);
+      showOk(
+        `تم صرف عمولة الوكيل بنجاح (+${res.paidDiamonds.toLocaleString('en-US')} 💎) وإضافتها إلى محفظته.`
+      );
+      await Promise.all([loadOverview(), refreshUser()]);
+    } catch (err) {
+      showErr(err, 'تعذّر صرف عمولة الوكيل.');
     }
   };
 
@@ -1113,7 +1137,13 @@ export const AdminPage: React.FC = () => {
                   <div className="divide-y divide-[#D4AF37]/15">
                     {data.agencies.map((ag) => {
                       const status = ag.status || 'approved';
-                      const pctDraft = agencyRateDrafts[ag.id] ?? String(Math.round(ag.commissionRate * 100));
+                      const pctDraft = agencyRateDrafts[ag.id] ?? String(Math.round((ag.commissionRate || 0) * 100));
+                      const suggestedPending = Math.max(
+                        0,
+                        Math.round((ag.totalHostDiamonds || 0) * (ag.commissionRate || 0)) -
+                          (ag.totalCommissionDiamonds || 0)
+                      );
+                      const payoutDraft = agencyPayoutDrafts[ag.id] ?? String(suggestedPending);
                       return (
                         <div
                           key={ag.id}
@@ -1139,8 +1169,11 @@ export const AdminPage: React.FC = () => {
                             </div>
                             <p className="text-xs text-slate-300 font-mono-num">
                               الوكيل: {ag.ownerName} · المضيفون: {ag.hostIds.length} · ألماس المضيفين:{' '}
-                              {ag.totalHostDiamonds.toLocaleString('en-US')} 💎 · عمولة مكتسبة:{' '}
-                              {ag.totalCommissionDiamonds.toLocaleString('en-US')} 💎
+                              {ag.totalHostDiamonds.toLocaleString('en-US')} 💎 · عمولة منصرفة:{' '}
+                              {ag.totalCommissionDiamonds.toLocaleString('en-US')} 💎 · مستحق مقترح:{' '}
+                              <span className="text-emerald-300 font-bold">
+                                {suggestedPending.toLocaleString('en-US')} 💎
+                              </span>
                             </p>
                           </div>
 
@@ -1149,7 +1182,7 @@ export const AdminPage: React.FC = () => {
                               <span className="text-[11px] text-slate-400">العمولة %</span>
                               <input
                                 type="number"
-                                min={1}
+                                min={0}
                                 max={50}
                                 value={pctDraft}
                                 onChange={(e) =>
@@ -1165,12 +1198,39 @@ export const AdminPage: React.FC = () => {
                                 type="button"
                                 onClick={() =>
                                   handleUpdateAgency(ag.id, {
-                                    commissionRate: Math.max(1, Math.min(50, Number(pctDraft) || 15)) / 100,
+                                    commissionRate:
+                                      Math.max(0, Math.min(50, Number(pctDraft) || 0)) / 100,
                                   })
                                 }
                                 className="text-[11px] font-bold text-[#F3D37A] hover:text-white px-1.5 cursor-pointer"
                               >
                                 حفظ
+                              </button>
+                            </div>
+
+                            {/* Super Admin Manual Payout Box */}
+                            <div className="flex items-center gap-1.5 bg-[#070913]/85 border border-emerald-500/35 rounded-xl px-2.5 py-1.5">
+                              <span className="text-[11px] text-emerald-300">💎</span>
+                              <input
+                                type="number"
+                                min={0}
+                                value={payoutDraft}
+                                onChange={(e) =>
+                                  setAgencyPayoutDrafts((prev) => ({
+                                    ...prev,
+                                    [ag.id]: e.target.value,
+                                  }))
+                                }
+                                dir="ltr"
+                                className="w-20 bg-transparent text-xs text-emerald-200 font-mono-num text-center focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                disabled={Number(payoutDraft) <= 0}
+                                onClick={() => void handlePayoutAgencyCommission(ag.id)}
+                                className="rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 px-2.5 py-1 text-[11px] font-extrabold text-white cursor-pointer"
+                              >
+                                صرف عمولة الوكيل
                               </button>
                             </div>
 

@@ -170,6 +170,9 @@ interface ActiveRoomContextValue {
   toggleMusicPlayPause: () => Promise<void>;
   stopRoomMusic: () => Promise<void>;
   addPlayVolume: (coinsAmount: number) => Promise<void>;
+  giftTargetRequest: { userId: string; nonce: number } | null;
+  requestGiftForUser: (userId: string) => void;
+  clearGiftTargetRequest: () => void;
 }
 
 const ActiveRoomContext = createContext<ActiveRoomContextValue | undefined>(undefined);
@@ -202,6 +205,18 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [musicVolume, setMusicVolume] = useState<number>(0.45);
   const [musicMutedLocally, setMusicMutedLocally] = useState<boolean>(false);
   const [roomAudioMuted, setRoomAudioMutedState] = useState<boolean>(false);
+  const [giftTargetRequest, setGiftTargetRequest] = useState<{
+    userId: string;
+    nonce: number;
+  } | null>(null);
+
+  const requestGiftForUser = useCallback((userId: string) => {
+    setGiftTargetRequest({ userId, nonce: Date.now() });
+  }, []);
+
+  const clearGiftTargetRequest = useCallback(() => {
+    setGiftTargetRequest(null);
+  }, []);
 
   const setRoomAudioMuted = useCallback((muted: boolean) => {
     setRoomAudioMutedState(muted);
@@ -1198,6 +1213,9 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         toggleMusicPlayPause,
         stopRoomMusic,
         addPlayVolume,
+        giftTargetRequest,
+        requestGiftForUser,
+        clearGiftTargetRequest,
       }}
     >
       {children}

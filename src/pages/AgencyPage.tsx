@@ -87,7 +87,6 @@ export const AgencyPage: React.FC = () => {
   const [showCreateAgency, setShowCreateAgency] = useState(false);
   const [agencyName, setAgencyName] = useState('');
   const [agencyDesc, setAgencyDesc] = useState('');
-  const [commissionRate, setCommissionRate] = useState('0.15');
   const [applying, setApplying] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
@@ -195,7 +194,6 @@ export const AgencyPage: React.FC = () => {
       const res = await applyAsAgencyInSupabase(user, {
         name: agencyName,
         description: agencyDesc,
-        commissionRate: Number(commissionRate),
       });
       updateLocalUser(res.user);
       setAgencyName('');
@@ -413,12 +411,17 @@ export const AgencyPage: React.FC = () => {
 
                 <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4">
                   <div className="flex items-center justify-between text-xs text-amber-800 font-bold">
-                    <span>عمولة الوكيل ({Math.round(myAgency.agency.commissionRate * 100)}%)</span>
+                    <span>
+                      عمولة الوكيل المعتمدة ({Math.round(myAgency.agency.commissionRate * 100)}%)
+                    </span>
                     <Sparkles className="w-4 h-4 text-amber-600" />
                   </div>
                   <p className="mt-2 text-2xl font-black font-mono-num text-amber-900">
                     {myAgency.agency.totalCommissionDiamonds.toLocaleString('en-US')} 💎
                   </p>
+                  <span className="block text-[10px] text-amber-700 mt-0.5">
+                    تُحدد وتُصرف حصرياً من الإدارة العليا
+                  </span>
                 </div>
               </div>
             </section>
@@ -555,7 +558,7 @@ export const AgencyPage: React.FC = () => {
 
                 {myAgency.commissionTransactions.length === 0 ? (
                   <p className="text-xs text-slate-500 py-8 text-center">
-                    ستظهر هنا عمولاتك التلقائية من ألماس وهدايا مضيفي الوكالة.
+                    ستظهر هنا عمولات الوكالة المعتمدة فور صرفها من لوحة الإدارة العليا.
                   </p>
                 ) : (
                   <div className="space-y-2.5 max-h-[360px] overflow-y-auto no-scrollbar">
@@ -830,7 +833,7 @@ export const AgencyPage: React.FC = () => {
                         تأسيس وكالة جديدة كـ "وكيل" معتمد
                       </h3>
                       <p className="text-[11px] text-slate-500">
-                        افتح لوحة "وكالتي" وأدر مضيفيك واستقبل عمولة تلقائية من أرباحهم.
+                        افتح لوحة "وكالتي" وأدر مضيفيك وتابع التارجت الأسبوعي (العمولة تُحدد وتُصرف من الإدارة).
                       </p>
                     </div>
                   </div>
@@ -856,22 +859,6 @@ export const AgencyPage: React.FC = () => {
                         placeholder="مثال: وكالة نجوم الخليج"
                         className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                       />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        نسبة العمولة التلقائية للوكيل
-                      </label>
-                      <select
-                        value={commissionRate}
-                        onChange={(e) => setCommissionRate(e.target.value)}
-                        className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
-                      >
-                        <option value="0.10">10% عمولة تلقائية</option>
-                        <option value="0.15">15% عمولة تلقائية (موصى به)</option>
-                        <option value="0.20">20% عمولة تلقائية</option>
-                        <option value="0.25">25% عمولة تلقائية</option>
-                      </select>
                     </div>
 
                     <div>

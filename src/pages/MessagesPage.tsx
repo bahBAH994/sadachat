@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowRight,
@@ -9,8 +9,10 @@ import {
   Crown,
   Gem,
   Gift,
+  MessageCircle,
   MessageCircleHeart,
   MoreVertical,
+  Plus,
   Search,
   Send,
   ShieldCheck,
@@ -21,9 +23,11 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
+import { formatShortNumericId } from '../lib/sadaCatalog';
 import {
   getFollowStatus,
   getPmOverviewFromSupabase,
+  searchUsersForFriendInSupabase,
   sendPrivateMessageInSupabase,
   toggleFollowUserInSupabase,
 } from '../lib/sadaSocialService';
@@ -32,6 +36,7 @@ import type {
   GiftItem,
   PrivateConversation,
   PrivateConversationPeer,
+  User,
 } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import {
@@ -41,7 +46,31 @@ import {
 
 type InboxFilter = 'كامل' | 'غير مقروء' | 'وجوه مألوفة' | 'المجموعات';
 
-export const MessagesPage: React.FC = () => {
+const QUANTITIES = [1, 9, 25, 50, 100] as const;
+const COMBO_DURATION_MS = 3000;
+
+interface PmComboSession {
+  gift: GiftItem;
+  recipientId: string;
+  quantity: number;
+  comboCount: number;
+  expiresAt: number;
+}
+
+export interface MessagesPageProps {
+  embedded?: boolean;
+  initialPeerId?: string;
+  onCloseEmbedded?: () => void;
+  onRechargeCoins?: () => void;
+}
+
+export const MessagesPage: React.FC<MessagesPageProps> = ({
+  embedded = false,
+  initialPeerId,
+  onCloseEmbedded,
+  onRechargeCoins,
+}) => {
+  const navigate = useNavigate();
   const { user, updateLocalUser, onlineUserIds } = useAuth();
   const { openMiniProfile } = useMiniProfile();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -50,24 +79,36 @@ export const MessagesPage: React.FC = () => {
   const [recipients, setRecipients] = useState<PrivateConversationPeer[]>([]);
   const [gifts, setGifts] = useState<GiftItem[]>([]);
   const [pmCost, setPmCost] = useState(50);
-  const [pmReplyDiamonds, setPmReplyDiamonds] = useState(38);
   const [pendingDiamondsTotal, setPendingDiamondsTotal] = useState(0);
   const [canReceivePaidPm, setCanReceivePaidPm] = useState(false);
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
   const [togglingFollow, setTogglingFollow] = useState(false);
 
-  const [selectedPeerId, setSelectedPeerId] = useState<string>('');
-  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [selectedPeerId, setSelectedPeerId] = useState<string>(initialPeerId || '');
+  const [mobileChatOpen, setMobileChatOpen] = useState(Boolean(initialPeerId));
   const [inboxFilter, setInboxFilter] = useState<InboxFilter>('كامل');
-  const [showNotifBar, setShowNotifBar] = useState(true);
+  const [showNotifBar, setShowNotifBar] = useState(!embedded);
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Add Friend Modal State
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [friendQuery, setFriendQuery] = useState('');
+  const [friendResults, setFriendResults] = useState<User[]>([]);
+  const [friendSearching, setFriendSearching] = useState(false);
+
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+
+  // Full-featured Gift Drawer & Combo State
   const [showGiftDrawer, setShowGiftDrawer] = useState(false);
   const [giftCategory, setGiftCategory] = useState<'fixed' | 'lucky'>('fixed');
+  const [selectedGiftId, setSelectedGiftId] = useState<string>('gift_01');
+  const [giftQuantity, setGiftQuantity] = useState<number>(1);
+  const [comboSession, setComboSession] = useState<PmComboSession | null>(null);
+  const [comboRemainingMs, setComboRemainingMs] = useState<number>(0);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{
@@ -85,14 +126,28 @@ export const MessagesPage: React.FC = () => {
       setRecipients(data.recipients);
       setGifts(data.gifts);
       setPmCost(data.pmMessageCost);
-      setPmReplyDiamonds(data.pmReplyDiamonds);
       setPendingDiamondsTotal(data.pendingDiamondsTotal);
       setCanReceivePaidPm(data.canReceivePaidPm);
       setUserFollows(data.userFollows || {});
 
-      const queryTarget = searchParams.get('to');
-      if (queryTarget && queryTarget !== user.id) {
-        setSelectedPeerId(queryTarget);
+      if (!embedded) {
+        const queryTarget = searchParams.get('to');
+        const wantGift = searchParams.get('gift') === '1';
+        if (queryTarget && queryTarget !== user.id) {
+          setSelectedPeerId(queryTarget);
+          setMobileChatOpen(true);
+          if (wantGift) {
+            setShowGiftDrawer(true);
+          }
+        } else {
+          setSelectedPeerId((prev) => {
+            if (prev) return prev;
+            if (data.conversations[0]?.peer.id) return data.conversations[0].peer.id;
+            return data.recipients[0]?.id || '';
+          });
+        }
+      } else if (initialPeerId && initialPeerId !== user.id) {
+        setSelectedPeerId(initialPeerId);
         setMobileChatOpen(true);
       } else {
         setSelectedPeerId((prev) => {
@@ -106,7 +161,7 @@ export const MessagesPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchParams, user]);
+  }, [embedded, initialPeerId, searchParams, user]);
 
   useEffect(() => {
     void loadOverview();
@@ -115,7 +170,7 @@ export const MessagesPage: React.FC = () => {
   useEffect(() => {
     if (!user?.id) return;
     const channel = supabase
-      .channel(`sada-pm-${user.id}`)
+      .channel(`sada-pm-${embedded ? 'emb-' : ''}${user.id}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sada_private_messages' },
@@ -134,7 +189,40 @@ export const MessagesPage: React.FC = () => {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [user?.id, loadOverview]);
+  }, [embedded, user?.id, loadOverview]);
+
+  // Combo circular countdown ticker (3.0s)
+  useEffect(() => {
+    if (!comboSession) {
+      setComboRemainingMs(0);
+      return;
+    }
+    const tick = () => {
+      const left = comboSession.expiresAt - Date.now();
+      if (left <= 0) {
+        setComboSession(null);
+        setComboRemainingMs(0);
+      } else {
+        setComboRemainingMs(left);
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 50);
+    return () => window.clearInterval(timer);
+  }, [comboSession]);
+
+  // Debounced friend search inside "إضافة صديق" modal
+  useEffect(() => {
+    if (!showAddFriendModal || !user?.id) return;
+    setFriendSearching(true);
+    const timer = window.setTimeout(() => {
+      searchUsersForFriendInSupabase(user.id, friendQuery)
+        .then((res) => setFriendResults(res))
+        .catch(() => setFriendResults([]))
+        .finally(() => setFriendSearching(false));
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [friendQuery, showAddFriendModal, user?.id]);
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.peer.id === selectedPeerId) || null,
@@ -151,7 +239,15 @@ export const MessagesPage: React.FC = () => {
     return conversations.filter((c) => {
       if (inboxFilter === 'غير مقروء' && c.pendingDiamondsForMe <= 0) return false;
       if (inboxFilter === 'وجوه مألوفة' && c.messages.length < 2) return false;
-      if (q && !c.peer.displayName.toLowerCase().includes(q)) return false;
+      if (q) {
+        const numId = formatShortNumericId(c.peer.id).toLowerCase();
+        if (
+          !c.peer.displayName.toLowerCase().includes(q) &&
+          !numId.includes(q)
+        ) {
+          return false;
+        }
+      }
       return true;
     });
   }, [conversations, inboxFilter, searchQuery]);
@@ -168,6 +264,15 @@ export const MessagesPage: React.FC = () => {
 
   const fixedGifts = useMemo(() => gifts.filter((g) => g.category !== 'lucky'), [gifts]);
   const luckyGifts = useMemo(() => gifts.filter((g) => g.category === 'lucky'), [gifts]);
+  const visibleGifts = giftCategory === 'lucky' ? luckyGifts : fixedGifts;
+  const selectedGift = useMemo(
+    () =>
+      gifts.find((g) => g.id === selectedGiftId) ||
+      visibleGifts[0] ||
+      gifts[0] ||
+      null,
+    [gifts, selectedGiftId, visibleGifts]
+  );
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -176,7 +281,9 @@ export const MessagesPage: React.FC = () => {
   const handleSelectPeer = (peerId: string) => {
     setSelectedPeerId(peerId);
     setMobileChatOpen(true);
-    setSearchParams({ to: peerId });
+    if (!embedded) {
+      setSearchParams({ to: peerId });
+    }
     setError(null);
   };
 
@@ -188,7 +295,21 @@ export const MessagesPage: React.FC = () => {
     }
   };
 
-  const handleSend = async (e?: React.FormEvent, giftId?: string) => {
+  const handleRechargeAction = () => {
+    setShowGiftDrawer(false);
+    if (onRechargeCoins) {
+      onRechargeCoins();
+    } else {
+      navigate('/wallet');
+    }
+  };
+
+  const handleSend = async (
+    e?: React.FormEvent,
+    giftId?: string,
+    qty = 1,
+    comboCount = 1
+  ) => {
     if (e) e.preventDefault();
     if (!user || !selectedPeerId) return;
     if (!giftId && !text.trim()) return;
@@ -200,11 +321,26 @@ export const MessagesPage: React.FC = () => {
         recipientId: selectedPeerId,
         text: giftId ? '' : text.trim(),
         giftId,
+        quantity: qty,
+        comboCount,
       });
 
       updateLocalUser(res.user);
       if (!giftId) setText('');
-      setShowGiftDrawer(false);
+      if (giftId) {
+        setShowGiftDrawer(false);
+        const sentGift = gifts.find((g) => g.id === giftId);
+        if (sentGift) {
+          setComboSession({
+            gift: sentGift,
+            recipientId: selectedPeerId,
+            quantity: qty,
+            comboCount,
+            expiresAt: Date.now() + COMBO_DURATION_MS,
+          });
+          setComboRemainingMs(COMBO_DURATION_MS);
+        }
+      }
       await loadOverview();
 
       if (res.unlockedReplyDiamonds > 0) {
@@ -234,16 +370,37 @@ export const MessagesPage: React.FC = () => {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'تعذّر إرسال الرسالة الخاصة.');
+      setComboSession(null);
     } finally {
       setSending(false);
     }
   };
 
-  const handleToggleFollowPeer = async () => {
-    if (!user?.id || !activePeer?.id) return;
+  const handleComboTap = async () => {
+    if (!comboSession || !user) return;
+    const batchCost = comboSession.gift.coinsCost * comboSession.quantity;
+    if (user.coins < batchCost) {
+      setComboSession(null);
+      setError('رصيد الكوينز لا يكفي للاستمرار في الـ Combo');
+      return;
+    }
+    const nextCombo = comboSession.comboCount + 1;
+    const snap = comboSession;
+    setComboSession({
+      ...snap,
+      comboCount: nextCombo,
+      expiresAt: Date.now() + COMBO_DURATION_MS,
+    });
+    setComboRemainingMs(COMBO_DURATION_MS);
+    await handleSend(undefined, snap.gift.id, snap.quantity, nextCombo);
+  };
+
+  const handleToggleFollowPeer = async (targetId?: string) => {
+    const uid = targetId || activePeer?.id;
+    if (!user?.id || !uid) return;
     setTogglingFollow(true);
     try {
-      const next = await toggleFollowUserInSupabase(user.id, activePeer.id);
+      const next = await toggleFollowUserInSupabase(user.id, uid);
       setUserFollows(next.userFollows);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'تعذّر تحديث المتابعة.');
@@ -258,18 +415,40 @@ export const MessagesPage: React.FC = () => {
       ? getFollowStatus(userFollows, user.id, activePeer.id)
       : { iFollowThem: false, theyFollowMe: false, isMutual: false };
   const isMutualFriends = followRel.isMutual;
-  const isPmFreeNow = isMutualFriends || pmCost <= 0;
+  const isFemaleToMale =
+    user?.gender === 'female' && activePeer?.gender === 'male';
+  const isPmFreeNow = isFemaleToMale || isMutualFriends || pmCost <= 0;
   const isFreeReply =
     !isPmFreeNow &&
     canReceivePaidPm &&
     Boolean(activeConversation?.messages.some((m) => m.senderId === selectedPeerId));
 
+  const giftTotalCost = selectedGift ? selectedGift.coinsCost * giftQuantity : 0;
+  const canAffordGift = giftTotalCost <= (user?.coins ?? 0);
+
+  const comboProgress = Math.max(0, Math.min(1, comboRemainingMs / COMBO_DURATION_MS));
+  const comboCircleRadius = 29;
+  const comboCircumference = 2 * Math.PI * comboCircleRadius;
+
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28">
-      {/* Top Header matching Screenshot 3 */}
-      <header className="sticky top-0 z-30 bg-white border-b border-slate-100">
+    <div className={embedded ? 'flex flex-col h-full bg-[#F5F6FA]' : 'min-h-screen bg-[#F5F6FA] pb-28'}>
+      {/* Top Header */}
+      <header className="sticky top-0 z-30 bg-white border-b border-slate-100 shrink-0">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
-          <h1 className="text-xl font-extrabold text-slate-900">صندوق الوارد</h1>
+          <div className="flex items-center gap-2">
+            {embedded && onCloseEmbedded && (
+              <button
+                type="button"
+                onClick={onCloseEmbedded}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer"
+                aria-label="إغلاق صندوق الوارد"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <h1 className="text-lg sm:text-xl font-extrabold text-slate-900">صندوق الوارد</h1>
+          </div>
+
           <div className="flex items-center gap-2">
             {pendingDiamondsTotal > 0 && (
               <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700 font-mono-num">
@@ -278,28 +457,31 @@ export const MessagesPage: React.FC = () => {
             )}
             <button
               type="button"
-              onClick={() => setMobileChatOpen(false)}
-              className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer"
-              title="المضيفون والعضوات"
+              onClick={() => setShowAddFriendModal(true)}
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 h-9 text-xs font-extrabold text-emerald-800 cursor-pointer transition"
+              title="إضافة صديق بالاسم أو الـ ID"
             >
               <UserPlus className="w-4 h-4" />
+              <span className="hidden sm:inline">إضافة صديق</span>
             </button>
             <button
               type="button"
               onClick={() => setShowSearchBar((prev) => !prev)}
               className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer"
-              title="بحث"
+              title="بحث في المحادثات"
             >
               <Search className="w-4 h-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => setShowRulesModal(true)}
-              className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer"
-              title="قواعد المستخدم"
-            >
-              <MoreVertical className="w-4 h-4" />
-            </button>
+            {!embedded && (
+              <button
+                type="button"
+                onClick={() => setShowRulesModal(true)}
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer"
+                title="قواعد المستخدم"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -309,7 +491,7 @@ export const MessagesPage: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ابحث باسم العضو في صندوق الوارد..."
+              placeholder="ابحث باسم العضو أو الـ ID في صندوق الوارد..."
               className="w-full rounded-2xl bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-900 focus:outline-none focus:border-emerald-500"
             />
           </div>
@@ -317,7 +499,7 @@ export const MessagesPage: React.FC = () => {
       </header>
 
       {/* Notification Permission Strip */}
-      {showNotifBar && (
+      {!embedded && showNotifBar && (
         <div className="bg-white border-b border-slate-100">
           <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
@@ -345,8 +527,14 @@ export const MessagesPage: React.FC = () => {
         </div>
       )}
 
-      <div className="max-w-5xl mx-auto px-3.5 sm:px-5 pt-3 space-y-4">
-        <FemaleVoiceVerificationCard />
+      <div
+        className={
+          embedded
+            ? 'flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3'
+            : 'max-w-5xl mx-auto px-3.5 sm:px-5 pt-3 space-y-4'
+        }
+      >
+        {!embedded && <FemaleVoiceVerificationCard />}
 
         {/* Celebratory Diamond Banner */}
         <AnimatePresence>
@@ -374,32 +562,33 @@ export const MessagesPage: React.FC = () => {
 
         {/* Main Split Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Inbox List Panel (Hidden on mobile only when active chat is open) */}
+          {/* Inbox List Panel */}
           <aside
             className={`lg:col-span-5 space-y-3 ${
               mobileChatOpen ? 'hidden lg:block' : 'block'
             }`}
           >
-            {/* Purple Gradient Community Rules Banner matching screenshot 3 */}
-            <button
-              type="button"
-              onClick={() => setShowRulesModal(true)}
-              className="w-full rounded-3xl bg-gradient-to-r from-[#8B5CF6] via-[#9333EA] to-[#6366F1] p-4 text-white text-right shadow-md hover:brightness-105 transition cursor-pointer flex items-center justify-between gap-3"
-            >
-              <div className="space-y-1">
-                <div className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-bold">
-                  <Sparkles className="w-3 h-3 text-amber-200" />
-                  <span>صَدَى - SADA</span>
+            {!embedded && (
+              <button
+                type="button"
+                onClick={() => setShowRulesModal(true)}
+                className="w-full rounded-3xl bg-gradient-to-r from-[#8B5CF6] via-[#9333EA] to-[#6366F1] p-4 text-white text-right shadow-md hover:brightness-105 transition cursor-pointer flex items-center justify-between gap-3"
+              >
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-bold">
+                    <Sparkles className="w-3 h-3 text-amber-200" />
+                    <span>صَدَى - SADA</span>
+                  </div>
+                  <h2 className="text-lg font-extrabold leading-tight">قواعد المستخدم</h2>
+                  <p className="text-[11px] text-purple-100">
+                    حافظ على الأجواء الجيدة: نصائح مجتمع صَدَى - SADA
+                  </p>
                 </div>
-                <h2 className="text-lg font-extrabold leading-tight">قواعد المستخدم</h2>
-                <p className="text-[11px] text-purple-100">
-                  حافظ على الأجواء الجيدة: نصائح مجتمع صَدَى - SADA
-                </p>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-3xl shrink-0">
-                📜
-              </div>
-            </button>
+                <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-3xl shrink-0">
+                  📜
+                </div>
+              </button>
+            )}
 
             {/* Horizontal Users Strip (real online dots only) */}
             <div className="light-card rounded-2xl p-3">
@@ -445,7 +634,7 @@ export const MessagesPage: React.FC = () => {
               )}
             </div>
 
-            {/* Filter Chips matching Screenshot 3 */}
+            {/* Filter Chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {(['كامل', 'غير مقروء', 'وجوه مألوفة', 'المجموعات'] as InboxFilter[]).map(
                 (tab) => (
@@ -467,7 +656,6 @@ export const MessagesPage: React.FC = () => {
 
             {/* Real Conversations List from Supabase */}
             <div className="light-card rounded-3xl divide-y divide-slate-100 overflow-hidden">
-
               {loading ? (
                 <div className="p-6 text-center text-xs text-slate-400">
                   جارٍ تحميل المحادثات...
@@ -475,7 +663,7 @@ export const MessagesPage: React.FC = () => {
               ) : filteredConversations.length === 0 ? (
                 <div className="p-6 text-center space-y-2">
                   <p className="text-xs text-slate-500">
-                    لا توجد محادثات خاصة بعد. اختر أي عضو من الشريط أعلاه لبدء المراسلة!
+                    لا توجد محادثات خاصة بعد. اختر أي عضو أو اضغط "إضافة صديق" لبدء المراسلة!
                   </p>
                 </div>
               ) : (
@@ -527,13 +715,13 @@ export const MessagesPage: React.FC = () => {
 
           {/* Active Conversation Window */}
           <section
-            className={`lg:col-span-7 light-card rounded-3xl p-4 sm:p-5 flex flex-col h-[560px] ${
-              mobileChatOpen ? 'flex' : 'hidden lg:flex'
-            }`}
+            className={`lg:col-span-7 light-card rounded-3xl px-4 pt-3.5 pb-2.5 sm:px-5 sm:pt-4 sm:pb-3 flex flex-col relative ${
+              embedded ? 'h-[72dvh] max-h-[580px]' : 'h-[580px]'
+            } ${mobileChatOpen ? 'flex' : 'hidden lg:flex'}`}
           >
             {activePeer ? (
               <>
-                <div className="pb-3 mb-3 border-b border-slate-100 flex items-center justify-between gap-2">
+                <div className="pb-2.5 mb-2.5 border-b border-slate-100 flex items-center justify-between gap-2 shrink-0">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <button
                       type="button"
@@ -566,8 +754,8 @@ export const MessagesPage: React.FC = () => {
                       </div>
                       <p className="text-[11px] text-slate-500 truncate">
                         {activePeer.gender === 'female'
-                          ? 'حساب نسائي · يحصل على الألماس عند الرد أو الهدايا'
-                          : 'مضيف وكالة صوتية · يحصل على الألماس عند الرد أو الهدايا'}
+                          ? 'حساب نسائي · يحصل على الألماس فوراً من الرسائل والهدايا'
+                          : 'عضو صَدَى · يستقبل الهدايا والألماس'}
                       </p>
                     </div>
                   </div>
@@ -576,7 +764,7 @@ export const MessagesPage: React.FC = () => {
                     <button
                       type="button"
                       disabled={togglingFollow}
-                      onClick={handleToggleFollowPeer}
+                      onClick={() => void handleToggleFollowPeer()}
                       className={`min-h-[38px] rounded-xl px-3 py-1.5 text-xs font-extrabold border flex items-center gap-1 cursor-pointer transition disabled:opacity-50 ${
                         isMutualFriends
                           ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
@@ -614,23 +802,30 @@ export const MessagesPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Clear Top Billing Status Banner */}
-                {isMutualFriends ? (
-                  <div className="mb-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-emerald-800 flex items-center justify-between gap-2">
+                {/* Clear Top Gender-Based Billing Status Banner */}
+                {isFemaleToMale ? (
+                  <div className="mb-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-emerald-800 flex items-center justify-between gap-2 shrink-0">
+                    <span>✨ المراسلة من حسابك إلى الذكور مجانية بالكامل (0 كوين)</span>
+                    <span className="rounded-full bg-emerald-700 text-white px-2 py-0.5 text-[10px] font-mono-num shrink-0">
+                      0 كوين
+                    </span>
+                  </div>
+                ) : isMutualFriends ? (
+                  <div className="mb-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-emerald-800 flex items-center justify-between gap-2 shrink-0">
                     <span>🤝 متابعة متبادلة (أصدقاء) — الرسائل مجانية بالكامل (0 كوين)</span>
-                    <span className="rounded-full bg-emerald-600 text-white px-2 py-0.5 text-[10px] font-mono-num shrink-0">
+                    <span className="rounded-full bg-emerald-700 text-white px-2 py-0.5 text-[10px] font-mono-num shrink-0">
                       0 كوين
                     </span>
                   </div>
                 ) : (
-                  <div className="mb-2.5 rounded-2xl border border-amber-200 bg-amber-50/90 px-3.5 py-2 text-[11px] sm:text-xs font-bold text-amber-900 flex items-center justify-between gap-2">
+                  <div className="mb-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-3.5 py-2 text-[11px] sm:text-xs font-bold text-amber-900 flex items-center justify-between gap-2 shrink-0">
                     <span>
-                      الرسائل مدفوعة ({pmCost} كوين/رسالة) - تصبح مجانية فور متابعة الطرفين لبعضهما
+                      الرسائل مدفوعة ({pmCost} كوين/رسالة) — تصبح مجانية فور متابعة الطرفين لبعضهما
                     </span>
                     {!followRel.iFollowThem && (
                       <button
                         type="button"
-                        onClick={handleToggleFollowPeer}
+                        onClick={() => void handleToggleFollowPeer()}
                         className="rounded-full bg-amber-500 text-white px-2.5 py-0.5 text-[10px] font-extrabold shrink-0 cursor-pointer hover:bg-amber-600"
                       >
                         + متابعة
@@ -640,12 +835,13 @@ export const MessagesPage: React.FC = () => {
                 )}
 
                 {pendingInCurrentChat > 0 && (
-                  <div className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800">
+                  <div className="mb-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800 shrink-0">
                     💎 لديك {pendingInCurrentChat.toLocaleString('en-US')} ألماسة جاهزة — أرسل ردك الآن لتُضاف تلقائياً لمحفظتك!
                   </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pl-1">
+                {/* Messages Feed */}
+                <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2.5 pl-1 pb-1">
                   {!activeConversation || activeConversation.messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center px-6 space-y-2">
                       <MessageCircleHeart className="w-10 h-10 text-emerald-500" />
@@ -653,9 +849,9 @@ export const MessagesPage: React.FC = () => {
                         ابدأ محادثة خاصة مع {activePeer.displayName}
                       </p>
                       <p className="text-xs text-slate-500 max-w-md">
-                        {isMutualFriends
-                          ? 'أنتما أصدقاء بمتابعة متبادلة! الدردشة الخاصة بينكما مجانية بالكامل (0 كوين).'
-                          : `الرسالة الخاصة بـ ${pmCost} كوينز وتصل ألماساتها فوراً للمستلم — وتتحول الدردشة إلى مجانية فوراً عند متابعة الطرفين لبعضهما.`}
+                        {isPmFreeNow
+                          ? 'المراسلة الخاصة في هذه المحادثة مجانية بالكامل (0 كوين).'
+                          : `الرسالة الخاصة بـ ${pmCost} كوينز وتصل ألماساتها فوراً للمستلم — وتتحول لمجانية فوراً عند المتابعة المتبادلة.`}
                       </p>
                     </div>
                   ) : (
@@ -671,7 +867,7 @@ export const MessagesPage: React.FC = () => {
                               m.giftId
                                 ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-300 text-amber-950'
                                 : isMine
-                                ? 'bg-emerald-600 border-emerald-600 text-white'
+                                ? 'bg-emerald-700 border-emerald-700 text-white'
                                 : 'bg-slate-100 border-slate-200 text-slate-900'
                             }`}
                           >
@@ -713,86 +909,195 @@ export const MessagesPage: React.FC = () => {
                   <div ref={endRef} />
                 </div>
 
-                {showGiftDrawer && (
-                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
+                {/* Full-Featured Private Gift Drawer (with Quantities, Bottom-Left Balance + Recharge, & Combo) */}
+                <AnimatePresence>
+                  {showGiftDrawer && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 14 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 14 }}
+                      className="mt-2 rounded-2xl border border-[#D4AF37]/45 bg-[#120E08] text-white p-3 space-y-2.5 shadow-xl shrink-0"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGiftCategory('fixed');
+                              if (fixedGifts[0]) setSelectedGiftId(fixedGifts[0].id);
+                            }}
+                            className={`rounded-xl px-3 py-1 text-[11px] font-extrabold cursor-pointer transition ${
+                              giftCategory === 'fixed'
+                                ? 'bg-gradient-to-r from-[#FCE9A6] to-[#D4AF37] text-[#070913]'
+                                : 'bg-white/10 text-slate-300'
+                            }`}
+                          >
+                            هدايا 3D ({fixedGifts.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGiftCategory('lucky');
+                              if (luckyGifts[0]) setSelectedGiftId(luckyGifts[0].id);
+                            }}
+                            className={`rounded-xl px-3 py-1 text-[11px] font-extrabold cursor-pointer transition ${
+                              giftCategory === 'lucky'
+                                ? 'bg-gradient-to-r from-[#FCE9A6] to-[#D4AF37] text-[#070913]'
+                                : 'bg-white/10 text-slate-300'
+                            }`}
+                          >
+                            هدايا الحظ 🎰 ({luckyGifts.length})
+                          </button>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => setGiftCategory('fixed')}
-                          className={`rounded-xl px-3 py-1 text-xs font-bold cursor-pointer ${
-                            giftCategory === 'fixed'
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-white text-slate-600 border border-slate-200'
-                          }`}
+                          onClick={() => setShowGiftDrawer(false)}
+                          className="w-7 h-7 rounded-full bg-white/10 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer"
                         >
-                          هدايا ثابتة ({fixedGifts.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setGiftCategory('lucky')}
-                          className={`rounded-xl px-3 py-1 text-xs font-bold cursor-pointer ${
-                            giftCategory === 'lucky'
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-white text-slate-600 border border-slate-200'
-                          }`}
-                        >
-                          هدايا الحظ ({luckyGifts.length})
+                          <X className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowGiftDrawer(false)}
-                        className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
 
-                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                      {(giftCategory === 'lucky' ? luckyGifts : fixedGifts).map((g) => (
-                        <button
-                          key={g.id}
-                          type="button"
-                          disabled={sending}
-                          onClick={() => handleSend(undefined, g.id)}
-                          className="shrink-0 w-28 rounded-xl border border-slate-200 bg-white hover:border-emerald-400 p-2 text-center flex flex-col items-center gap-1 cursor-pointer disabled:opacity-50"
-                        >
-                          <span className="text-2xl">{g.glyph}</span>
-                          <span className="text-[11px] font-bold text-slate-900 line-clamp-1">
-                            {g.name}
-                          </span>
-                          <span className="text-[10px] font-mono-num text-amber-700 font-bold">
-                            {g.coinsCost.toLocaleString('en-US')} 🪙
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                        {visibleGifts.map((g) => {
+                          const active = selectedGift?.id === g.id;
+                          return (
+                            <button
+                              key={g.id}
+                              type="button"
+                              onClick={() => setSelectedGiftId(g.id)}
+                              className={`shrink-0 w-24 rounded-xl border p-2 text-center flex flex-col items-center gap-1 cursor-pointer transition ${
+                                active
+                                  ? 'bg-[#362407] border-[#FCE9A6] shadow-[0_0_14px_rgba(243,211,122,0.45)]'
+                                  : 'bg-white/5 border-white/10 hover:border-[#D4AF37]/50'
+                              }`}
+                            >
+                              <span className="text-2xl">{g.glyph}</span>
+                              <span className="text-[11px] font-bold text-white line-clamp-1">
+                                {g.name}
+                              </span>
+                              <span className="text-[10px] font-mono-num text-[#FCE9A6] font-extrabold">
+                                🪙 {g.coinsCost.toLocaleString('en-US')}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                <form onSubmit={(e) => handleSend(e)} className="mt-3 flex items-center gap-2">
+                      {selectedGift && (
+                        <div className="pt-2 border-t border-white/10 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                              {QUANTITIES.map((qty) => (
+                                <button
+                                  key={qty}
+                                  type="button"
+                                  onClick={() => setGiftQuantity(qty)}
+                                  className={`min-w-[40px] h-7 px-2 rounded-full text-[11px] font-mono-num font-extrabold cursor-pointer shrink-0 ${
+                                    giftQuantity === qty
+                                      ? 'bg-gradient-to-r from-[#FCE9A6] to-[#D4AF37] text-[#070913]'
+                                      : 'bg-white/10 text-slate-200 border border-white/10'
+                                  }`}
+                                >
+                                  ×{qty}
+                                </button>
+                              ))}
+                            </div>
+                            <span
+                              className={`text-xs font-mono-num font-extrabold shrink-0 ${
+                                canAffordGift ? 'text-[#FCE9A6]' : 'text-rose-400'
+                              }`}
+                            >
+                              الإجمالي: 🪙 {giftTotalCost.toLocaleString('en-US')}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              disabled={sending || !canAffordGift}
+                              onClick={() =>
+                                void handleSend(undefined, selectedGift.id, giftQuantity, 1)
+                              }
+                              className={`flex-1 min-h-[40px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 px-3 cursor-pointer transition ${
+                                canAffordGift
+                                  ? 'bg-gradient-to-r from-[#FDE047] via-[#D4AF37] to-[#B45309] text-[#070913] shadow-[0_0_16px_rgba(243,211,122,0.5)]'
+                                  : 'bg-rose-950/70 border border-rose-400/40 text-rose-200 cursor-not-allowed'
+                              }`}
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span className="truncate">
+                                {sending
+                                  ? 'جارٍ الإرسال...'
+                                  : !canAffordGift
+                                  ? 'رصيد الكوينز غير كافٍ'
+                                  : `إرسال ${selectedGift.glyph} (${selectedGift.name}) ×${giftQuantity}`}
+                              </span>
+                            </button>
+
+                            {/* Bottom-Left Real Coins Balance + (+) Quick Recharge */}
+                            <button
+                              type="button"
+                              onClick={handleRechargeAction}
+                              className="flex items-center gap-1.5 rounded-xl bg-black/70 border border-[#F3D37A]/50 px-2.5 py-1.5 shrink-0 cursor-pointer hover:border-[#FCE9A6]"
+                              title="رصيدك الحالي · اضغط للشحن السريع"
+                            >
+                              <span className="text-xs leading-none">🪙</span>
+                              <span className="text-xs font-mono-num font-black text-[#FCE9A6]">
+                                {(user?.coins ?? 0).toLocaleString('en-US')}
+                              </span>
+                              <span className="w-5 h-5 rounded-full bg-gradient-to-br from-[#FDE047] to-[#D4AF37] text-[#070913] flex items-center justify-center">
+                                <Plus className="w-3 h-3 stroke-[3]" />
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Lowered Chat Input Bar with Adjacent Gift Icon & Dark Green Send Button */}
+                <form
+                  onSubmit={(e) => handleSend(e)}
+                  className="mt-2 pt-1.5 border-t border-slate-100 flex items-center gap-1.5 shrink-0"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setShowGiftDrawer((prev) => !prev)}
+                    className={`w-10 h-10 rounded-2xl flex items-center justify-center border shrink-0 cursor-pointer transition ${
+                      showGiftDrawer
+                        ? 'bg-amber-500 border-amber-300 text-[#070913] shadow-md'
+                        : 'bg-gradient-to-br from-[#FEF08A] via-[#D4AF37] to-[#B45309] border-[#FDE047] text-[#070913] shadow-[0_0_12px_rgba(212,175,55,0.4)] hover:brightness-105'
+                    }`}
+                    title="صندوق الهدايا الخاصة"
+                    aria-label="صندوق الهدايا الخاصة"
+                  >
+                    <Gift className="w-4 h-4 stroke-[2.3]" />
+                  </button>
+
                   <input
                     type="text"
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     placeholder={
-                      isMutualFriends
+                      isPmFreeNow
                         ? 'اكتب رسالتك المجانية الآن...'
                         : isFreeReply
                         ? 'أرسل ردك الآن لإضافة الألماس تلقائياً...'
                         : `اكتب رسالة خاصة (${pmCost} كوينز)...`
                     }
-                    className="flex-1 rounded-2xl bg-slate-100 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500"
+                    className="flex-1 min-w-0 rounded-2xl bg-slate-100 border border-slate-200 px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-700"
                   />
+
                   <button
                     type="submit"
                     disabled={sending || !text.trim()}
-                    className="emerald-btn min-h-[42px] rounded-2xl px-4 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                    className="min-h-[40px] rounded-2xl bg-emerald-800 hover:bg-emerald-900 border border-emerald-700 text-white px-4 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-sm transition"
                   >
                     <Send className="w-4 h-4" />
                     <span>
-                      {isMutualFriends
+                      {isPmFreeNow
                         ? 'إرسال مجاني'
                         : isFreeReply
                         ? 'رد واستلم 💎'
@@ -800,6 +1105,58 @@ export const MessagesPage: React.FC = () => {
                     </span>
                   </button>
                 </form>
+
+                {/* 3.0s Circular Combo Button inside Private Chat */}
+                <AnimatePresence>
+                  {comboSession &&
+                    comboSession.recipientId === activePeer.id &&
+                    comboRemainingMs > 0 && (
+                      <motion.button
+                        type="button"
+                        initial={{ scale: 0.3, opacity: 0 }}
+                        animate={{ scale: [1, 1.06, 1], opacity: 1 }}
+                        exit={{ scale: 0.4, opacity: 0 }}
+                        transition={{ scale: { repeat: Infinity, duration: 1.0 } }}
+                        onClick={() => void handleComboTap()}
+                        className="absolute left-4 bottom-[66px] z-20 w-[68px] h-[68px] rounded-full flex items-center justify-center cursor-pointer active:scale-90 select-none"
+                        title="اضغط للاستمرار في إرسال الهدية (Combo)"
+                      >
+                        <svg
+                          className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-[0_0_12px_rgba(251,191,36,0.85)]"
+                          viewBox="0 0 68 68"
+                        >
+                          <circle
+                            cx="34"
+                            cy="34"
+                            r={comboCircleRadius}
+                            fill="rgba(22, 16, 8, 0.92)"
+                            stroke="rgba(255,255,255,0.2)"
+                            strokeWidth="4.5"
+                          />
+                          <circle
+                            cx="34"
+                            cy="34"
+                            r={comboCircleRadius}
+                            fill="none"
+                            stroke="#FDE047"
+                            strokeWidth="4.5"
+                            strokeLinecap="round"
+                            strokeDasharray={comboCircumference}
+                            strokeDashoffset={comboCircumference * (1 - comboProgress)}
+                          />
+                        </svg>
+                        <div className="relative flex flex-col items-center justify-center text-center leading-none">
+                          <span className="text-lg">{comboSession.gift.glyph}</span>
+                          <span className="mt-0.5 text-[9px] font-mono-num font-extrabold text-[#FDE047]">
+                            Combo ×{comboSession.comboCount}
+                          </span>
+                          <span className="text-[8px] font-mono-num text-amber-200/85">
+                            {(comboRemainingMs / 1000).toFixed(1)}s
+                          </span>
+                        </div>
+                      </motion.button>
+                    )}
+                </AnimatePresence>
               </>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center text-sm text-slate-400 gap-2">
@@ -811,8 +1168,135 @@ export const MessagesPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Add Friend Search Modal (Search Supabase Users by Name or Numeric ID) */}
+      <AnimatePresence>
+        {showAddFriendModal && (
+          <div
+            className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4"
+            onClick={() => setShowAddFriendModal(false)}
+          >
+            <motion.div
+              initial={{ y: 36, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 36, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl bg-white border border-slate-200 p-5 space-y-4 shadow-2xl text-slate-900 max-h-[82dvh] flex flex-col"
+            >
+              <div className="flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">إضافة صديق جديد</h3>
+                    <p className="text-[11px] text-slate-500">
+                      ابحث بالاسم أو رقم الـ ID لإرسال متابعة أو بدء محادثة
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddFriendModal(false)}
+                  className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="relative shrink-0">
+                <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={friendQuery}
+                  onChange={(e) => setFriendQuery(e.target.value)}
+                  placeholder="اكتب الاسم أو رقم الـ ID..."
+                  className="w-full rounded-2xl bg-slate-100 border border-slate-200 pr-10 pl-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2">
+                {friendSearching ? (
+                  <p className="text-xs text-slate-400 text-center py-8">
+                    جارٍ البحث في قاعدة الأعضاء...
+                  </p>
+                ) : friendResults.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-8">
+                    لم يتم العثور على أعضاء مطابقين لبحثك.
+                  </p>
+                ) : (
+                  friendResults.map((u) => {
+                    const rel = user
+                      ? getFollowStatus(userFollows, user.id, u.id)
+                      : { iFollowThem: false, theyFollowMe: false, isMutual: false };
+                    return (
+                      <div
+                        key={u.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-3 flex items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <AvatarWithFrame
+                            src={u.avatarUrl}
+                            alt={u.displayName}
+                            frameId={u.frameId}
+                            size="sm"
+                            onClick={() => openMiniProfile(u.id, u)}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
+                                {u.displayName}
+                              </span>
+                              <FemaleVerifiedBadge badge={u.femaleVerifiedBadge} />
+                            </div>
+                            <p className="text-[10px] font-mono-num text-slate-500">
+                              ID: {formatShortNumericId(u.id)} · Lv.{u.level}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            disabled={togglingFollow}
+                            onClick={() => void handleToggleFollowPeer(u.id)}
+                            className={`min-h-[34px] rounded-xl px-2.5 text-[11px] font-extrabold border cursor-pointer ${
+                              rel.isMutual
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                : rel.iFollowThem
+                                ? 'bg-amber-50 border-amber-300 text-amber-800'
+                                : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-400'
+                            }`}
+                          >
+                            {rel.isMutual
+                              ? 'أصدقاء 🤝'
+                              : rel.iFollowThem
+                              ? 'متابَع ✓'
+                              : '+ إضافة'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAddFriendModal(false);
+                              handleSelectPeer(u.id);
+                            }}
+                            className="min-h-[34px] rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white px-2.5 text-[11px] font-extrabold flex items-center gap-1 cursor-pointer"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span>دردشة</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Community Rules Modal */}
-      {showRulesModal && (
+      {!embedded && showRulesModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
           onClick={() => setShowRulesModal(false)}
