@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Component, useCallback, useEffect, useRef } from 'react';
+import React, { Component, useEffect, useRef } from 'react';
 import {
   HashRouter,
   Navigate,
@@ -94,6 +94,16 @@ class AppErrorBoundary extends Component<
                 } catch {
                   // ignore sessionStorage cleanup errors
                 }
+                try {
+                  if ('serviceWorker' in navigator) {
+                    void navigator.serviceWorker
+                      .getRegistrations()
+                      .then((regs) => regs.forEach((r) => void r.unregister()))
+                      .catch(() => {});
+                  }
+                } catch {
+                  // ignore sw cleanup errors
+                }
                 this.setState({ hasError: false, error: null });
                 window.location.replace(window.location.origin);
               }}
@@ -179,43 +189,8 @@ const AuthenticatedAppShell: React.FC = () => {
     room,
     loading: roomLoading,
     isMinimized: isRoomMinimized,
-    setExitModalOpen,
-    minimizeRoom,
-    leaveActiveRoom,
   } = useActiveRoom();
   const location = useLocation();
-
-  const handleMinimizeRoom = useCallback(() => {
-    setExitModalOpen?.(false);
-    minimizeRoom?.();
-  }, [minimizeRoom, setExitModalOpen]);
-
-  const handleLeaveRoom = useCallback(async () => {
-    setExitModalOpen?.(false);
-    void leaveActiveRoom?.();
-  }, [leaveActiveRoom, setExitModalOpen]);
-
-  const handlersRef = useRef({
-    handleMinimizeRoom,
-    handleLeaveRoom,
-  });
-  handlersRef.current = {
-    handleMinimizeRoom,
-    handleLeaveRoom,
-  };
-
-  useEffect(() => {
-    window.minimizeCurrentRoom = () => {
-      handlersRef.current?.handleMinimizeRoom?.();
-    };
-    window.exitCurrentRoom = async () => {
-      await handlersRef.current?.handleLeaveRoom?.();
-    };
-    return () => {
-      delete window.minimizeCurrentRoom;
-      delete window.exitCurrentRoom;
-    };
-  }, []);
 
   if (loading) {
     return (
@@ -266,12 +241,7 @@ const AuthenticatedAppShell: React.FC = () => {
         </Routes>
       </main>
       {!isFullScreenRoom && <BottomNav />}
-      {shouldKeepRoomMounted && (
-        <RoomPage
-          onMinimizeRoom={handleMinimizeRoom}
-          onLeaveRoom={handleLeaveRoom}
-        />
-      )}
+      {shouldKeepRoomMounted && <RoomPage />}
       <FloatingMinimizedRoom />
       <UserMiniProfileModal />
     </div>

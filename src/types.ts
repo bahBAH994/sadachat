@@ -592,11 +592,3 @@ export interface FemaleVoiceVerificationRequest {
   reviewedAt?: string | null;
   adminNote?: string | null;
 }
-
-declare global {
-  interface Window {
-    minimizeCurrentRoom?: () => void;
-    exitCurrentRoom?: () => Promise<void>;
-  }
-}
-

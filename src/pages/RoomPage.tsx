@@ -64,15 +64,7 @@ interface ComboSession {
   expiresAt: number;
 }
 
-interface RoomPageProps {
-  onMinimizeRoom?: () => void;
-  onLeaveRoom?: () => Promise<void> | void;
-}
-
-export const RoomPage: React.FC<RoomPageProps> = ({
-  onMinimizeRoom,
-  onLeaveRoom,
-}) => {
+export const RoomPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, updateLocalUser } = useAuth();
   const { openMiniProfile } = useMiniProfile();
