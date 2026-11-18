@@ -27,7 +27,11 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        onCancel();
+        try {
+          onCancel?.();
+        } catch {
+          // ignore
+        }
       }}
       role="dialog"
       aria-modal="true"
@@ -43,7 +47,11 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              onCancel();
+              try {
+                onCancel?.();
+              } catch {
+                // ignore
+              }
             }}
             className="w-8 h-8 rounded-full bg-white/10 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer pointer-events-auto touch-manipulation"
             aria-label="إلغاء"
@@ -54,13 +62,13 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
 
         <div className="flex flex-col items-center gap-2">
           <img
-            src={resolveAsset(roomAvatar)}
-            alt={roomTitle}
+            src={resolveAsset(roomAvatar || '')}
+            alt={roomTitle || 'الغرفة'}
             referrerPolicy="no-referrer"
             className="w-16 h-16 rounded-2xl object-cover border-2 border-[#D4AF37]/70 shadow-[0_0_20px_rgba(212,175,55,0.4)]"
           />
           <h3 className="text-base font-extrabold text-white truncate max-w-full">
-            {roomTitle}
+            {roomTitle || 'الغرفة'}
           </h3>
           <p className="text-xs text-slate-300 leading-relaxed">
             {isOnMic
@@ -75,10 +83,14 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              if (window.minimizeCurrentRoom) {
-                window.minimizeCurrentRoom();
-              } else {
-                onMinimizeRoom();
+              try {
+                if (window.minimizeCurrentRoom) {
+                  window.minimizeCurrentRoom();
+                } else {
+                  onMinimizeRoom?.();
+                }
+              } catch {
+                // ignore
               }
             }}
             className="min-h-[46px] rounded-2xl bg-gradient-to-r from-[#22E568] to-[#0FA958] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-[0_6px_18px_rgba(16,185,129,0.45)] cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
@@ -91,10 +103,14 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              if (window.exitCurrentRoom) {
-                void window.exitCurrentRoom();
-              } else {
-                onLeaveRoom();
+              try {
+                if (window.exitCurrentRoom) {
+                  void window.exitCurrentRoom();
+                } else {
+                  onLeaveRoom?.();
+                }
+              } catch {
+                // ignore
               }
             }}
             className="min-h-[46px] rounded-2xl bg-rose-600/30 border border-rose-500/60 text-rose-100 hover:bg-rose-600/45 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"

@@ -205,7 +205,9 @@ export const RoomPage: React.FC<RoomPageProps> = ({
 
   useEffect(() => {
     if (!activeRoomId || isMinimized) {
-      setExitModalOpen(false);
+      setExitModalOpen?.(false);
+      setSeatActionTarget(null);
+      setShowEmojiPicker(false);
     }
   }, [activeRoomId, isMinimized, setExitModalOpen]);
 
@@ -213,7 +215,7 @@ export const RoomPage: React.FC<RoomPageProps> = ({
   useEffect(() => {
     if (isMinimized) return;
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [isMinimized, room?.messages.length]);
+  }, [isMinimized, room?.messages?.length]);
 
   // Combo circular countdown ticker (3.0s)
   useEffect(() => {
@@ -260,17 +262,18 @@ export const RoomPage: React.FC<RoomPageProps> = ({
   }, [activeRoomId, isMinimized, setExitModalOpen]);
 
   const topSpeakerSeatIndex = useMemo(() => {
-    if (!room?.seats?.length) return -1;
+    const seats = Array.isArray(room?.seats) ? room.seats : [];
+    if (!seats.length) return -1;
     let bestIdx = -1;
     let bestVal = 0;
-    for (const s of room.seats) {
-      if (s.userId && (s.receivedDiamonds || 0) > bestVal) {
+    for (const s of seats) {
+      if (s?.userId && (s.receivedDiamonds || 0) > bestVal) {
         bestVal = s.receivedDiamonds || 0;
         bestIdx = s.seatIndex;
       }
     }
     if (bestIdx === -1) {
-      const firstSeated = room.seats.find((s) => s.userId);
+      const firstSeated = seats.find((s) => s?.userId);
       return firstSeated ? firstSeated.seatIndex : -1;
     }
     return bestIdx;
@@ -432,28 +435,36 @@ export const RoomPage: React.FC<RoomPageProps> = ({
   };
 
   const handleKeepMinimized = () => {
-    setExitModalOpen(false);
-    isMinimizedRef.current = true;
-    if (window.minimizeCurrentRoom) {
-      window.minimizeCurrentRoom();
-    } else if (onMinimizeRoom) {
-      onMinimizeRoom();
-    } else {
-      minimizeRoom();
-      navigate('/', { replace: true });
+    try {
+      setExitModalOpen?.(false);
+      isMinimizedRef.current = true;
+      if (window.minimizeCurrentRoom) {
+        window.minimizeCurrentRoom();
+      } else if (onMinimizeRoom) {
+        onMinimizeRoom?.();
+      } else {
+        minimizeRoom?.();
+        navigate('/', { replace: true });
+      }
+    } catch (err) {
+      console.error('handleKeepMinimized error:', err);
     }
   };
 
   const handleConfirmLeave = () => {
-    setExitModalOpen(false);
-    isMinimizedRef.current = true;
-    if (window.exitCurrentRoom) {
-      void window.exitCurrentRoom();
-    } else if (onLeaveRoom) {
-      void onLeaveRoom();
-    } else {
-      navigate('/', { replace: true });
-      void leaveActiveRoom();
+    try {
+      setExitModalOpen?.(false);
+      isMinimizedRef.current = true;
+      if (window.exitCurrentRoom) {
+        void window.exitCurrentRoom();
+      } else if (onLeaveRoom) {
+        void onLeaveRoom?.();
+      } else {
+        void leaveActiveRoom?.();
+        navigate('/', { replace: true });
+      }
+    } catch (err) {
+      console.error('handleConfirmLeave error:', err);
     }
   };
 
@@ -470,7 +481,9 @@ export const RoomPage: React.FC<RoomPageProps> = ({
   };
 
   const resolveRecipientPoint = (recipientId: string, idx: number) => {
-    const seat = room?.seats.find((s) => s.userId === recipientId);
+    const seat = Array.isArray(room?.seats)
+      ? room.seats.find((s) => s?.userId === recipientId)
+      : undefined;
     if (seat) {
       const seatRect = seatRefs.current[seat.seatIndex]?.getBoundingClientRect();
       if (seatRect) {
@@ -503,13 +516,10 @@ export const RoomPage: React.FC<RoomPageProps> = ({
 
   return (
     <div
-      className={
-        isMinimized
-          ? 'hidden pointer-events-none'
-          : `fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#0A0805] text-white ${
-              fullscreenGift ? 'animate-dragon-shake' : ''
-            }`
-      }
+      style={{ display: isMinimized ? 'none' : 'flex' }}
+      className={`fixed inset-0 z-40 flex-col overflow-hidden bg-[#0A0805] text-white ${
+        isMinimized ? 'pointer-events-none' : ''
+      } ${fullscreenGift ? 'animate-dragon-shake' : ''}`}
     >
       {!room ? (
         loading ? (
@@ -833,7 +843,7 @@ export const RoomPage: React.FC<RoomPageProps> = ({
         </div>
 
         {/* LIVE CONTEST BANNER FOR ALL ROOM MEMBERS */}
-        {extras.activeContest && (
+        {extras?.activeContest && (
           <button
             type="button"
             onClick={() => setShowContestModal(true)}
@@ -849,7 +859,7 @@ export const RoomPage: React.FC<RoomPageProps> = ({
             </div>
             <span className="rounded-full bg-[#FCE9A6]/20 border border-[#FCE9A6]/50 px-2 py-0.5 text-[10px] font-mono-num font-extrabold text-[#FCE9A6] shrink-0">
               {extras.activeContest.status === 'active'
-                ? `${extras.activeContest.entries.length} مشارك · شارك/صوّت`
+                ? `${Array.isArray(extras.activeContest.entries) ? extras.activeContest.entries.length : 0} مشارك · شارك/صوّت`
                 : 'عرض النتيجة'}
             </span>
           </button>
@@ -948,7 +958,7 @@ export const RoomPage: React.FC<RoomPageProps> = ({
 
                 const sizeClass = row.isHero5
                   ? 'w-[62px] h-[62px] sm:w-[68px] sm:h-[68px]'
-                  : room.seats.length <= 10
+                  : (Array.isArray(room?.seats) ? room.seats.length : 0) <= 10
                   ? 'w-[50px] h-[50px] sm:w-[56px] sm:h-[56px]'
                   : 'w-[46px] h-[46px] sm:w-[52px] sm:h-[52px]';
 
@@ -1381,10 +1391,12 @@ export const RoomPage: React.FC<RoomPageProps> = ({
               type="button"
               onClick={() => {
                 if (mySeat) {
-                  void handleToggleMute();
+                  void handleToggleMute?.();
                 } else {
-                  const free = room.seats.find((s) => !s.userId && !s.isLocked);
-                  if (free) void handleSeatClick(free.seatIndex);
+                  const free = (Array.isArray(room?.seats) ? room.seats : []).find(
+                    (s) => !s?.userId && !s?.isLocked
+                  );
+                  if (free) void handleSeatClick?.(free.seatIndex);
                   else showToast('جميع المقاعد مشغولة حالياً');
                 }
               }}
@@ -2009,8 +2021,10 @@ export const RoomPage: React.FC<RoomPageProps> = ({
           onTogglePlayPause={toggleMusicPlayPause}
           onStopMusic={stopRoomMusic}
           onClimbMic={() => {
-            const free = room.seats.find((s) => !s.userId && !s.isLocked);
-            if (free) void handleSeatClick(free.seatIndex);
+            const free = (Array.isArray(room?.seats) ? room.seats : []).find(
+              (s) => !s?.userId && !s?.isLocked
+            );
+            if (free) void handleSeatClick?.(free.seatIndex);
           }}
           onClose={() => setShowMusicModal(false)}
         />

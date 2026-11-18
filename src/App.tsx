@@ -69,8 +69,30 @@ class AppErrorBoundary extends Component<
             <button
               type="button"
               onClick={() => {
+                try {
+                  const keysToRemove: string[] = [];
+                  for (let i = 0; i < window.localStorage.length; i += 1) {
+                    const key = window.localStorage.key(i);
+                    if (
+                      key &&
+                      (key.toLowerCase().includes('room') ||
+                        key.toLowerCase().includes('sada_active') ||
+                        key.toLowerCase().includes('agency'))
+                    ) {
+                      keysToRemove.push(key);
+                    }
+                  }
+                  keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+                } catch {
+                  // ignore storage cleanup errors
+                }
+                try {
+                  window.sessionStorage.clear();
+                } catch {
+                  // ignore sessionStorage cleanup errors
+                }
                 this.setState({ hasError: false });
-                window.location.hash = '#/';
+                window.location.href = '/';
               }}
               className="emerald-btn w-full min-h-[42px] rounded-2xl text-sm font-extrabold cursor-pointer"
             >
@@ -137,19 +159,27 @@ const AuthenticatedAppShell: React.FC = () => {
   const navigate = useNavigate();
 
   const handleMinimizeRoom = useCallback(() => {
-    setExitModalOpen(false);
-    minimizeRoom();
-    if (location.pathname.startsWith('/room/')) {
-      navigate('/', { replace: true });
+    try {
+      setExitModalOpen?.(false);
+      minimizeRoom?.();
+      if (location.pathname.startsWith('/room/')) {
+        navigate('/', { replace: true });
+      }
+    } catch (err) {
+      console.error('Minimize room error:', err);
     }
   }, [location.pathname, minimizeRoom, navigate, setExitModalOpen]);
 
   const handleLeaveRoom = useCallback(async () => {
-    setExitModalOpen(false);
-    if (location.pathname !== '/') {
-      navigate('/', { replace: true });
+    try {
+      setExitModalOpen?.(false);
+      void leaveActiveRoom?.();
+      if (location.pathname !== '/') {
+        navigate('/', { replace: true });
+      }
+    } catch (err) {
+      console.error('Leave room error:', err);
     }
-    void leaveActiveRoom();
   }, [leaveActiveRoom, location.pathname, navigate, setExitModalOpen]);
 
   const handlersRef = useRef({
@@ -163,10 +193,18 @@ const AuthenticatedAppShell: React.FC = () => {
 
   useEffect(() => {
     window.minimizeCurrentRoom = () => {
-      handlersRef.current.handleMinimizeRoom();
+      try {
+        handlersRef.current?.handleMinimizeRoom?.();
+      } catch (err) {
+        console.error('window.minimizeCurrentRoom error:', err);
+      }
     };
     window.exitCurrentRoom = async () => {
-      await handlersRef.current.handleLeaveRoom();
+      try {
+        await handlersRef.current?.handleLeaveRoom?.();
+      } catch (err) {
+        console.error('window.exitCurrentRoom error:', err);
+      }
     };
     return () => {
       delete window.minimizeCurrentRoom;

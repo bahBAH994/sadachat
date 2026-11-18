@@ -394,8 +394,9 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               };
               setRoom((prev) => {
                 if (!prev) return prev;
-                if (prev.messages.some((m) => m.id === mapped.id)) return prev;
-                return { ...prev, messages: [...prev.messages, mapped].slice(-80) };
+                const msgs = Array.isArray(prev.messages) ? prev.messages : [];
+                if (msgs.some((m) => m.id === mapped.id)) return prev;
+                return { ...prev, messages: [...msgs, mapped].slice(-80) };
               });
             }
           )
@@ -524,9 +525,10 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             const sp = payload as { userId: string; isSpeaking: boolean };
             setRoom((prev) => {
               if (!prev) return prev;
+              const seats = Array.isArray(prev.seats) ? prev.seats : [];
               return {
                 ...prev,
-                seats: prev.seats.map((s) =>
+                seats: seats.map((s) =>
                   s.userId === sp.userId ? { ...s, isSpeaking: sp.isSpeaking } : s
                 ),
               };
@@ -611,12 +613,13 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (
       !user.is_admin &&
       user.id !== room.hostId &&
+      Array.isArray(extras?.kickedUserIds) &&
       extras.kickedUserIds.includes(user.id)
     ) {
       void leaveActiveRoom();
       setError('تم طردك من هذه الوكالة بقرار من إدارة الوكالة.');
     }
-  }, [extras.kickedUserIds, leaveActiveRoom, room, user]);
+  }, [extras?.kickedUserIds, leaveActiveRoom, room, user]);
 
   // Cleanup everything on user logout
   useEffect(() => {
@@ -626,8 +629,8 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [leaveActiveRoom, user]);
 
   const mySeat = useMemo(
-    () => room?.seats.find((s) => s.userId === user?.id) || null,
-    [room, user?.id]
+    () => (Array.isArray(room?.seats) ? room.seats.find((s) => s.userId === user?.id) : null) || null,
+    [room?.seats, user?.id]
   );
 
   // Persistent Web Audio API Mic Level Monitor (survives tab switching while minimized!)
@@ -679,7 +682,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               prev
                 ? {
                     ...prev,
-                    seats: prev.seats.map((s) =>
+                    seats: (Array.isArray(prev.seats) ? prev.seats : []).map((s) =>
                       s.userId === user.id ? { ...s, isSpeaking: speaking } : s
                     ),
                   }
