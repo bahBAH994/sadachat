@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { LogOut, Minimize2, X } from 'lucide-react';
 import { resolveAsset } from '../lib/assets';
@@ -7,7 +8,7 @@ interface RoomExitModalProps {
   roomTitle: string;
   roomAvatar: string;
   isOnMic: boolean;
-  onKeepMinimized: () => void;
+  onMinimizeRoom: () => void;
   onLeaveRoom: () => void;
   onCancel: () => void;
 }
@@ -16,28 +17,36 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
   roomTitle,
   roomAvatar,
   isOnMic,
-  onKeepMinimized,
+  onMinimizeRoom,
   onLeaveRoom,
   onCancel,
 }) => {
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
-      onClick={onCancel}
+      className="fixed inset-0 z-[99999] pointer-events-auto flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+      onClick={(e) => {
+        e.stopPropagation();
+        onCancel();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="خيارات الخروج من الوكالة"
     >
       <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
+        initial={{ scale: 0.92, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.92, opacity: 0 }}
         transition={{ duration: 0.16 }}
         onClick={(e) => e.stopPropagation()}
-        className="royal-glass w-full max-w-xs rounded-3xl p-5 text-center space-y-4 border border-[#F3D37A]/50 shadow-[0_18px_50px_rgba(0,0,0,0.7)]"
+        className="royal-glass pointer-events-auto relative z-10 w-full max-w-xs rounded-3xl p-5 text-center space-y-4 border border-[#F3D37A]/50 shadow-[0_18px_50px_rgba(0,0,0,0.7)]"
       >
         <div className="flex justify-end -mb-2">
           <button
             type="button"
-            onClick={onCancel}
-            className="w-8 h-8 rounded-full bg-white/10 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
+            className="w-8 h-8 rounded-full bg-white/10 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer pointer-events-auto touch-manipulation"
             aria-label="إلغاء"
           >
             <X className="w-4 h-4" />
@@ -64,16 +73,22 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
         <div className="grid grid-cols-2 gap-2.5 pt-1">
           <button
             type="button"
-            onClick={onKeepMinimized}
-            className="min-h-[44px] rounded-2xl bg-gradient-to-r from-[#22E568] to-[#0FA958] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-[0_6px_18px_rgba(16,185,129,0.45)] cursor-pointer active:scale-95 transition"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMinimizeRoom();
+            }}
+            className="min-h-[46px] rounded-2xl bg-gradient-to-r from-[#22E568] to-[#0FA958] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-[0_6px_18px_rgba(16,185,129,0.45)] cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
           >
             <Minimize2 className="w-4 h-4" />
             <span>تصغير</span>
           </button>
           <button
             type="button"
-            onClick={onLeaveRoom}
-            className="min-h-[44px] rounded-2xl bg-rose-600/25 border border-rose-500/50 text-rose-200 hover:bg-rose-600/40 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition"
+            onClick={(e) => {
+              e.stopPropagation();
+              onLeaveRoom();
+            }}
+            className="min-h-[46px] rounded-2xl bg-rose-600/30 border border-rose-500/60 text-rose-100 hover:bg-rose-600/45 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
           >
             <LogOut className="w-4 h-4" />
             <span>خروج من الوكالة</span>
@@ -82,4 +97,9 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
       </motion.div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 };

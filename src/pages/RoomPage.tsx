@@ -64,7 +64,15 @@ interface ComboSession {
   expiresAt: number;
 }
 
-export const RoomPage: React.FC = () => {
+interface RoomPageProps {
+  onMinimizeRoom?: () => void;
+  onLeaveRoom?: () => Promise<void> | void;
+}
+
+export const RoomPage: React.FC<RoomPageProps> = ({
+  onMinimizeRoom,
+  onLeaveRoom,
+}) => {
   const navigate = useNavigate();
   const { user, updateLocalUser } = useAuth();
   const { openMiniProfile } = useMiniProfile();
@@ -193,6 +201,12 @@ export const RoomPage: React.FC = () => {
   const activeRoomIdRef = useRef(activeRoomId);
   isMinimizedRef.current = isMinimized;
   activeRoomIdRef.current = activeRoomId;
+
+  useEffect(() => {
+    if (!activeRoomId || isMinimized) {
+      setShowExitModal(false);
+    }
+  }, [activeRoomId, isMinimized]);
 
   // Scroll chat smoothly when room is visible
   useEffect(() => {
@@ -419,15 +433,23 @@ export const RoomPage: React.FC = () => {
   const handleKeepMinimized = () => {
     setShowExitModal(false);
     isMinimizedRef.current = true;
-    minimizeRoom();
-    navigate('/');
+    if (onMinimizeRoom) {
+      onMinimizeRoom();
+    } else {
+      minimizeRoom();
+      navigate('/', { replace: true });
+    }
   };
 
-  const handleConfirmLeave = async () => {
+  const handleConfirmLeave = () => {
     setShowExitModal(false);
     isMinimizedRef.current = true;
-    await leaveActiveRoom();
-    navigate('/', { replace: true });
+    if (onLeaveRoom) {
+      void onLeaveRoom();
+    } else {
+      navigate('/', { replace: true });
+      void leaveActiveRoom();
+    }
   };
 
   // Resolve exact viewport start & destination coordinates for flying gifts
@@ -1995,24 +2017,22 @@ export const RoomPage: React.FC = () => {
         />
       )}
 
-      {/* EXIT / KEEP MINIMIZED MODAL */}
-      <AnimatePresence>
-        {showExitModal && (
-          <RoomExitModal
-            roomTitle={room.title}
-            roomAvatar={room.hostAvatar}
-            isOnMic={Boolean(mySeat)}
-            onKeepMinimized={handleKeepMinimized}
-            onLeaveRoom={() => void handleConfirmLeave()}
-            onCancel={() => {
-              setShowExitModal(false);
-              if (!window.history.state?.inRoom) {
-                window.history.pushState({ inRoom: true }, '');
-              }
-            }}
-          />
-        )}
-      </AnimatePresence>
+      {/* EXIT / KEEP MINIMIZED MODAL (Portaled at z-[99999] with pointer-events-auto) */}
+      {showExitModal && (
+        <RoomExitModal
+          roomTitle={room.title}
+          roomAvatar={room.hostAvatar}
+          isOnMic={Boolean(mySeat)}
+          onMinimizeRoom={handleKeepMinimized}
+          onLeaveRoom={handleConfirmLeave}
+          onCancel={() => {
+            setShowExitModal(false);
+            if (!window.history.state?.inRoom) {
+              window.history.pushState({ inRoom: true }, '');
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -276,34 +276,32 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     stopMusicEngines();
     const prevId = activeRoomIdRef.current;
     activeRoomIdRef.current = null;
-    if (presenceChannelRef.current) {
-      try {
-        await presenceChannelRef.current.untrack();
-        await supabase.removeChannel(presenceChannelRef.current);
-      } catch {
-        // ignore
-      }
-      presenceChannelRef.current = null;
-    }
-    if (roomChannelRef.current) {
-      try {
-        await supabase.removeChannel(roomChannelRef.current);
-      } catch {
-        // ignore
-      }
-      roomChannelRef.current = null;
-    }
+    const presenceChannel = presenceChannelRef.current;
+    const roomChannel = roomChannelRef.current;
+    presenceChannelRef.current = null;
+    roomChannelRef.current = null;
+
+    const tasks: Promise<unknown>[] = [];
     if (prevId && user?.id) {
-      try {
-        await leaveRoomInSupabase(prevId, user.id);
-      } catch {
-        // ignore
-      }
+      tasks.push(leaveRoomInSupabase(prevId, user.id).catch(() => {}));
     }
+    if (presenceChannel) {
+      tasks.push(
+        presenceChannel
+          .untrack()
+          .catch(() => {})
+          .finally(() => supabase.removeChannel(presenceChannel).catch(() => {}))
+      );
+    }
+    if (roomChannel) {
+      tasks.push(supabase.removeChannel(roomChannel).catch(() => {}));
+    }
+    await Promise.allSettled(tasks);
   }, [cleanupMicMonitor, stopMusicEngines, user?.id]);
 
   const leaveActiveRoom = useCallback(async () => {
-    await teardownActiveChannels();
+    cleanupMicMonitor();
+    stopMusicEngines();
     setActiveRoomId(null);
     setRoom(null);
     setExtras(createEmptyRoomExtras());
@@ -314,7 +312,8 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setEntryBanner(null);
     setError(null);
     setRoomAudioMuted(false);
-  }, [setRoomAudioMuted, teardownActiveChannels]);
+    await teardownActiveChannels();
+  }, [cleanupMicMonitor, setRoomAudioMuted, stopMusicEngines, teardownActiveChannels]);
 
   const enterRoom = useCallback(
     async (roomId: string) => {

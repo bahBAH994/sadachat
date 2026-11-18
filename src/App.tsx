@@ -3,8 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect } from 'react';
-import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useRef } from 'react';
+import {
+  HashRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ActiveRoomProvider, useActiveRoom } from './context/ActiveRoomContext';
 import { MiniProfileProvider } from './context/MiniProfileContext';
@@ -34,15 +42,20 @@ const RoomRouteBridge: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const { activeRoomId, room, enterRoom, restoreRoom } = useActiveRoom();
+  const handledRouteKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!id || !user) return;
+    if (!id || !user?.id) return;
+    const routeKey = `${user.id}:${id}`;
+    if (handledRouteKeyRef.current === routeKey) return;
+    handledRouteKeyRef.current = routeKey;
+
     if (activeRoomId === id && room) {
       restoreRoom();
     } else {
       void enterRoom(id);
     }
-  }, [activeRoomId, enterRoom, id, restoreRoom, room, user]);
+  }, [activeRoomId, enterRoom, id, restoreRoom, room, user?.id]);
 
   return null;
 };
@@ -52,8 +65,28 @@ const ProtectedShell: React.FC<{
   requireAdmin?: boolean;
 }> = ({ children, requireAdmin = false }) => {
   const { user, loading } = useAuth();
-  const { activeRoomId, isMinimized } = useActiveRoom();
+  const {
+    activeRoomId,
+    isMinimized: isRoomMinimized,
+    minimizeRoom,
+    leaveActiveRoom,
+  } = useActiveRoom();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleMinimizeRoom = useCallback(() => {
+    minimizeRoom();
+    if (location.pathname.startsWith('/room/')) {
+      navigate('/', { replace: true });
+    }
+  }, [location.pathname, minimizeRoom, navigate]);
+
+  const handleLeaveRoom = useCallback(async () => {
+    if (location.pathname !== '/') {
+      navigate('/', { replace: true });
+    }
+    await leaveActiveRoom();
+  }, [leaveActiveRoom, location.pathname, navigate]);
 
   if (loading) {
     return (
@@ -74,7 +107,8 @@ const ProtectedShell: React.FC<{
   }
 
   const isOnRoomRoute = location.pathname.startsWith('/room/');
-  const isFullScreenRoom = Boolean(activeRoomId && !isMinimized) || isOnRoomRoute;
+  const isFullScreenRoom =
+    Boolean(activeRoomId && !isRoomMinimized) || (isOnRoomRoute && !isRoomMinimized);
   const shouldKeepRoomMounted = Boolean(activeRoomId) || isOnRoomRoute;
 
   return (
@@ -82,7 +116,12 @@ const ProtectedShell: React.FC<{
       {!isFullScreenRoom && <TopBar />}
       <main className={isFullScreenRoom ? 'hidden' : 'flex-1'}>{children}</main>
       {!isFullScreenRoom && <BottomNav />}
-      {shouldKeepRoomMounted && <RoomPage />}
+      {shouldKeepRoomMounted && (
+        <RoomPage
+          onMinimizeRoom={handleMinimizeRoom}
+          onLeaveRoom={handleLeaveRoom}
+        />
+      )}
       <FloatingMinimizedRoom />
       <UserMiniProfileModal />
     </div>
