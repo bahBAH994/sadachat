@@ -1,10 +1,8 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Radio, X } from 'lucide-react';
 import { useActiveRoom } from '../context/ActiveRoomContext';
 
 export const FloatingMinimizedRoom: React.FC = () => {
-  const navigate = useNavigate();
   const {
     activeRoomId,
     room,
@@ -22,31 +20,13 @@ export const FloatingMinimizedRoom: React.FC = () => {
     const safeTitle = room?.title || 'الغرفة';
 
     const handleOpenRoom = () => {
-      try {
-        restoreRoom?.();
-        if (targetRoomId) {
-          navigate(`/room/${targetRoomId}`);
-        }
-      } catch {
-        // ignore navigation errors
-      }
+      restoreRoom?.();
     };
 
     const handleExitRoom = (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      try {
-        if (window.exitCurrentRoom) {
-          void window.exitCurrentRoom();
-        } else {
-          void leaveActiveRoom?.();
-          if (window.location.hash.includes('/room/')) {
-            navigate('/', { replace: true });
-          }
-        }
-      } catch {
-        // ignore exit errors
-      }
+      void leaveActiveRoom?.();
     };
 
     return (

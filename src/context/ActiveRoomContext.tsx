@@ -317,26 +317,20 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [cleanupMicMonitor, stopMusicEngines, user?.id]);
 
   const leaveActiveRoom = useCallback(async () => {
-    cleanupMicMonitor();
-    stopMusicEngines();
     setExitModalOpen(false);
     setIsMinimized(false);
     setActiveRoomId(null);
     setRoom(null);
-    setExtras(createEmptyRoomExtras());
-    setPresenceMembers([]);
-    setGiftBanner(null);
-    setWheelBanner(null);
-    setEntryBanner(null);
     setError(null);
-    setRoomAudioMuted(false);
 
     try {
+      cleanupMicMonitor();
+      stopMusicEngines();
       void teardownActiveChannels();
     } catch {
       // ignore
     }
-  }, [cleanupMicMonitor, setRoomAudioMuted, stopMusicEngines, teardownActiveChannels]);
+  }, [cleanupMicMonitor, stopMusicEngines, teardownActiveChannels]);
 
   const enterRoom = useCallback(
     async (roomId: string) => {

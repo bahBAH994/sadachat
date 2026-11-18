@@ -83,15 +83,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              try {
-                if (window.minimizeCurrentRoom) {
-                  window.minimizeCurrentRoom();
-                } else {
-                  onMinimizeRoom?.();
-                }
-              } catch {
-                // ignore
-              }
+              onMinimizeRoom?.();
             }}
             className="min-h-[46px] rounded-2xl bg-gradient-to-r from-[#22E568] to-[#0FA958] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-[0_6px_18px_rgba(16,185,129,0.45)] cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
           >
@@ -103,15 +95,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              try {
-                if (window.exitCurrentRoom) {
-                  void window.exitCurrentRoom();
-                } else {
-                  onLeaveRoom?.();
-                }
-              } catch {
-                // ignore
-              }
+              onLeaveRoom?.();
             }}
             className="min-h-[46px] rounded-2xl bg-rose-600/30 border border-rose-500/60 text-rose-100 hover:bg-rose-600/45 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
           >

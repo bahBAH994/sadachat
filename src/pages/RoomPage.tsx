@@ -435,37 +435,15 @@ export const RoomPage: React.FC<RoomPageProps> = ({
   };
 
   const handleKeepMinimized = () => {
-    try {
-      setExitModalOpen?.(false);
-      isMinimizedRef.current = true;
-      if (window.minimizeCurrentRoom) {
-        window.minimizeCurrentRoom();
-      } else if (onMinimizeRoom) {
-        onMinimizeRoom?.();
-      } else {
-        minimizeRoom?.();
-        navigate('/', { replace: true });
-      }
-    } catch (err) {
-      console.error('handleKeepMinimized error:', err);
-    }
+    setExitModalOpen?.(false);
+    isMinimizedRef.current = true;
+    minimizeRoom?.();
   };
 
   const handleConfirmLeave = () => {
-    try {
-      setExitModalOpen?.(false);
-      isMinimizedRef.current = true;
-      if (window.exitCurrentRoom) {
-        void window.exitCurrentRoom();
-      } else if (onLeaveRoom) {
-        void onLeaveRoom?.();
-      } else {
-        void leaveActiveRoom?.();
-        navigate('/', { replace: true });
-      }
-    } catch (err) {
-      console.error('handleConfirmLeave error:', err);
-    }
+    setExitModalOpen?.(false);
+    isMinimizedRef.current = true;
+    void leaveActiveRoom?.();
   };
 
   // Resolve exact viewport start & destination coordinates for flying gifts

@@ -40,26 +40,29 @@ import { AdminPage } from './pages/AdminPage';
 
 class AppErrorBoundary extends Component<
   { children: React.ReactNode },
-  { hasError: boolean }
+  { hasError: boolean; error: Error | null }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(): { hasError: boolean } {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): { hasError: boolean; error: Error | null } {
+    return { hasError: true, error };
   }
 
   componentDidCatch(error: unknown) {
     console.error('SADA Runtime ErrorBoundary caught:', error);
+    if (error instanceof Error && !this.state.error) {
+      this.setState({ error });
+    }
   }
 
   render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-[#F5F6FA] flex flex-col items-center justify-center p-6 text-center space-y-4">
-          <div className="light-card rounded-3xl p-6 max-w-sm space-y-3">
+          <div className="light-card rounded-3xl p-6 max-w-md w-full space-y-3">
             <h2 className="text-base font-extrabold text-slate-900">
               حدث خطأ غير متوقع في العرض
             </h2>
@@ -91,13 +94,27 @@ class AppErrorBoundary extends Component<
                 } catch {
                   // ignore sessionStorage cleanup errors
                 }
-                this.setState({ hasError: false });
-                window.location.href = '/';
+                this.setState({ hasError: false, error: null });
+                window.location.replace(window.location.origin);
               }}
               className="emerald-btn w-full min-h-[42px] rounded-2xl text-sm font-extrabold cursor-pointer"
             >
               العودة للرئيسية
             </button>
+
+            <div
+              dir="ltr"
+              className="rounded-xl bg-rose-50 border border-rose-300 p-3 text-left text-[11px] text-rose-800 max-h-48 overflow-auto select-text"
+            >
+              <p className="font-bold text-rose-900 break-words">
+                {this.state.error?.message || 'Unknown error'}
+              </p>
+              {this.state.error?.stack && (
+                <pre className="mt-1.5 whitespace-pre-wrap break-all font-mono text-[10px] text-rose-700 leading-snug">
+                  {this.state.error.stack}
+                </pre>
+              )}
+            </div>
           </div>
         </div>
       );
@@ -109,14 +126,16 @@ class AppErrorBoundary extends Component<
 const RoomRouteBridge: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { activeRoomId, room, enterRoom, restoreRoom } = useActiveRoom();
+  const { activeRoomId, room, isMinimized, loading, enterRoom, restoreRoom } = useActiveRoom();
   const handledRouteKeyRef = useRef<string | null>(null);
+  const hasEnteredRef = useRef(false);
 
   useEffect(() => {
     if (!id || !user?.id) return;
     const routeKey = `${user.id}:${id}`;
     if (handledRouteKeyRef.current === routeKey) return;
     handledRouteKeyRef.current = routeKey;
+    hasEnteredRef.current = true;
 
     if (activeRoomId === id && room) {
       restoreRoom();
@@ -124,6 +143,14 @@ const RoomRouteBridge: React.FC = () => {
       void enterRoom(id);
     }
   }, [activeRoomId, enterRoom, id, restoreRoom, room, user?.id]);
+
+  if (isMinimized) {
+    return <LobbyPage />;
+  }
+
+  if (hasEnteredRef.current && !activeRoomId && !loading) {
+    return <Navigate to="/" replace />;
+  }
 
   return null;
 };
@@ -150,37 +177,23 @@ const AuthenticatedAppShell: React.FC = () => {
   const {
     activeRoomId,
     room,
+    loading: roomLoading,
     isMinimized: isRoomMinimized,
     setExitModalOpen,
     minimizeRoom,
     leaveActiveRoom,
   } = useActiveRoom();
   const location = useLocation();
-  const navigate = useNavigate();
 
   const handleMinimizeRoom = useCallback(() => {
-    try {
-      setExitModalOpen?.(false);
-      minimizeRoom?.();
-      if (location.pathname.startsWith('/room/')) {
-        navigate('/', { replace: true });
-      }
-    } catch (err) {
-      console.error('Minimize room error:', err);
-    }
-  }, [location.pathname, minimizeRoom, navigate, setExitModalOpen]);
+    setExitModalOpen?.(false);
+    minimizeRoom?.();
+  }, [minimizeRoom, setExitModalOpen]);
 
   const handleLeaveRoom = useCallback(async () => {
-    try {
-      setExitModalOpen?.(false);
-      void leaveActiveRoom?.();
-      if (location.pathname !== '/') {
-        navigate('/', { replace: true });
-      }
-    } catch (err) {
-      console.error('Leave room error:', err);
-    }
-  }, [leaveActiveRoom, location.pathname, navigate, setExitModalOpen]);
+    setExitModalOpen?.(false);
+    void leaveActiveRoom?.();
+  }, [leaveActiveRoom, setExitModalOpen]);
 
   const handlersRef = useRef({
     handleMinimizeRoom,
@@ -193,18 +206,10 @@ const AuthenticatedAppShell: React.FC = () => {
 
   useEffect(() => {
     window.minimizeCurrentRoom = () => {
-      try {
-        handlersRef.current?.handleMinimizeRoom?.();
-      } catch (err) {
-        console.error('window.minimizeCurrentRoom error:', err);
-      }
+      handlersRef.current?.handleMinimizeRoom?.();
     };
     window.exitCurrentRoom = async () => {
-      try {
-        await handlersRef.current?.handleLeaveRoom?.();
-      } catch (err) {
-        console.error('window.exitCurrentRoom error:', err);
-      }
+      await handlersRef.current?.handleLeaveRoom?.();
     };
     return () => {
       delete window.minimizeCurrentRoom;
@@ -230,10 +235,8 @@ const AuthenticatedAppShell: React.FC = () => {
     return <Navigate to="/login" replace />;
   }
 
-  const isOnRoomRoute = location.pathname.startsWith('/room/');
-  const isFullScreenRoom =
-    Boolean(activeRoomId && !isRoomMinimized) || (isOnRoomRoute && !isRoomMinimized);
-  const shouldKeepRoomMounted = Boolean(activeRoomId || room || isOnRoomRoute);
+  const isFullScreenRoom = Boolean((activeRoomId || roomLoading) && !isRoomMinimized);
+  const shouldKeepRoomMounted = Boolean(activeRoomId || room || roomLoading);
 
   return (
     <div className="min-h-screen flex flex-col">
