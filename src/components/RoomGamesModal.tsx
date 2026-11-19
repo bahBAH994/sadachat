@@ -26,6 +26,7 @@ import {
   type SlotGameId,
 } from '../lib/sadaGamesService';
 import { InRoomSlot5x3Player } from './InRoomSlot5x3Player';
+import { Fluent3DAsset } from './Fluent3DAsset';
 import { GamesCenterPage } from '../pages/GamesCenterPage';
 import { CompetitionsPage } from '../pages/CompetitionsPage';
 
@@ -33,7 +34,7 @@ type GameSelection =
   | { type: 'slot'; slotId: SlotGameId; title: string }
   | {
       type: 'category';
-      category: 'dice' | 'roulette' | 'mystery' | 'competitions';
+      category: 'dice' | 'roulette' | 'mystery' | 'rps' | 'competitions';
       title: string;
     };
 
@@ -387,48 +388,19 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
         className="relative w-full max-w-2xl h-[78vh] max-h-[84vh] flex flex-col overflow-visible"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* DECORATIVE ARCH COIN PILE & TREASURE CHEST HEADER */}
-        <div className="relative -mb-5 z-20 flex items-end justify-center pointer-events-none px-4">
-          <svg
-            viewBox="0 0 360 72"
-            className="w-full max-w-[360px] h-[54px] sm:h-[62px] drop-shadow-[0_4px_14px_rgba(250,204,21,0.45)]"
-            aria-hidden="true"
-          >
-            <defs>
-              <linearGradient id="coinGoldGrad" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#FEF9C3" />
-                <stop offset="45%" stopColor="#FACC15" />
-                <stop offset="100%" stopColor="#B45309" />
-              </linearGradient>
-              <linearGradient id="chestBlueGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3B82F6" />
-                <stop offset="100%" stopColor="#1E3A8A" />
-              </linearGradient>
-            </defs>
-            {/* Mound of gold coins */}
-            <ellipse cx="180" cy="68" rx="145" ry="30" fill="#B45309" opacity="0.85" />
-            <ellipse cx="180" cy="64" rx="125" ry="26" fill="url(#coinGoldGrad)" />
-            {/* Scattered sculpted gold coins */}
-            <circle cx="95" cy="54" r="9" fill="url(#coinGoldGrad)" stroke="#78350F" strokeWidth="1.2" />
-            <circle cx="118" cy="44" r="10" fill="url(#coinGoldGrad)" stroke="#78350F" strokeWidth="1.2" />
-            <circle cx="155" cy="36" r="11" fill="url(#coinGoldGrad)" stroke="#78350F" strokeWidth="1.2" />
-            <circle cx="195" cy="35" r="10" fill="url(#coinGoldGrad)" stroke="#78350F" strokeWidth="1.2" />
-            <circle cx="228" cy="43" r="10" fill="url(#coinGoldGrad)" stroke="#78350F" strokeWidth="1.2" />
-            <circle cx="262" cy="53" r="9" fill="url(#coinGoldGrad)" stroke="#78350F" strokeWidth="1.2" />
-            {/* Left Blue/Gold Gamepad */}
-            <g transform="translate(22, 24) rotate(-14)">
-              <rect x="0" y="6" width="46" height="28" rx="14" fill="url(#chestBlueGrad)" stroke="#FDE047" strokeWidth="2.5" />
-              <path d="M13 15 V25 M8 20 H18" stroke="#FACC15" strokeWidth="3" strokeLinecap="round" />
-              <circle cx="32" cy="17" r="2.2" fill="#FDE047" />
-              <circle cx="37" cy="22" r="2.2" fill="#86EFAC" />
-            </g>
-            {/* Right Treasure Chest */}
-            <g transform="translate(282, 20) rotate(10)">
-              <rect x="2" y="14" width="44" height="26" rx="4" fill="url(#chestBlueGrad)" stroke="#FDE047" strokeWidth="2" />
-              <path d="M2 14 C6 2, 42 2, 46 14 Z" fill="#1D4ED8" stroke="#FDE047" strokeWidth="2" />
-              <rect x="20" y="13" width="8" height="10" rx="2" fill="#FACC15" />
-            </g>
-          </svg>
+        {/* DECORATIVE 3D FLUENT COIN PILE & TREASURE CHEST HEADER */}
+        <div className="relative -mb-4 z-20 flex items-end justify-center gap-3 sm:gap-5 pointer-events-none px-4">
+          <div className="-rotate-12 translate-y-1 drop-shadow-[0_8px_16px_rgba(0,0,0,0.75)]">
+            <Fluent3DAsset glyph="🎮" alt="الألعاب" priority sizeClass="w-11 h-11 sm:w-12 sm:h-12" />
+          </div>
+          <div className="flex items-end -space-x-2 rtl:space-x-reverse drop-shadow-[0_8px_18px_rgba(250,204,21,0.55)]">
+            <Fluent3DAsset glyph="🪙" alt="ذهب" priority sizeClass="w-8 h-8" />
+            <Fluent3DAsset glyph="🏆" alt="جوائز" priority sizeClass="w-12 h-12 sm:w-14 sm:h-14" />
+            <Fluent3DAsset glyph="🪙" alt="ذهب" priority sizeClass="w-8 h-8" />
+          </div>
+          <div className="rotate-12 translate-y-1 drop-shadow-[0_8px_16px_rgba(0,0,0,0.75)]">
+            <Fluent3DAsset glyph="🎁" alt="صندوق الكنز" priority sizeClass="w-11 h-11 sm:w-12 sm:h-12" />
+          </div>
         </div>
 
         {/* MAIN ROYAL BLUE & GOLD METALLIC SHEET */}
@@ -556,6 +528,8 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                           <img
                             src={resolveAsset(player.avatarUrl)}
                             alt={player.displayName}
+                            loading="lazy"
+                            decoding="async"
                             referrerPolicy="no-referrer"
                             className="w-9 h-9 rounded-full object-cover border border-[#FACC15]/50 shrink-0"
                           />
@@ -691,14 +665,24 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                               {/* Gloss Top Sheen */}
                               <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
 
-                              {/* Layered 3D Emoji Artwork */}
+                              {/* High-Res Fluent 3D Emoji Artwork */}
                               <div className="relative flex items-center justify-center">
-                                <span className="text-2xl sm:text-3xl drop-shadow-[0_4px_6px_rgba(0,0,0,0.75)]">
-                                  {item.glyph}
-                                </span>
-                                <span className="absolute -bottom-1 -left-2.5 text-sm sm:text-base drop-shadow">
-                                  {item.subGlyph}
-                                </span>
+                                <Fluent3DAsset
+                                  glyph={item.glyph}
+                                  alt={item.title}
+                                  priority
+                                  sizeClass="w-10 h-10 sm:w-11 sm:h-11"
+                                  fallbackTextClass="text-2xl sm:text-3xl"
+                                  className="drop-shadow-[0_5px_8px_rgba(0,0,0,0.75)]"
+                                />
+                                <Fluent3DAsset
+                                  glyph={item.subGlyph}
+                                  alt=""
+                                  priority
+                                  sizeClass="w-5 h-5 sm:w-6 sm:h-6"
+                                  fallbackTextClass="text-sm"
+                                  className="absolute -bottom-1 -left-2.5 drop-shadow"
+                                />
                               </div>
 
                               {item.labelChip && (
@@ -734,26 +718,57 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                   ))}
                 </div>
 
-                {/* Quick Link to Live Competitions */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleLaunchGame({
-                      type: 'category',
-                      category: 'competitions',
-                      title: 'المسابقات الملكية',
-                    })
-                  }
-                  className="w-full rounded-2xl border border-[#FACC15]/50 bg-[#071547]/90 hover:bg-[#0D216B] px-3.5 py-2.5 flex items-center justify-between cursor-pointer transition"
-                >
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#FDE047]" />
-                    <span className="text-xs font-extrabold text-white">
-                      المسابقات والأسئلة التفاعلية
-                    </span>
-                  </div>
-                  <span className="text-[11px] font-bold text-[#FDE047]">دخول ←</span>
-                </button>
+                {/* Featured Rock Paper Scissors 3D + Live Competitions Bottom Strip */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleLaunchGame({
+                        type: 'category',
+                        category: 'rps',
+                        title: 'حجر ورقة مقص 3D',
+                      })
+                    }
+                    className="w-full rounded-2xl border-2 border-[#FDE047]/70 bg-gradient-to-r from-[#4C1D95]/90 via-[#1E1B4B]/95 to-[#312E81]/90 hover:brightness-110 px-3.5 py-2.5 flex items-center justify-between cursor-pointer transition shadow-[0_6px_18px_rgba(109,40,217,0.35)]"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex items-center -space-x-1.5 rtl:space-x-reverse">
+                        <Fluent3DAsset glyph="✊" alt="حجر" priority sizeClass="w-7 h-7" />
+                        <Fluent3DAsset glyph="✋" alt="ورقة" priority sizeClass="w-7 h-7" />
+                        <Fluent3DAsset glyph="✌️" alt="مقص" priority sizeClass="w-7 h-7" />
+                      </div>
+                      <div className="text-right">
+                        <span className="block text-xs font-extrabold text-white">
+                          حجر ورقة مقص 3D
+                        </span>
+                        <span className="block text-[9px] text-[#FEF08A] font-mono-num">
+                          جديد · مضاعف فوري ×1.95
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-bold text-[#FDE047]">العب ←</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleLaunchGame({
+                        type: 'category',
+                        category: 'competitions',
+                        title: 'المسابقات الملكية',
+                      })
+                    }
+                    className="w-full rounded-2xl border border-[#FACC15]/50 bg-[#071547]/90 hover:bg-[#0D216B] px-3.5 py-2.5 flex items-center justify-between cursor-pointer transition"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#FDE047]" />
+                      <span className="text-xs font-extrabold text-white">
+                        المسابقات والأسئلة التفاعلية
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-bold text-[#FDE047]">دخول ←</span>
+                  </button>
+                </div>
               </>
             )}
           </div>

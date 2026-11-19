@@ -18,8 +18,10 @@ interface RoomMusicModalProps {
   musicState: RoomMusicState | null;
   musicVolume: number;
   musicMutedLocally: boolean;
+  effectsMuted?: boolean;
   onVolumeChange: (val: number) => void;
   onToggleLocalMute: () => void;
+  onToggleEffectsMuted?: () => void;
   onPlayUploaded: (trackName: string, dataUrl: string) => Promise<void>;
   onTogglePlayPause: () => Promise<void>;
   onStopMusic: () => Promise<void>;
@@ -32,8 +34,10 @@ export const RoomMusicModal: React.FC<RoomMusicModalProps> = ({
   musicState,
   musicVolume,
   musicMutedLocally,
+  effectsMuted = false,
   onVolumeChange,
   onToggleLocalMute,
+  onToggleEffectsMuted,
   onPlayUploaded,
   onTogglePlayPause,
   onStopMusic,
@@ -170,6 +174,29 @@ export const RoomMusicModal: React.FC<RoomMusicModalProps> = ({
             />
           </div>
         </div>
+
+        {/* Sound Effects Mute Toggle */}
+        {onToggleEffectsMuted && (
+          <div className="rounded-2xl bg-white/5 border border-white/10 p-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-extrabold text-white">صوت مؤثرات الهدايا والألعاب</p>
+              <p className="text-[10px] text-slate-400">
+                {effectsMuted ? 'مكتوم حالياً على جهازك' : 'مُفعّل مع جميع مستويات الهدايا'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onToggleEffectsMuted}
+              className={`min-h-[36px] px-3 rounded-xl text-xs font-extrabold shrink-0 cursor-pointer transition ${
+                effectsMuted
+                  ? 'bg-rose-600/80 text-white'
+                  : 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-200'
+              }`}
+            >
+              {effectsMuted ? 'مكتوم 🔇' : 'مُفعّل 🔊'}
+            </button>
+          </div>
+        )}
 
         {!isOnMic ? (
           <div className="rounded-2xl border border-dashed border-[#D4AF37]/40 bg-[#D4AF37]/10 p-4 text-center space-y-2.5">

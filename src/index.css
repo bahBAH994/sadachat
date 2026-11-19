@@ -11,12 +11,21 @@
     background: #F5F6FA;
     color: #111827;
     min-height: 100%;
+    height: auto;
     overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     touch-action: pan-x pan-y;
     overscroll-behavior-y: contain;
     -webkit-text-size-adjust: 100%;
     scrollbar-width: none;
     -ms-overflow-style: none;
+  }
+
+  [class*="overflow-y-auto"],
+  [class*="overflow-x-auto"],
+  [class*="overflow-auto"] {
+    -webkit-overflow-scrolling: touch;
   }
 
   html::-webkit-scrollbar,
@@ -73,9 +82,9 @@
 
 /* Dark Royal Surfaces (Voice Room Stage, Profile Royal Header, 3D Showcase, Admin) */
 .royal-glass {
-  background: linear-gradient(145deg, rgba(17, 22, 43, 0.92) 0%, rgba(7, 9, 19, 0.96) 100%);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: linear-gradient(145deg, rgba(17, 22, 43, 0.94) 0%, rgba(7, 9, 19, 0.97) 100%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   border: 1px solid rgba(212, 175, 55, 0.28);
   color: #F5F2EA;
   box-shadow:
@@ -96,9 +105,9 @@
 }
 
 .royal-capsule {
-  background: linear-gradient(135deg, rgba(20, 26, 50, 0.92), rgba(9, 12, 26, 0.95));
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: linear-gradient(135deg, rgba(20, 26, 50, 0.94), rgba(9, 12, 26, 0.96));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   border: 1px solid rgba(212, 175, 55, 0.35);
   color: #FCE9A6;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(247, 224, 151, 0.14);
@@ -366,6 +375,190 @@ a[href*="netlify.com"][aria-label*="Netlify" i] {
 
 .animate-dragon-shake {
   animation: dragon-impact-shake 0.75s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes reaction-scale-float {
+  0% {
+    transform: scale(0.35) translateY(10px);
+    opacity: 0;
+  }
+  14% {
+    transform: scale(1.2) translateY(-4px);
+    opacity: 1;
+  }
+  30% {
+    transform: scale(1.02) translateY(-8px);
+    opacity: 1;
+  }
+  48% {
+    transform: scale(1.16) translateY(-3px);
+    opacity: 1;
+  }
+  66% {
+    transform: scale(1.02) translateY(-8px);
+    opacity: 1;
+  }
+  84% {
+    transform: scale(1.12) translateY(-5px);
+    opacity: 0.96;
+  }
+  100% {
+    transform: scale(0.75) translateY(-14px);
+    opacity: 0;
+  }
+}
+
+.animate-reaction-3d {
+  animation: reaction-scale-float 3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes mic-reaction-halo {
+  0% {
+    transform: scale(0.88);
+    opacity: 0;
+  }
+  15% {
+    transform: scale(1.08);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.65;
+  }
+  82% {
+    transform: scale(1.06);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+}
+
+.animate-mic-halo-3s {
+  animation: mic-reaction-halo 3s ease-in-out forwards;
+}
+
+@keyframes marquee-bulb-chase {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(0.88);
+    box-shadow: 0 0 4px rgba(254, 240, 138, 0.35);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+    box-shadow: 0 0 12px rgba(254, 240, 138, 0.98), 0 0 18px rgba(245, 158, 11, 0.75);
+  }
+}
+
+.animate-marquee-bulb {
+  animation: marquee-bulb-chase 1.1s ease-in-out infinite;
+}
+
+/* Automatic VIP Tiers: Bronze, Chrome Silver Sheen, Royal Gold, SVIP 360 Diamond/Fire */
+@keyframes vip-silver-sheen {
+  0% {
+    transform: translateX(-140%) rotate(25deg);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.85;
+  }
+  55% {
+    transform: translateX(150%) rotate(25deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(150%) rotate(25deg);
+    opacity: 0;
+  }
+}
+
+@keyframes vip-gold-wing-pulse {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+    filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.85));
+  }
+  50% {
+    transform: translateY(-1.5px) scale(1.06);
+    filter: drop-shadow(0 0 15px rgba(254, 240, 138, 1));
+  }
+}
+
+@keyframes svip-name-shimmer {
+  0%, 100% {
+    background-position: 0% 50%;
+    filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.72));
+  }
+  50% {
+    background-position: 100% 50%;
+    filter: drop-shadow(0 0 14px rgba(254, 240, 138, 0.98));
+  }
+}
+
+@keyframes svip-fire-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 14px rgba(56, 189, 248, 0.85),
+      0 0 28px rgba(249, 115, 22, 0.75),
+      inset 0 0 10px rgba(254, 240, 138, 0.55);
+  }
+  50% {
+    box-shadow:
+      0 0 24px rgba(186, 230, 253, 0.98),
+      0 0 40px rgba(239, 68, 68, 0.9),
+      inset 0 0 14px rgba(255, 255, 255, 0.7);
+  }
+}
+
+.vip-frame-bronze {
+  box-shadow:
+    0 0 0 2.5px #CD7F32,
+    0 0 14px rgba(205, 127, 50, 0.68),
+    inset 0 1px 2px rgba(255, 226, 189, 0.7);
+}
+
+.vip-frame-silver {
+  box-shadow:
+    0 0 0 2.5px #E2E8F0,
+    0 0 18px rgba(186, 230, 253, 0.72),
+    inset 0 1px 3px rgba(255, 255, 255, 0.9);
+}
+
+.vip-frame-silver-sheen {
+  animation: vip-silver-sheen 2.8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+
+.vip-frame-gold {
+  box-shadow:
+    0 0 0 3px #FDE047,
+    0 0 22px rgba(245, 158, 11, 0.85),
+    inset 0 1px 3px rgba(255, 251, 235, 0.85);
+}
+
+.vip-wing-glow {
+  animation: vip-gold-wing-pulse 2.2s ease-in-out infinite;
+}
+
+.vip-frame-svip {
+  animation: svip-fire-pulse 2s ease-in-out infinite;
+}
+
+.svip-name-glow {
+  background: linear-gradient(90deg, #FFFBEB 0%, #FDE047 28%, #F59E0B 55%, #FEF08A 78%, #FFFBEB 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  font-weight: 900;
+  animation: svip-name-shimmer 2.6s linear infinite;
+}
+
+.vip-bronze-entry-bar {
+  background: linear-gradient(125deg, #4B280D 0%, #9A5B25 46%, #CD7F32 68%, #5D3212 100%);
+  border: 1px solid rgba(253, 211, 165, 0.7);
+  box-shadow: 0 4px 16px rgba(154, 91, 37, 0.45), inset 0 1px 0 rgba(255, 234, 208, 0.4);
 }
 
 @media (prefers-reduced-motion: reduce) {

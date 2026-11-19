@@ -18,7 +18,6 @@ import {
   submitUsdtWithdrawalInSupabase,
 } from '../lib/sadaWalletService';
 import type { Transaction, UsdtWithdrawalRequest } from '../types';
-import { FemaleVoiceVerificationCard } from '../components/FemaleVoiceVerificationCard';
 
 export const DiamondWalletPage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
@@ -121,7 +120,7 @@ export const DiamondWalletPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28">
+    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
       <div className="max-w-3xl mx-auto px-4 pt-4 space-y-5">
         <div className="flex items-center justify-between">
           <button
@@ -166,8 +165,6 @@ export const DiamondWalletPage: React.FC = () => {
             </div>
           </div>
         </section>
-
-        <FemaleVoiceVerificationCard />
 
         {feedback && (
           <div

@@ -23,6 +23,48 @@ import {
 } from './sadaCatalog';
 import { supabase } from './supabase';
 
+export const USER_COLUMNS =
+  'id, email, display_name, bio, avatar_url, gender, female_voice_status, female_verified, female_verified_badge, female_voice_note, is_host, is_agent, agency_id, host_badge, host_agency_name, host_diamonds_earned, referral_code, referred_by, referral_count, referral_spins, frame_id, unlocked_frames, previous_permanent_frame_id, temp_frame_id, temp_frame_expires_at, active_entry_id, active_entry_name, temp_entry_expires_at, coins, diamonds, level, xp, role, is_admin, is_banned, device_uuid, created_at, last_seen';
+
+export const ROOM_COLUMNS =
+  'id, title, category, description, host_id, host_name, host_avatar, cover_image, is_private, password, max_seats, seats, listeners_count, is_active, total_gifts_coins, created_at';
+
+export const ROOM_MESSAGE_COLUMNS =
+  'id, room_id, user_id, display_name, level, is_admin, vip_tier, host_badge, female_verified_badge, text, type, timestamp';
+
+export const PRIVATE_MESSAGE_COLUMNS =
+  'id, conversation_id, sender_id, recipient_id, text, coins_paid, diamonds_potential, diamonds_claimed, diamonds_awarded, gift_id, gift_name, gift_glyph, created_at, replied_at';
+
+export const TRANSACTION_COLUMNS =
+  'id, user_id, type, amount, currency, description, timestamp';
+
+export const AGENCY_COLUMNS =
+  'id, name, description, code, owner_id, owner_name, owner_avatar, commission_rate, total_commission_diamonds, total_host_diamonds, host_ids, status, created_at';
+
+export const COMPETITION_COLUMNS =
+  'id, title, subtitle, category, prize_coins, prize_diamonds, banner_image, status, ends_at, winner_id, contestants';
+
+export const QUESTION_COLUMNS =
+  'id, category, question, options, correct_index, xp_reward, coins_reward';
+
+export const DEPOSIT_COLUMNS =
+  'id, user_id, user_email, user_display_name, amount_usdt, coins_credited, tx_id, proof_image, wallet_address, network, reward_tier_label, status, admin_note, created_at, reviewed_at';
+
+export const WITHDRAWAL_COLUMNS =
+  'id, user_id, user_email, user_display_name, user_role_label, source_currency, source_amount, amount_usdt, trc20_address, network, status, admin_note, created_at, reviewed_at';
+
+export const FEMALE_VOICE_REQ_COLUMNS =
+  'id, user_id, display_name, email, audio_data_url, duration_seconds, phrase, status, created_at, reviewed_at, admin_note';
+
+export const DEVICE_LOCK_COLUMNS =
+  'device_uuid, bound_user_id, bound_email, is_blocked, blocked_reason, created_at, last_attempt_at';
+
+export const SECURITY_LOG_COLUMNS =
+  'id, type, email, device_uuid, details, timestamp';
+
+export const PLATFORM_STATE_COLUMNS =
+  'id, app_prize_pool_coins, settings, quiz_sessions, voted_keys, ladder_sessions';
+
 export interface PlatformStateDoc {
   appPrizePoolCoins: number;
   settings: PlatformSettings;
@@ -332,21 +374,28 @@ export function rowToSecurityLog(l: Record<string, unknown>): SecurityLog {
   };
 }
 
-export async function getPlatformState(): Promise<PlatformStateDoc> {
-  const defs = createDefaultPlatformSettings();
-  const { data } = await supabase
-    .from('sada_platform_state')
-    .select('*')
-    .eq('id', 'global')
-    .maybeSingle();
+const PLATFORM_STATE_CACHE_KEY = 'sada_platform_state_cache_v1';
+const PLATFORM_STATE_TTL_MS = 15_000;
 
+let cachedPlatformState: PlatformStateDoc | null = null;
+let cachedPlatformStateAt = 0;
+let platformStateInFlight: Promise<PlatformStateDoc> | null = null;
+
+function normalizePlatformState(
+  appPrizePoolCoinsInput: unknown,
+  rawSettingsInput: unknown,
+  quizSessionsInput: unknown,
+  votedKeysInput: unknown,
+  ladderSessionsInput: unknown
+): PlatformStateDoc {
+  const defs = createDefaultPlatformSettings();
   const rawSettings =
-    data?.settings && typeof data.settings === 'object'
-      ? (data.settings as Partial<PlatformSettings>)
+    rawSettingsInput && typeof rawSettingsInput === 'object'
+      ? (rawSettingsInput as Partial<PlatformSettings>)
       : {};
 
   return {
-    appPrizePoolCoins: Number(data?.app_prize_pool_coins ?? INITIAL_APP_PRIZE_POOL_COINS),
+    appPrizePoolCoins: Number(appPrizePoolCoinsInput ?? INITIAL_APP_PRIZE_POOL_COINS),
     settings: {
       ...defs,
       ...rawSettings,
@@ -387,11 +436,94 @@ export async function getPlatformState(): Promise<PlatformStateDoc> {
         : [],
       globalZeroResetV1Applied: Boolean(rawSettings.globalZeroResetV1Applied),
     },
-    quizSessions: (data?.quiz_sessions as Record<string, QuizSessionRecord>) || {},
-    votedKeys: (data?.voted_keys as Record<string, boolean>) || {},
-    ladderSessions:
-      (data?.ladder_sessions as PlatformStateDoc['ladderSessions']) || {},
+    quizSessions: (quizSessionsInput as Record<string, QuizSessionRecord>) || {},
+    votedKeys: (votedKeysInput as Record<string, boolean>) || {},
+    ladderSessions: (ladderSessionsInput as PlatformStateDoc['ladderSessions']) || {},
   };
+}
+
+function persistPlatformStateCache(doc: PlatformStateDoc) {
+  cachedPlatformState = doc;
+  cachedPlatformStateAt = Date.now();
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.setItem(
+        PLATFORM_STATE_CACHE_KEY,
+        JSON.stringify({
+          appPrizePoolCoins: doc.appPrizePoolCoins,
+          settings: doc.settings,
+          cachedAt: cachedPlatformStateAt,
+        })
+      );
+    } catch {
+      // Ignore storage errors
+    }
+  }
+}
+
+export function getCachedPlatformSettingsSync(): PlatformSettings {
+  if (cachedPlatformState?.settings) return cachedPlatformState.settings;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = window.localStorage.getItem(PLATFORM_STATE_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { settings?: Partial<PlatformSettings> };
+        if (parsed?.settings) {
+          return normalizePlatformState(
+            INITIAL_APP_PRIZE_POOL_COINS,
+            parsed.settings,
+            {},
+            {},
+            {}
+          ).settings;
+        }
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+  return createDefaultPlatformSettings();
+}
+
+export async function getPlatformState(options?: {
+  forceRefresh?: boolean;
+}): Promise<PlatformStateDoc> {
+  const now = Date.now();
+  if (
+    !options?.forceRefresh &&
+    cachedPlatformState &&
+    now - cachedPlatformStateAt < PLATFORM_STATE_TTL_MS
+  ) {
+    return cachedPlatformState;
+  }
+
+  if (!options?.forceRefresh && platformStateInFlight) {
+    return platformStateInFlight;
+  }
+
+  platformStateInFlight = (async () => {
+    try {
+      const { data } = await supabase
+        .from('sada_platform_state')
+        .select(PLATFORM_STATE_COLUMNS)
+        .eq('id', 'global')
+        .maybeSingle();
+
+      const normalized = normalizePlatformState(
+        data?.app_prize_pool_coins,
+        data?.settings,
+        data?.quiz_sessions,
+        data?.voted_keys,
+        data?.ladder_sessions
+      );
+      persistPlatformStateCache(normalized);
+      return normalized;
+    } finally {
+      platformStateInFlight = null;
+    }
+  })();
+
+  return platformStateInFlight;
 }
 
 let zeroResetInFlight: Promise<void> | null = null;
@@ -471,7 +603,7 @@ export async function ensureGlobalZeroResetInSupabase(): Promise<void> {
 }
 
 export async function savePlatformState(patch: Partial<PlatformStateDoc>): Promise<PlatformStateDoc> {
-  const current = await getPlatformState();
+  const current = await getPlatformState({ forceRefresh: true });
   const next: PlatformStateDoc = {
     appPrizePoolCoins: patch.appPrizePoolCoins ?? current.appPrizePoolCoins,
     settings: patch.settings ?? current.settings,
@@ -491,6 +623,7 @@ export async function savePlatformState(patch: Partial<PlatformStateDoc>): Promi
     },
     { onConflict: 'id' }
   );
+  persistPlatformStateCache(next);
   return next;
 }
 

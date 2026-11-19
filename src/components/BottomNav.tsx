@@ -20,7 +20,7 @@ export const BottomNav: React.FC = () => {
   return (
     <nav
       aria-label="التنقل الرئيسي"
-      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200/80 shadow-[0_-6px_26px_rgba(15,23,42,0.08)] pt-1.5 pb-[max(env(safe-area-inset-bottom,0px),14px)] px-2"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 border-t border-slate-200/80 shadow-[0_-6px_26px_rgba(15,23,42,0.08)] pt-1.5 pb-[max(env(safe-area-inset-bottom,0px),14px)] px-2"
     >
       <div className="max-w-xl mx-auto grid grid-cols-4 items-center gap-1">
         {items.map((item) => {

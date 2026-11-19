@@ -31,7 +31,14 @@ import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { AVATAR_CHOICES } from '../lib/assets';
 import { getUserPublicProfileFromSupabase, updateProfileInSupabase } from '../lib/sadaAuth';
-import { ARAB_COUNTRIES, formatShortNumericId, isSuperAdminUser, STORE_3D_ITEMS } from '../lib/sadaCatalog';
+import {
+  ARAB_COUNTRIES,
+  VIP_TIER_CONFIGS,
+  formatShortNumericId,
+  getUserVipTierInfo,
+  isSuperAdminUser,
+  STORE_3D_ITEMS,
+} from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
 import {
   getProfileSocialListFromSupabase,
@@ -44,7 +51,7 @@ import {
 } from '../lib/sadaWalletService';
 import { supabase } from '../lib/supabase';
 import type { HostTaskProgress, User } from '../types';
-import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
 import {
   FemaleVerifiedBadge,
   FemaleVoiceVerificationCard,
@@ -226,6 +233,7 @@ export const ProfilePage: React.FC = () => {
   const numericId = formatShortNumericId(user.id);
   const xpNextLevel = Math.pow(user.level, 2) * 120;
   const xpProgress = Math.min(100, Math.round((user.xp / Math.max(1, xpNextLevel)) * 100));
+  const vipInfo = getUserVipTierInfo(user);
   const active3D = STORE_3D_ITEMS.find((i) => i.id === user.frameId) || STORE_3D_ITEMS[0];
   const userCountry = user.country
     ? ARAB_COUNTRIES.find((c) => c.code === user.country)
@@ -398,7 +406,7 @@ export const ProfilePage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28">
+    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
       <input
         ref={fileInputRef}
         type="file"
@@ -457,6 +465,7 @@ export const ProfilePage: React.FC = () => {
                   src={pendingAvatarUrl || user.avatarUrl}
                   alt={user.displayName}
                   frameId={user.frameId}
+                  vipTier={vipInfo.key}
                   size="xl"
                 />
                 <button
@@ -473,9 +482,26 @@ export const ProfilePage: React.FC = () => {
               <div className="min-w-0 space-y-1.5">
                 <div className="flex items-center flex-wrap gap-1.5">
                   <h1 className="text-xl sm:text-2xl font-extrabold text-white truncate">
-                    {user.displayName}
+                    <VipUserName name={user.displayName} vipTier={vipInfo.key} />
                   </h1>
+                  <VipTierBadge vipTier={vipInfo.key} />
                   <FemaleVerifiedBadge badge={user.femaleVerifiedBadge} />
+                  {user.gender === 'female' &&
+                    !user.is_admin &&
+                    user.femaleVoiceStatus !== 'verified' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          document
+                            .getElementById('female-voice-verification-card')
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full bg-pink-500/25 hover:bg-pink-500/35 border border-pink-300/60 px-2.5 py-0.5 text-[11px] font-extrabold text-pink-100 cursor-pointer transition"
+                      >
+                        <Mic2 className="w-3 h-3 text-pink-200" />
+                        <span>توثيق الحساب</span>
+                      </button>
+                    )}
                 </div>
 
                 {/* ID + Separate Send & Receive Level Badges */}
@@ -671,6 +697,93 @@ export const ProfilePage: React.FC = () => {
           </button>
         </section>
 
+        {/* Automatic VIP Level & Next-Tier Progress Card */}
+        <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#1B223C] to-[#0A0E1A] border border-[#D4AF37]/40 p-4 sm:p-5 text-white shadow-[0_14px_34px_-12px_rgba(15,23,42,0.45)] space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#FCE9A6]/20 to-[#D4AF37]/20 border border-[#D4AF37]/50 flex items-center justify-center text-lg">
+                {vipInfo.badgeGlyph}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-extrabold text-[#FCE9A6]">
+                    مستوى الـ VIP التلقائي
+                  </h2>
+                  <VipTierBadge vipTier={vipInfo.key} />
+                </div>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  {vipInfo.arabicTitle} · رصيد التأهل:{' '}
+                  <span className="font-mono-num font-extrabold text-white">
+                    {vipInfo.score.toLocaleString('en-US')}
+                  </span>{' '}
+                  عملة
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => navigate('/wallet')}
+              className="gold-btn min-h-[36px] rounded-xl px-3.5 py-1.5 text-[11px] font-extrabold cursor-pointer"
+            >
+              ترقية بالشحن ✦
+            </button>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] font-bold">
+              <span className="text-slate-300">
+                {vipInfo.nextTier ? (
+                  <>
+                    المتبقي للوصول إلى{' '}
+                    <span className="text-[#FCE9A6] font-extrabold">{vipInfo.nextTier.label}</span>:{' '}
+                    <span className="font-mono-num text-emerald-300 font-extrabold">
+                      {vipInfo.coinsToNext.toLocaleString('en-US')} عملة
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-[#FEF08A] font-extrabold">
+                    👑 لقد وصلت إلى القمة — SVIP الإمبراطوري!
+                  </span>
+                )}
+              </span>
+              <span className="font-mono-num text-[#FCE9A6] font-black">
+                {vipInfo.progressPct}%
+              </span>
+            </div>
+
+            <div className="h-3 w-full rounded-full bg-white/10 p-0.5 overflow-hidden border border-white/10">
+              <div
+                className={`h-full rounded-full bg-gradient-to-r ${vipInfo.progressBarClass} transition-all duration-500`}
+                style={{ width: `${Math.max(vipInfo.key === 'none' && vipInfo.score === 0 ? 4 : vipInfo.progressPct, 4)}%` }}
+              />
+            </div>
+
+            <div className="grid grid-cols-4 gap-1.5 pt-1">
+              {VIP_TIER_CONFIGS.filter((t) => t.key !== 'none').map((tier) => {
+                const unlocked = vipInfo.rank >= tier.rank;
+                return (
+                  <div
+                    key={tier.key}
+                    className={`rounded-xl px-2 py-1.5 text-center border transition ${
+                      unlocked
+                        ? 'bg-[#D4AF37]/20 border-[#D4AF37]/60 text-[#FCE9A6]'
+                        : 'bg-white/5 border-white/10 text-slate-400'
+                    }`}
+                  >
+                    <p className="text-[10px] font-black truncate">
+                      {tier.badgeGlyph} {tier.shortLabel}
+                    </p>
+                    <p className="text-[9px] font-mono-num opacity-90">
+                      {tier.minScore.toLocaleString('en-US')}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
         {/* Prominent Dual Wallet Summary Card */}
         <section className="light-card rounded-3xl p-4 sm:p-5 grid grid-cols-2 divide-x divide-x-reverse divide-slate-100">
           <button
@@ -718,8 +831,10 @@ export const ProfilePage: React.FC = () => {
           </button>
         </section>
 
-        {/* Female Voice Verification Card if applicable */}
-        <FemaleVoiceVerificationCard />
+        {/* Female Voice Verification Card exclusively inside Profile ("أنا") */}
+        <div id="female-voice-verification-card">
+          <FemaleVoiceVerificationCard />
+        </div>
 
         {/* Feature Tiles: "وكالتي" visible ONLY for Agency Owners / Admin */}
         <section className="light-card rounded-3xl p-4 grid grid-cols-2 gap-3">
@@ -1097,6 +1212,8 @@ export const ProfilePage: React.FC = () => {
                     <img
                       src={choice.src}
                       alt={choice.label}
+                      loading="lazy"
+                      decoding="async"
                       className="w-9 h-9 rounded-lg object-cover"
                     />
                   </button>

@@ -1,17 +1,21 @@
 import type { User } from '../types';
 import {
   genId,
+  getUserVipTierInfo,
   isSuperAdminUser,
   SUPER_ADMIN_EMAIL,
 } from './sadaCatalog';
 import {
+  DEVICE_LOCK_COLUMNS,
   ensureGlobalZeroResetInSupabase,
   getPlatformState,
   purgeExpiredRewardsOnUser,
   rowToUser,
   savePlatformState,
+  USER_COLUMNS,
   userToRow,
 } from './sadaMappers';
+import { enrichUserWithVipTotals } from './sadaVipService';
 import { supabase } from './supabase';
 
 async function sha256Hex(input: string): Promise<string> {
@@ -72,7 +76,7 @@ async function checkDeviceLock(email: string, deviceUuid: string, isSuperAdmin: 
   if (isSuperAdmin) return;
   const { data: lock } = await supabase
     .from('sada_device_locks')
-    .select('*')
+    .select(DEVICE_LOCK_COLUMNS)
     .eq('device_uuid', deviceUuid)
     .maybeSingle();
 
@@ -139,7 +143,7 @@ async function createUserProfileRow(params: {
   if (cleanRef) {
     const { data: refRow } = await supabase
       .from('sada_users')
-      .select('*')
+      .select(USER_COLUMNS)
       .eq('referral_code', cleanRef)
       .maybeSingle();
     if (refRow && String(refRow.email).toLowerCase() !== cleanEmail) {
@@ -354,7 +358,7 @@ export async function loginOrRegisterWithSupabase(payload: {
 
   const { data: byEmail } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('email', cleanEmail)
     .maybeSingle();
 
@@ -430,7 +434,7 @@ export async function fetchCurrentUserFromSupabaseSession(
 
   const { data: row } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('email', cleanEmail)
     .maybeSingle();
 
@@ -475,7 +479,7 @@ export async function fetchCurrentUserFromSupabaseSession(
     profile.age = meta.age;
     profile.country = meta.country;
   }
-  return profile;
+  return enrichUserWithVipTotals(profile).catch(() => profile);
 }
 
 export async function logoutFromSupabase(): Promise<void> {
@@ -551,13 +555,24 @@ export async function updateProfileInSupabase(
 export async function syncUserOnActiveRoomSeats(
   user: Pick<
     User,
-    'id' | 'displayName' | 'avatarUrl' | 'frameId' | 'level' | 'femaleVerifiedBadge'
+    | 'id'
+    | 'displayName'
+    | 'avatarUrl'
+    | 'frameId'
+    | 'level'
+    | 'femaleVerifiedBadge'
+    | 'coins'
+    | 'totalRecharged'
+    | 'totalSpentCoins'
+    | 'vipLevel'
   >
 ): Promise<void> {
   const { data: activeRooms } = await supabase
     .from('sada_rooms')
     .select('id, seats, host_id')
     .eq('is_active', true);
+
+  const resolvedVipLevel = getUserVipTierInfo(user).key;
 
   for (const r of activeRooms || []) {
     const seats = Array.isArray(r.seats) ? (r.seats as Array<Record<string, unknown>>) : [];
@@ -571,6 +586,7 @@ export async function syncUserOnActiveRoomSeats(
           avatarUrl: user.avatarUrl,
           frameId: user.frameId,
           level: user.level,
+          vipLevel: resolvedVipLevel,
           femaleVerifiedBadge: user.femaleVerifiedBadge || null,
         };
       }
@@ -595,7 +611,7 @@ export async function syncUserOnActiveRoomSeats(
 export async function getUserPublicProfileFromSupabase(userId: string): Promise<User | null> {
   const { data } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', userId)
     .maybeSingle();
   if (!data) return null;
@@ -606,5 +622,5 @@ export async function getUserPublicProfileFromSupabase(userId: string): Promise<
     user.age = meta.age;
     user.country = meta.country;
   }
-  return user;
+  return enrichUserWithVipTotals(user).catch(() => user);
 }

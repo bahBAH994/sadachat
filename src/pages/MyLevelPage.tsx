@@ -39,7 +39,7 @@ export const MyLevelPage: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28">
+    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
       <div className="max-w-3xl mx-auto px-4 pt-4 space-y-5">
         {/* Top Nav Header */}
         <div className="flex items-center justify-between">

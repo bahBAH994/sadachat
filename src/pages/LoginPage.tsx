@@ -67,6 +67,8 @@ export const LoginPage: React.FC = () => {
             <img
               src={resolveAsset('emblem')}
               alt="شعار منصة صَدَى"
+              loading="lazy"
+              decoding="async"
               referrerPolicy="no-referrer"
               className="w-16 h-16 rounded-2xl object-cover border border-[#D4AF37]/50 shadow-[0_0_28px_rgba(212,175,55,0.35)] mb-3"
             />

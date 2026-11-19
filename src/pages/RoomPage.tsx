@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -37,14 +37,21 @@ import {
   ROOM_REACTION_EMOJIS,
   formatCompactMetric,
   formatShortNumericId,
+  getUserVipTierInfo,
+  parseVipTierKey,
 } from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
 import { toggleFollowAgencyInSupabase } from '../lib/sadaSocialService';
-import type { GiftItem, RoomSeat } from '../types';
-import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import type { GiftItem, RoomMessage, RoomSeat, User, VipTierKey } from '../types';
+import type {
+  RoomSeatEmojiEvent,
+  SeatGiftReactionEvent,
+} from '../context/ActiveRoomContext';
+import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
 import { DragonCinemaOverlay } from '../components/DragonCinemaOverlay';
 import { DragonStageBackdrop } from '../components/DragonStageBackdrop';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
+import { Fluent3DAsset } from '../components/Fluent3DAsset';
 import { LuckyWheelModal } from '../components/LuckyWheelModal';
 import { RoomContestModal } from '../components/RoomContestModal';
 import { RoomExitModal } from '../components/RoomExitModal';
@@ -52,9 +59,11 @@ import { RoomGamesModal } from '../components/RoomGamesModal';
 import { RoomGiftDrawer } from '../components/RoomGiftDrawer';
 import { RoomMusicModal } from '../components/RoomMusicModal';
 import { RoomSettingsModal } from '../components/RoomSettingsModal';
+import { Royal3DDieFaceBadge } from '../components/Royal3DDice';
+import { TieredGiftEffectsOverlay } from '../components/TieredGiftEffectsOverlay';
+import { VipEntranceOverlay } from '../components/VipEntranceOverlay';
 
 const COMBO_DURATION_MS = 3000;
-const DICE_GLYPHS = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
 interface ComboSession {
   gift: GiftItem;
@@ -63,6 +72,399 @@ interface ComboSession {
   comboCount: number;
   expiresAt: number;
 }
+
+interface RoomSeatItemProps {
+  seat: RoomSeat;
+  isMe: boolean;
+  isTop1: boolean;
+  isHost: boolean;
+  isHero5: boolean;
+  vipLevel?: VipTierKey | null;
+  sizeClass: string;
+  seatEmoji?: RoomSeatEmojiEvent;
+  seatGiftReaction?: SeatGiftReactionEvent;
+  seatHaloActive?: boolean;
+  onSeatClick: (seat: RoomSeat) => void;
+  registerSeatRef: (seatIndex: number, el: HTMLDivElement | null) => void;
+}
+
+const RoomSeatItem = memo<RoomSeatItemProps>(
+  ({
+    seat,
+    isMe,
+    isTop1,
+    isHost,
+    isHero5,
+    vipLevel,
+    sizeClass,
+    seatEmoji,
+    seatGiftReaction,
+    seatHaloActive = false,
+    onSeatClick,
+    registerSeatRef,
+  }) => {
+    const isActiveSpeaker = Boolean(seat.userId && seat.isSpeaking && !seat.isMuted);
+    const resolvedVip = vipLevel || seat.vipLevel || 'none';
+    return (
+      <button
+        type="button"
+        onClick={() => onSeatClick(seat)}
+        className="flex flex-col items-center text-center cursor-pointer group focus:outline-none"
+      >
+        {/* Charisma / Support Points Badge ABOVE circle */}
+        <div className="h-[15px] flex items-center justify-center gap-0.5 mb-0.5">
+          {seat.userId ? (
+            <span
+              className={`inline-flex items-center gap-0.5 px-1.5 rounded-full text-[9px] font-mono-num font-extrabold leading-tight ${
+                isTop1
+                  ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-[#070913]'
+                  : (seat.receivedDiamonds || 0) > 0
+                  ? 'bg-black/55 text-[#FCE9A6] border border-[#D4AF37]/40'
+                  : 'bg-black/40 text-slate-300'
+              }`}
+            >
+              <span>{formatCompactMetric(seat.receivedDiamonds || 0)}</span>
+              <span className="text-[8px]">💎</span>
+            </span>
+          ) : (
+            <span className="text-[9px] font-mono-num text-slate-300/80">
+              {seat.seatIndex + 1}
+            </span>
+          )}
+        </div>
+
+        {/* Enlarged Circular Seat Container */}
+        <div
+          ref={(el) => registerSeatRef(seat.seatIndex, el)}
+          className="relative flex items-center justify-center"
+        >
+          {/* Golden Speaking Waves */}
+          {isActiveSpeaker && (
+            <>
+              <span className="absolute -inset-1.5 rounded-full border-2 border-[#FCE9A6] animate-gold-wave pointer-events-none" />
+              <span className="absolute -inset-0.5 rounded-full border border-amber-400/90 shadow-[0_0_16px_rgba(251,191,36,0.9)] pointer-events-none" />
+            </>
+          )}
+
+          {/* Tier 2 Medium Gift Radiant Golden Recipient Halo (3 Seconds) */}
+          {seatHaloActive && (
+            <>
+              <motion.span
+                aria-hidden="true"
+                initial={{ scale: 0.85, opacity: 0.4 }}
+                animate={{ scale: [1, 1.24, 1], opacity: [0.95, 0.45, 0.95] }}
+                transition={{ duration: 1.15, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute -inset-2.5 rounded-full border-2 border-[#FEF08A] bg-amber-400/20 shadow-[0_0_28px_rgba(251,191,36,0.95)] pointer-events-none z-10"
+              />
+              <span
+                aria-hidden="true"
+                className="absolute -inset-1.5 rounded-full bg-gradient-to-tr from-amber-300/35 via-yellow-200/20 to-orange-400/35 blur-sm pointer-events-none z-10"
+              />
+            </>
+          )}
+
+          {/* 3D Mic Reaction Subtle Light Halo Around Mic Frame (3 Seconds) */}
+          {seatEmoji && !seatHaloActive && (
+            <span
+              key={`halo_${seatEmoji.id}`}
+              aria-hidden="true"
+              className="absolute -inset-2 rounded-full border-2 border-[#FEF08A]/80 bg-gradient-to-tr from-amber-300/20 via-yellow-100/10 to-rose-400/20 shadow-[0_0_22px_rgba(252,233,166,0.78),0_0_36px_rgba(244,63,94,0.35)] animate-mic-halo-3s pointer-events-none z-10"
+            />
+          )}
+
+          {/* TOP 1 Winged Golden Crown Aura */}
+          {isTop1 && (
+            <span
+              aria-hidden="true"
+              className="absolute -inset-2 pointer-events-none flex items-center justify-between text-amber-300 text-xs animate-top1-shimmer"
+            >
+              <span className="-mr-1">🪽</span>
+              <span className="-ml-1 scale-x-[-1]">🪽</span>
+            </span>
+          )}
+
+          {seat.userId ? (
+            <AvatarWithFrame
+              src={seat.avatarUrl}
+              alt={seat.displayName || 'متحدث'}
+              frameId={seat.frameId}
+              vipTier={resolvedVip}
+              size={isHero5 ? 'lg' : 'md'}
+              customSizeClass={sizeClass}
+            />
+          ) : (
+            <div
+              className={`${sizeClass} rounded-full flex items-center justify-center border transition ${
+                seat.isLocked
+                  ? 'bg-black/50 border-slate-700/70 text-slate-500'
+                  : 'bg-black/40 border-[#D4AF37]/35 text-[#D4AF37]/90 group-hover:border-[#FCE9A6] group-hover:bg-[#D4AF37]/15'
+              }`}
+            >
+              {seat.isLocked ? (
+                <Lock className="w-4 h-4" />
+              ) : (
+                <Mic className={isHero5 ? 'w-5 h-5' : 'w-4 h-4'} />
+              )}
+            </div>
+          )}
+
+          {/* Tier 1 & 2: Floating 3D Gift Above Recipient Mic Avatar */}
+          <AnimatePresence>
+            {seatGiftReaction && (
+              <motion.div
+                key={seatGiftReaction.id}
+                initial={{ scale: 0.35, opacity: 0, y: 12 }}
+                animate={{
+                  scale: [0.35, 1.2, 1],
+                  opacity: [0, 1, 1],
+                  y: [12, -8, -4],
+                }}
+                exit={{ scale: 0.5, opacity: 0, y: -14 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+                className="absolute -top-7 sm:-top-8 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none"
+              >
+                <div className="relative flex items-center justify-center">
+                  <span
+                    aria-hidden="true"
+                    className="absolute -inset-2 rounded-full bg-gradient-to-tr from-amber-400/55 via-yellow-200/35 to-orange-500/40 blur-md"
+                  />
+                  <Fluent3DAsset
+                    glyph={seatGiftReaction.gift.glyph}
+                    alt={seatGiftReaction.gift.name}
+                    priority
+                    sizeClass="w-10 h-10 sm:w-11 sm:h-11"
+                    fallbackTextClass="text-3xl"
+                    className="drop-shadow-[0_8px_14px_rgba(0,0,0,0.9)]"
+                  />
+                  {(seatGiftReaction.quantity > 1 || seatGiftReaction.comboCount > 1) && (
+                    <span className="absolute -bottom-1 -right-2 rounded-full bg-gradient-to-r from-[#FEF08A] to-[#D4AF37] px-1 text-[8px] font-mono-num font-black text-[#070913] shadow">
+                      ×{seatGiftReaction.comboCount > 1 ? seatGiftReaction.comboCount : seatGiftReaction.quantity}
+                    </span>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* High-Resolution 3D Fluent Mic Reaction / 3D Die Face (3 Seconds Scale & Float) */}
+          <AnimatePresence>
+            {seatEmoji && (
+              <motion.div
+                key={seatEmoji.id}
+                initial={{ scale: 0.3, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.4, opacity: 0, y: -14 }}
+                transition={{ duration: 0.22, ease: 'easeOut' }}
+                className="absolute -inset-3 z-20 flex flex-col items-center justify-center pointer-events-none"
+              >
+                <div className="relative flex flex-col items-center justify-center animate-reaction-3d">
+                  <span
+                    aria-hidden="true"
+                    className="absolute -inset-2 rounded-full bg-gradient-to-tr from-amber-400/45 via-yellow-200/25 to-rose-400/35 blur-md"
+                  />
+                  {seatEmoji.diceValue ? (
+                    <div className="relative flex flex-col items-center">
+                      <Royal3DDieFaceBadge
+                        value={seatEmoji.diceValue}
+                        sizeClass="w-11 h-11 sm:w-12 sm:h-12"
+                      />
+                      <span className="-mt-1.5 px-1.5 py-[1px] rounded-full bg-gradient-to-r from-[#FEF08A] to-[#D4AF37] text-[#070913] text-[9px] font-mono-num font-black leading-tight shadow">
+                        {seatEmoji.diceValue}
+                      </span>
+                    </div>
+                  ) : (
+                    <Fluent3DAsset
+                      glyph={seatEmoji.emoji}
+                      alt={seatEmoji.label || 'تفاعل'}
+                      priority
+                      sizeClass="w-12 h-12 sm:w-14 sm:h-14"
+                      fallbackTextClass="text-4xl"
+                      className="drop-shadow-[0_10px_18px_rgba(0,0,0,0.85)]"
+                    />
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* TOP 1 Crest Pill */}
+          {isTop1 && (
+            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 text-[#070913] text-[7px] font-extrabold leading-tight shadow z-10 whitespace-nowrap">
+              TOP1
+            </span>
+          )}
+
+          {/* Mic Muted Badge */}
+          {seat.userId && seat.isMuted && (
+            <span className="absolute -bottom-0.5 -left-0.5 w-4 h-4 rounded-full bg-rose-600 border border-[#0A0805] flex items-center justify-center text-white z-10">
+              <MicOff className="w-2.5 h-2.5" />
+            </span>
+          )}
+        </div>
+
+        {/* Speaker Name & Role Micro-Tag */}
+        <div className="mt-1 flex items-center justify-center gap-0.5 max-w-[74px]">
+          {seat.userId ? (
+            <>
+              {isHost && <span className="text-[8px] text-amber-300 shrink-0">👑</span>}
+              <VipUserName
+                name={seat.displayName || 'متحدث'}
+                vipTier={resolvedVip}
+                className="text-[10px] font-bold text-white/95 truncate leading-tight"
+              />
+            </>
+          ) : (
+            <span className="text-[9px] font-semibold text-slate-400/90 truncate">
+              {seat.isLocked ? 'مقفل' : 'مايك'}
+            </span>
+          )}
+        </div>
+      </button>
+    );
+  }
+);
+
+interface RoomChatMessageItemProps {
+  message: RoomMessage;
+  senderAvatarUrl?: string;
+  senderFrameId?: string;
+  senderVipTier?: VipTierKey;
+  onOpenMiniProfile: (userId: string, preview?: Partial<User>) => void;
+}
+
+const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
+  ({ message: m, senderAvatarUrl, senderFrameId, senderVipTier, onOpenMiniProfile }) => {
+    const resolvedVip: VipTierKey =
+      senderVipTier && senderVipTier !== 'none'
+        ? senderVipTier
+        : parseVipTierKey(m.vipLevel || m.vipTier);
+
+    const isJoinSystem = m.type === 'system' && m.text.startsWith('دخل الغرفة');
+    if (isJoinSystem) {
+      return (
+        <div className="flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#18B75D] to-[#0FA958] px-3 py-0.5 text-[11px] font-bold text-white shadow-sm">
+            <span>🔔</span>
+            <span>{m.text}</span>
+          </span>
+        </div>
+      );
+    }
+
+    if (m.type === 'system') {
+      return (
+        <div className="inline-block rounded-xl bg-black/45 px-2.5 py-1 text-[11px] text-amber-100/90">
+          {m.text}
+        </div>
+      );
+    }
+
+    if (m.type === 'entry') {
+      if (resolvedVip === 'vip1' || m.text.includes('VIP 1')) {
+        return (
+          <div className="vip-bronze-entry-bar rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-[#FFF3DF] flex items-center gap-2">
+            <VipTierBadge vipTier="vip1" compact />
+            <span className="truncate">{m.text}</span>
+          </div>
+        );
+      }
+      if (resolvedVip === 'vip2' || m.text.includes('VIP 2')) {
+        return (
+          <div className="rounded-xl border border-sky-200/75 bg-gradient-to-r from-slate-800/90 via-sky-900/90 to-slate-900/90 px-3 py-1.5 text-[11px] font-extrabold text-sky-100 flex items-center gap-2 shadow-[0_4px_14px_rgba(56,189,248,0.3)]">
+            <VipTierBadge vipTier="vip2" compact />
+            <span className="truncate">{m.text}</span>
+          </div>
+        );
+      }
+      if (resolvedVip === 'svip' || m.text.includes('الإمبراطور')) {
+        return (
+          <div className="rounded-xl border-2 border-[#FEF08A] bg-gradient-to-r from-[#581C0C]/95 via-[#78350F]/95 to-[#1E1B4B]/95 px-3 py-2 text-xs font-black text-[#FFFBEB] flex items-center gap-2 shadow-[0_0_24px_rgba(251,191,36,0.55)]">
+            <VipTierBadge vipTier="svip" compact />
+            <VipUserName name={m.text} vipTier="svip" className="truncate" />
+          </div>
+        );
+      }
+      return (
+        <div className="rounded-xl border border-[#D4AF37]/60 bg-gradient-to-r from-[#452806]/90 to-[#181006]/90 px-3 py-1.5 text-[11px] font-extrabold text-[#FCE9A6] flex items-center gap-2 shadow-sm">
+          {resolvedVip !== 'none' && <VipTierBadge vipTier={resolvedVip} compact />}
+          <span className="truncate">{m.text}</span>
+        </div>
+      );
+    }
+
+    if (m.type === 'gift' || m.type === 'wheel') {
+      return (
+        <div className="rounded-xl border border-[#D4AF37]/45 bg-gradient-to-r from-[#362407]/75 to-[#151008]/75 px-3 py-1.5 text-[11px] font-bold text-[#FCE9A6] shadow-sm">
+          {m.text}
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-xl bg-black/50 px-2.5 py-1.5 text-xs leading-snug flex items-start gap-2">
+        <button
+          type="button"
+          onClick={() =>
+            onOpenMiniProfile(m.userId, {
+              displayName: m.displayName,
+              avatarUrl: senderAvatarUrl || m.avatarUrl,
+              frameId: senderFrameId || m.frameId,
+              level: m.level,
+              is_admin: m.isAdmin,
+              vipLevel: resolvedVip,
+              femaleVerifiedBadge: m.femaleVerifiedBadge,
+            })
+          }
+          className="shrink-0 mt-0.5 cursor-pointer"
+        >
+          <AvatarWithFrame
+            src={senderAvatarUrl || m.avatarUrl}
+            alt={m.displayName}
+            frameId={senderFrameId || m.frameId || 'frame_obsidian'}
+            vipTier={resolvedVip}
+            size="xs"
+          />
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <div className="inline-flex flex-wrap items-center gap-1 ml-1.5">
+            <VipTierBadge vipTier={resolvedVip} compact />
+            <span
+              className={`inline-flex items-center rounded-md px-1.5 py-0.2 text-[9px] font-mono-num font-extrabold ${
+                m.isAdmin
+                  ? 'bg-amber-400 text-[#070913]'
+                  : m.level >= 15
+                  ? 'bg-sky-500/80 text-white'
+                  : 'bg-emerald-600/80 text-white'
+              }`}
+            >
+              Lv.{m.level}
+            </span>
+            <FemaleVerifiedBadge badge={m.femaleVerifiedBadge} />
+            <button
+              type="button"
+              onClick={() =>
+                onOpenMiniProfile(m.userId, {
+                  displayName: m.displayName,
+                  avatarUrl: senderAvatarUrl || m.avatarUrl,
+                  frameId: senderFrameId || m.frameId,
+                  level: m.level,
+                  is_admin: m.isAdmin,
+                  vipLevel: resolvedVip,
+                  femaleVerifiedBadge: m.femaleVerifiedBadge,
+                })
+              }
+              className="font-extrabold text-[#FCE9A6] hover:underline cursor-pointer"
+            >
+              <VipUserName name={`${m.displayName}:`} vipTier={resolvedVip} />
+            </button>
+          </div>
+          <span className="text-white/95">{m.text}</span>
+        </div>
+      </div>
+    );
+  }
+);
 
 export const RoomPage: React.FC = () => {
   const navigate = useNavigate();
@@ -97,15 +499,21 @@ export const RoomPage: React.FC = () => {
     wheelBanner,
     entryBanner,
     flyingGifts,
+    tier1SideNotices,
+    mediumCelebrationGift,
     fullscreenGift,
+    seatGiftReactions,
+    seatHaloEffects,
     seatEmojis,
     musicState,
     musicVolume,
     musicMutedLocally,
     roomAudioMuted,
+    effectsMuted,
     setMusicVolume,
     setMusicMutedLocally,
     setRoomAudioMuted,
+    setEffectsMuted,
     handleSeatClick,
     handleToggleLock,
     handleToggleMute,
@@ -150,6 +558,9 @@ export const RoomPage: React.FC = () => {
     'agency'
   );
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
+  const [leaderboardModalTab, setLeaderboardModalTab] = useState<'leaderboard' | 'presence'>(
+    'leaderboard'
+  );
   const [showMusicModal, setShowMusicModal] = useState(false);
   const [showContestModal, setShowContestModal] = useState(false);
   const [seatActionTarget, setSeatActionTarget] = useState<RoomSeat | null>(null);
@@ -157,6 +568,90 @@ export const RoomPage: React.FC = () => {
   const [isFollowingAgency, setIsFollowingAgency] = useState(false);
   const [heartBurstTick, setHeartBurstTick] = useState(0);
   const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
+
+  const userProfileLookup = useMemo(() => {
+    const map = new Map<
+      string,
+      { avatarUrl?: string; frameId?: string; vipLevel?: VipTierKey; displayName?: string }
+    >();
+    if (Array.isArray(room?.seats)) {
+      for (const s of room.seats) {
+        if (s?.userId) {
+          map.set(s.userId, {
+            avatarUrl: s.avatarUrl || undefined,
+            frameId: s.frameId || undefined,
+            vipLevel: s.vipLevel || undefined,
+            displayName: s.displayName || undefined,
+          });
+        }
+      }
+    }
+    for (const p of presenceMembers) {
+      const prev = map.get(p.userId);
+      map.set(p.userId, {
+        avatarUrl: p.avatarUrl || prev?.avatarUrl,
+        frameId: p.frameId || prev?.frameId,
+        vipLevel: p.vipLevel && p.vipLevel !== 'none' ? p.vipLevel : prev?.vipLevel,
+        displayName: p.displayName || prev?.displayName,
+      });
+    }
+    if (user?.id) {
+      const myVip = getUserVipTierInfo(user).key;
+      const prev = map.get(user.id);
+      map.set(user.id, {
+        avatarUrl: user.avatarUrl || prev?.avatarUrl,
+        frameId: user.frameId || prev?.frameId,
+        vipLevel: myVip !== 'none' ? myVip : prev?.vipLevel,
+        displayName: user.displayName || prev?.displayName,
+      });
+    }
+    return map;
+  }, [presenceMembers, room?.seats, user]);
+
+  const unifiedPresenceList = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        userId: string;
+        displayName: string;
+        avatarUrl: string;
+        frameId?: string;
+        vipLevel: VipTierKey;
+        onSeat: boolean;
+      }
+    >();
+    if (Array.isArray(room?.seats)) {
+      for (const s of room.seats) {
+        if (s?.userId) {
+          const fallback = userProfileLookup.get(s.userId);
+          map.set(s.userId, {
+            userId: s.userId,
+            displayName: s.displayName || fallback?.displayName || 'متحدث',
+            avatarUrl: s.avatarUrl || fallback?.avatarUrl || 'host_male',
+            frameId: s.frameId || fallback?.frameId || 'frame_obsidian',
+            vipLevel: fallback?.vipLevel || s.vipLevel || 'none',
+            onSeat: true,
+          });
+        }
+      }
+    }
+    for (const p of presenceMembers) {
+      const existing = map.get(p.userId);
+      const fallback = userProfileLookup.get(p.userId);
+      map.set(p.userId, {
+        userId: p.userId,
+        displayName: p.displayName || existing?.displayName || 'عضو',
+        avatarUrl: p.avatarUrl || existing?.avatarUrl || 'host_male',
+        frameId: p.frameId || existing?.frameId || 'frame_obsidian',
+        vipLevel:
+          p.vipLevel && p.vipLevel !== 'none'
+            ? p.vipLevel
+            : fallback?.vipLevel || existing?.vipLevel || 'none',
+        onSeat: Boolean(existing?.onSeat),
+      });
+    }
+    return Array.from(map.values());
+  }, [presenceMembers, room?.seats, userProfileLookup]);
 
   useEffect(() => {
     if (!user?.id || !room?.id) return;
@@ -183,10 +678,61 @@ export const RoomPage: React.FC = () => {
   const headerAnchorRef = useRef<HTMLDivElement | null>(null);
   const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 2600);
-  };
+  }, []);
+
+  const registerSeatRef = useCallback((seatIndex: number, el: HTMLDivElement | null) => {
+    seatRefs.current[seatIndex] = el;
+  }, []);
+
+  const handleSeatInteraction = useCallback(
+    async (seat: RoomSeat) => {
+      if (!user || !room) return;
+      if (seat.isLocked) {
+        if (canManage) {
+          await handleToggleLock(seat.seatIndex, seat.isLocked);
+          showToast(`تم فتح المقعد ${seat.seatIndex + 1}`);
+        }
+        return;
+      }
+
+      if (!seat.userId) {
+        await handleSeatClick(seat.seatIndex);
+        return;
+      }
+
+      if (seat.userId === user.id || canManage) {
+        setSeatActionTarget(seat);
+        return;
+      }
+
+      openMiniProfile(seat.userId, {
+        displayName: seat.displayName || undefined,
+        avatarUrl: seat.avatarUrl || undefined,
+        frameId: seat.frameId || undefined,
+        level: seat.level || 1,
+        femaleVerifiedBadge: seat.femaleVerifiedBadge || null,
+      });
+    },
+    [
+      user,
+      room,
+      canManage,
+      handleToggleLock,
+      showToast,
+      handleSeatClick,
+      openMiniProfile,
+    ]
+  );
+
+  const onSeatItemClick = useCallback(
+    (seat: RoomSeat) => {
+      void handleSeatInteraction(seat);
+    },
+    [handleSeatInteraction]
+  );
 
   const isMinimizedRef = useRef(isMinimized);
   const activeRoomIdRef = useRef(activeRoomId);
@@ -317,35 +863,6 @@ export const RoomPage: React.FC = () => {
     }
     return list;
   }, [chatFilter, room?.messages]);
-
-  const handleSeatInteraction = async (seat: RoomSeat) => {
-    if (!user || !room) return;
-    if (seat.isLocked) {
-      if (canManage) {
-        await handleToggleLock(seat.seatIndex, seat.isLocked);
-        showToast(`تم فتح المقعد ${seat.seatIndex + 1}`);
-      }
-      return;
-    }
-
-    if (!seat.userId) {
-      await handleSeatClick(seat.seatIndex);
-      return;
-    }
-
-    if (seat.userId === user.id || canManage) {
-      setSeatActionTarget(seat);
-      return;
-    }
-
-    openMiniProfile(seat.userId, {
-      displayName: seat.displayName || undefined,
-      avatarUrl: seat.avatarUrl || undefined,
-      frameId: seat.frameId || undefined,
-      level: seat.level || 1,
-      femaleVerifiedBadge: seat.femaleVerifiedBadge || null,
-    });
-  };
 
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -526,6 +1043,8 @@ export const RoomPage: React.FC = () => {
               <img
                 src={resolveAsset(room.hostAvatar)}
                 alt={room.title}
+                loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
               />
@@ -585,6 +1104,7 @@ export const RoomPage: React.FC = () => {
                           frameId: gifter.frameId,
                         });
                       } else {
+                        setLeaderboardModalTab('leaderboard');
                         setShowLeaderboardModal(true);
                       }
                     }}
@@ -608,6 +1128,8 @@ export const RoomPage: React.FC = () => {
                         <img
                           src={resolveAsset(gifter.avatarUrl)}
                           alt={gifter.displayName}
+                          loading="lazy"
+                          decoding="async"
                           referrerPolicy="no-referrer"
                           className="w-full h-full object-cover"
                         />
@@ -632,6 +1154,7 @@ export const RoomPage: React.FC = () => {
                   setSettingsInitialTab('members');
                   setShowSettingsModal(true);
                 } else {
+                  setLeaderboardModalTab('presence');
                   setShowLeaderboardModal(true);
                 }
               }}
@@ -844,8 +1367,14 @@ export const RoomPage: React.FC = () => {
               exit={{ opacity: 0, y: -12 }}
               className="mb-1.5 rounded-2xl border border-[#FCE9A6]/80 bg-gradient-to-r from-[#362205]/95 via-[#1A1308]/95 to-[#362205]/95 px-3.5 py-2 flex items-center justify-between gap-2 shadow-[0_0_26px_rgba(243,211,122,0.55)] shrink-0"
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-2xl">{giftBanner.gift.glyph}</span>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Fluent3DAsset
+                  glyph={giftBanner.gift.glyph}
+                  alt={giftBanner.gift.name}
+                  priority
+                  sizeClass="w-8 h-8"
+                  fallbackTextClass="text-2xl"
+                />
                 <p className="text-[11px] font-extrabold text-white truncate">
                   أهدى <span className="text-[#FCE9A6]">{giftBanner.senderName}</span>{' '}
                   {giftBanner.gift.name} إلى{' '}
@@ -864,26 +1393,19 @@ export const RoomPage: React.FC = () => {
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              className="mb-1.5 rounded-xl border border-[#FCE9A6]/70 bg-[#2C1E06]/95 px-3 py-1.5 text-center text-[11px] font-extrabold text-[#FCE9A6] shrink-0"
+              className="mb-1.5 rounded-xl border border-[#FCE9A6]/70 bg-[#2C1E06]/95 px-3 py-1.5 flex items-center justify-center gap-2 text-[11px] font-extrabold text-[#FCE9A6] shrink-0"
             >
-              {wheelBanner.segment.glyph} فاز {wheelBanner.winnerName} بـ {wheelBanner.segment.label}
+              <Fluent3DAsset
+                glyph={wheelBanner.segment.glyph}
+                alt={wheelBanner.segment.label}
+                priority
+                sizeClass="w-5 h-5"
+                fallbackTextClass="text-sm"
+              />
+              <span>فاز {wheelBanner.winnerName} بـ {wheelBanner.segment.label}</span>
             </motion.div>
           )}
-          {entryBanner && (
-            <motion.div
-              initial={{ opacity: 0, x: 40 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -40 }}
-              className="mb-1.5 rounded-2xl border border-amber-300/80 bg-gradient-to-r from-[#3E2405]/95 to-[#171209]/95 px-3 py-2 flex items-center gap-2.5 shadow-[0_0_25px_rgba(251,191,36,0.5)] shrink-0"
-            >
-              <span className="text-2xl">
-                {entryBanner.entryId === 'entry_legendary_30d' ? '🐉' : '🚘'}
-              </span>
-              <p className="text-xs font-extrabold text-[#FCE9A6] truncate">
-                دخولية ملكية: شرّف {entryBanner.displayName} الوكالة!
-              </p>
-            </motion.div>
-          )}
+          <VipEntranceOverlay entry={entryBanner} />
         </AnimatePresence>
 
         {/* 2. SMART GEOMETRIC MIC GRID (1+4 | 2+4+4 | 5xN up to 30 Larger Mics) */}
@@ -906,177 +1428,31 @@ export const RoomPage: React.FC = () => {
               }`}
             >
               {row.seats.map((seat) => {
-                const isMe = seat.userId === user?.id;
-                const isActiveSpeaker = Boolean(seat.userId && seat.isSpeaking && !seat.isMuted);
-                const isTop1 = Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex);
-                const seatEmoji = seat.userId ? seatEmojis[seat.userId] : undefined;
-
                 const sizeClass = row.isHero5
                   ? 'w-[62px] h-[62px] sm:w-[68px] sm:h-[68px]'
                   : (Array.isArray(room?.seats) ? room.seats.length : 0) <= 10
                   ? 'w-[50px] h-[50px] sm:w-[56px] sm:h-[56px]'
                   : 'w-[46px] h-[46px] sm:w-[52px] sm:h-[52px]';
 
+                const seatLookup = seat.userId ? userProfileLookup.get(seat.userId) : undefined;
                 return (
-                  <button
+                  <RoomSeatItem
                     key={seat.seatIndex}
-                    type="button"
-                    onClick={() => void handleSeatInteraction(seat)}
-                    className="flex flex-col items-center text-center cursor-pointer group focus:outline-none"
-                  >
-                    {/* Charisma / Support Points Badge ABOVE circle */}
-                    <div className="h-[15px] flex items-center justify-center gap-0.5 mb-0.5">
-                      {seat.userId ? (
-                        <span
-                          className={`inline-flex items-center gap-0.5 px-1.5 rounded-full text-[9px] font-mono-num font-extrabold leading-tight ${
-                            isTop1
-                              ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-[#070913]'
-                              : (seat.receivedDiamonds || 0) > 0
-                              ? 'bg-black/55 text-[#FCE9A6] border border-[#D4AF37]/40'
-                              : 'bg-black/40 text-slate-300'
-                          }`}
-                        >
-                          <span>{formatCompactMetric(seat.receivedDiamonds || 0)}</span>
-                          <span className="text-[8px]">💎</span>
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-mono-num text-slate-300/80">
-                          {seat.seatIndex + 1}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Enlarged Circular Seat Container */}
-                    <div
-                      ref={(el) => {
-                        seatRefs.current[seat.seatIndex] = el;
-                      }}
-                      className="relative flex items-center justify-center"
-                    >
-                      {/* Golden Speaking Waves */}
-                      {isActiveSpeaker && (
-                        <>
-                          <span className="absolute -inset-1.5 rounded-full border-2 border-[#FCE9A6] animate-gold-wave pointer-events-none" />
-                          <span className="absolute -inset-0.5 rounded-full border border-amber-400/90 shadow-[0_0_16px_rgba(251,191,36,0.9)] pointer-events-none" />
-                        </>
-                      )}
-
-                      {/* TOP 1 Winged Golden Crown Aura */}
-                      {isTop1 && (
-                        <span
-                          aria-hidden="true"
-                          className="absolute -inset-2 pointer-events-none flex items-center justify-between text-amber-300 text-xs animate-top1-shimmer"
-                        >
-                          <span className="-mr-1">🪽</span>
-                          <span className="-ml-1 scale-x-[-1]">🪽</span>
-                        </span>
-                      )}
-
-                      {seat.userId ? (
-                        <div
-                          className={`relative ${sizeClass} rounded-full overflow-hidden bg-[#14110B] ${
-                            isTop1
-                              ? 'ring-2 ring-amber-300 shadow-[0_0_16px_rgba(251,191,36,0.85)]'
-                              : isMe
-                              ? 'ring-2 ring-[#22E568] shadow-[0_0_12px_rgba(34,229,104,0.55)]'
-                              : 'ring-[1.5px] ring-[#D4AF37]/65'
-                          }`}
-                        >
-                          <img
-                            src={resolveAsset(seat.avatarUrl)}
-                            alt={seat.displayName || 'متحدث'}
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <div
-                          className={`${sizeClass} rounded-full flex items-center justify-center border transition ${
-                            seat.isLocked
-                              ? 'bg-black/50 border-slate-700/70 text-slate-500'
-                              : 'bg-black/40 border-[#D4AF37]/35 text-[#D4AF37]/90 group-hover:border-[#FCE9A6] group-hover:bg-[#D4AF37]/15'
-                          }`}
-                        >
-                          {seat.isLocked ? (
-                            <Lock className="w-4 h-4" />
-                          ) : (
-                            <Mic className={row.isHero5 ? 'w-5 h-5' : 'w-4 h-4'} />
-                          )}
-                        </div>
-                      )}
-
-                      {/* Enlarged High-Impact Animated Reaction / Dice Bubble (Full 4 seconds) */}
-                      <AnimatePresence>
-                        {seatEmoji && (
-                          <motion.div
-                            key={seatEmoji.id}
-                            initial={{ scale: 0.25, opacity: 0, y: 10 }}
-                            animate={{
-                              scale: [1, 1.2, 0.96, 1.15, 1],
-                              opacity: 1,
-                              y: [0, -7, -2, -6, 0],
-                              rotate: seatEmoji.diceValue
-                                ? [0, 360, 720, 720, 720]
-                                : [0, -10, 10, -6, 0],
-                            }}
-                            exit={{ scale: 0.35, opacity: 0, y: -14 }}
-                            transition={{
-                              duration: 1.15,
-                              repeat: Infinity,
-                              repeatType: 'mirror',
-                              ease: 'easeInOut',
-                            }}
-                            className="absolute -inset-2.5 z-20 flex flex-col items-center justify-center pointer-events-none"
-                          >
-                            <div className="w-[62px] h-[62px] sm:w-[68px] sm:h-[68px] rounded-full bg-black/80 backdrop-blur-[2px] border-2 border-[#FCE9A6] shadow-[0_0_26px_rgba(251,191,36,0.9)] flex flex-col items-center justify-center">
-                              <span className="text-3xl sm:text-4xl leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]">
-                                {seatEmoji.diceValue
-                                  ? DICE_GLYPHS[seatEmoji.diceValue - 1]
-                                  : seatEmoji.emoji}
-                              </span>
-                              {seatEmoji.diceValue && (
-                                <span className="mt-0.5 px-1.5 rounded-full bg-[#FCE9A6] text-[#070913] text-[9px] font-mono-num font-black leading-none">
-                                  {seatEmoji.diceValue}
-                                </span>
-                              )}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      {/* TOP 1 Crest Pill */}
-                      {isTop1 && (
-                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 text-[#070913] text-[7px] font-extrabold leading-tight shadow z-10 whitespace-nowrap">
-                          TOP1
-                        </span>
-                      )}
-
-                      {/* Mic Muted Badge */}
-                      {seat.userId && seat.isMuted && (
-                        <span className="absolute -bottom-0.5 -left-0.5 w-4 h-4 rounded-full bg-rose-600 border border-[#0A0805] flex items-center justify-center text-white z-10">
-                          <MicOff className="w-2.5 h-2.5" />
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Speaker Name & Role Micro-Tag */}
-                    <div className="mt-1 flex items-center justify-center gap-0.5 max-w-[70px]">
-                      {seat.userId ? (
-                        <>
-                          {seat.userId === room.hostId && (
-                            <span className="text-[8px] text-amber-300 shrink-0">👑</span>
-                          )}
-                          <span className="text-[10px] font-bold text-white/95 truncate leading-tight">
-                            {seat.displayName}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-[9px] font-semibold text-slate-400/90 truncate">
-                          {seat.isLocked ? 'مقفل' : 'مايك'}
-                        </span>
-                      )}
-                    </div>
-                  </button>
+                    seat={seat}
+                    isMe={seat.userId === user?.id}
+                    isTop1={Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex)}
+                    isHost={Boolean(seat.userId && seat.userId === room.hostId)}
+                    isHero5={row.isHero5}
+                    vipLevel={seatLookup?.vipLevel || seat.vipLevel || 'none'}
+                    sizeClass={sizeClass}
+                    seatEmoji={seat.userId ? seatEmojis[seat.userId] : undefined}
+                    seatGiftReaction={
+                      seat.userId ? seatGiftReactions[seat.userId] : undefined
+                    }
+                    seatHaloActive={Boolean(seat.userId && seatHaloEffects[seat.userId])}
+                    onSeatClick={onSeatItemClick}
+                    registerSeatRef={registerSeatRef}
+                  />
                 );
               })}
             </div>
@@ -1115,7 +1491,7 @@ export const RoomPage: React.FC = () => {
 
           <div className="flex-1 overflow-y-auto no-scrollbar space-y-1.5 px-1 py-0.5">
             {chatFilter === 'all' && (
-              <div className="rounded-2xl bg-black/30 backdrop-blur-[2px] border border-[#D4AF37]/25 px-3 py-1.5 text-xs leading-relaxed">
+              <div className="rounded-2xl bg-black/45 border border-[#D4AF37]/25 px-3 py-1.5 text-xs leading-relaxed">
                 <div className="flex items-center justify-between gap-2 mb-0.5">
                   <span className="font-extrabold text-[#FCE9A6]">إعلان الوكالة</span>
                   {canManage && (
@@ -1145,76 +1521,16 @@ export const RoomPage: React.FC = () => {
               </div>
             ) : (
               filteredMessages.map((m) => {
-                const isJoinSystem =
-                  m.type === 'system' && m.text.startsWith('دخل الغرفة');
-                if (isJoinSystem) {
-                  return (
-                    <div key={m.id} className="flex items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#18B75D] to-[#0FA958] px-3 py-0.5 text-[11px] font-bold text-white shadow-sm">
-                        <span>🔔</span>
-                        <span>{m.text}</span>
-                      </span>
-                    </div>
-                  );
-                }
-
-                if (m.type === 'system') {
-                  return (
-                    <div
-                      key={m.id}
-                      className="inline-block rounded-xl bg-black/45 px-2.5 py-1 text-[11px] text-amber-100/90"
-                    >
-                      {m.text}
-                    </div>
-                  );
-                }
-
-                if (m.type === 'gift' || m.type === 'wheel' || m.type === 'entry') {
-                  return (
-                    <div
-                      key={m.id}
-                      className="rounded-xl border border-[#D4AF37]/45 bg-gradient-to-r from-[#362407]/75 to-[#151008]/75 px-3 py-1.5 text-[11px] font-bold text-[#FCE9A6] shadow-sm"
-                    >
-                      {m.text}
-                    </div>
-                  );
-                }
-
+                const senderInfo = userProfileLookup.get(m.userId);
                 return (
-                  <div
+                  <RoomChatMessageItem
                     key={m.id}
-                    className="rounded-xl bg-black/35 backdrop-blur-[2px] px-2.5 py-1.5 text-xs leading-snug"
-                  >
-                    <div className="inline-flex flex-wrap items-center gap-1 ml-1.5">
-                      <span
-                        className={`inline-flex items-center rounded-md px-1.5 py-0.2 text-[9px] font-mono-num font-extrabold ${
-                          m.isAdmin
-                            ? 'bg-amber-400 text-[#070913]'
-                            : m.level >= 15
-                            ? 'bg-sky-500/80 text-white'
-                            : 'bg-emerald-600/80 text-white'
-                        }`}
-                      >
-                        Lv.{m.level}
-                      </span>
-                      <FemaleVerifiedBadge badge={m.femaleVerifiedBadge} />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          openMiniProfile(m.userId, {
-                            displayName: m.displayName,
-                            level: m.level,
-                            is_admin: m.isAdmin,
-                            femaleVerifiedBadge: m.femaleVerifiedBadge,
-                          })
-                        }
-                        className="font-extrabold text-[#FCE9A6] hover:underline cursor-pointer"
-                      >
-                        {m.displayName}:
-                      </button>
-                    </div>
-                    <span className="text-white/95">{m.text}</span>
-                  </div>
+                    message={m}
+                    senderAvatarUrl={senderInfo?.avatarUrl || m.avatarUrl}
+                    senderFrameId={senderInfo?.frameId || m.frameId}
+                    senderVipTier={senderInfo?.vipLevel}
+                    onOpenMiniProfile={openMiniProfile}
+                  />
                 );
               })
             )}
@@ -1233,7 +1549,7 @@ export const RoomPage: React.FC = () => {
             >
               <div className="flex items-center justify-between px-1 mb-1.5">
                 <span className="text-[11px] font-extrabold text-[#FCE9A6]">
-                  سمايلات المايك التفاعلية (4 ثوانٍ)
+                  سمايلات المايك التفاعلية 3D (3 ثوانٍ)
                 </span>
                 <button
                   type="button"
@@ -1249,9 +1565,15 @@ export const RoomPage: React.FC = () => {
                     key={item.id}
                     type="button"
                     onClick={() => handlePickSeatEmoji(item)}
-                    className="rounded-xl bg-white/5 hover:bg-[#D4AF37]/20 border border-white/10 hover:border-[#F3D37A]/60 py-1.5 px-1 flex flex-col items-center gap-0.5 transition cursor-pointer active:scale-95"
+                    className="rounded-xl bg-white/5 hover:bg-[#D4AF37]/20 border border-white/10 hover:border-[#F3D37A]/60 py-1.5 px-1 flex flex-col items-center gap-1 transition cursor-pointer active:scale-95"
                   >
-                    <span className="text-xl leading-none">{item.emoji}</span>
+                    <Fluent3DAsset
+                      glyph={item.emoji}
+                      alt={item.label}
+                      priority
+                      sizeClass="w-7 h-7"
+                      fallbackTextClass="text-xl"
+                    />
                     <span className="text-[9px] font-bold text-slate-200 truncate max-w-full">
                       {item.label}
                     </span>
@@ -1438,7 +1760,14 @@ export const RoomPage: React.FC = () => {
               />
             </svg>
             <div className="relative flex flex-col items-center justify-center text-center leading-none">
-              <span className="text-xl drop-shadow">{comboSession.gift.glyph}</span>
+              <Fluent3DAsset
+                glyph={comboSession.gift.glyph}
+                alt={comboSession.gift.name}
+                priority
+                sizeClass="w-6 h-6"
+                fallbackTextClass="text-xl"
+                className="drop-shadow"
+              />
               <span className="mt-0.5 text-[10px] font-mono-num font-extrabold text-[#FDE047]">
                 Combo ×{comboSession.comboCount}
               </span>
@@ -1464,15 +1793,15 @@ export const RoomPage: React.FC = () => {
                   {/* Flying 3D Gift Orb */}
                   <motion.div
                     initial={{
-                      x: start.x - 24,
-                      y: start.y - 24,
+                      x: start.x - 28,
+                      y: start.y - 28,
                       scale: 0.45,
                       opacity: 0.95,
                     }}
                     animate={{
-                      x: [start.x - 24, midX - 24, target.x - 24],
-                      y: [start.y - 24, midY - 24, target.y - 24],
-                      scale: [0.55, 1.45, 1.15, 0.75],
+                      x: [start.x - 28, midX - 28, target.x - 28],
+                      y: [start.y - 28, midY - 28, target.y - 28],
+                      scale: [0.55, 1.5, 1.2, 0.75],
                       opacity: [0.95, 1, 1, 0],
                     }}
                     transition={{
@@ -1480,12 +1809,18 @@ export const RoomPage: React.FC = () => {
                       delay: idx * 0.05,
                       ease: 'easeInOut',
                     }}
-                    className="fixed top-0 left-0 w-12 h-12 flex items-center justify-center"
+                    className="fixed top-0 left-0 w-14 h-14 flex items-center justify-center"
                   >
-                    <span className="absolute inset-0 rounded-full bg-amber-300/45 blur-md" />
-                    <span className="relative text-4xl drop-shadow-[0_4px_14px_rgba(251,191,36,0.9)]">
-                      {fly.gift.glyph}
-                    </span>
+                    <span className="absolute -inset-2 rounded-full bg-gradient-to-tr from-amber-400/65 via-yellow-200/35 to-rose-500/45 blur-md" />
+                    <span className="absolute inset-0 rounded-full border border-[#FCE9A6]/75 shadow-[0_0_24px_rgba(251,191,36,0.95)]" />
+                    <Fluent3DAsset
+                      glyph={fly.gift.glyph}
+                      alt={fly.gift.name}
+                      priority
+                      sizeClass="w-12 h-12"
+                      fallbackTextClass="text-4xl"
+                      className="drop-shadow-[0_6px_16px_rgba(251,191,36,0.95)]"
+                    />
                     {(fly.quantity > 1 || fly.comboCount > 1) && (
                       <span className="absolute -bottom-1 -right-2 rounded-full bg-gradient-to-r from-[#FDE047] to-[#D4AF37] px-1.5 py-[1px] text-[9px] font-mono-num font-extrabold text-[#070913] shadow">
                         ×{fly.quantity}
@@ -1519,7 +1854,14 @@ export const RoomPage: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* FULLSCREEN 5-SECOND DRAGON CINEMA CELEBRATION OVERLAY */}
+      {/* TIER 1 SIDE COMBO BANNERS & TIER 2 3-SECOND CENTER GLOWING CELEBRATION */}
+      <TieredGiftEffectsOverlay
+        tier1SideNotices={tier1SideNotices}
+        mediumCelebrationGift={mediumCelebrationGift}
+        hostName={room.hostName}
+      />
+
+      {/* TIER 3 FULLSCREEN 4.5-SECOND ROYAL GIFT CINEMA OVERLAY */}
       <DragonCinemaOverlay event={fullscreenGift} hostName={room.hostName} />
 
       {/* SEAT INTERACTION SHEET */}
@@ -1815,7 +2157,7 @@ export const RoomPage: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* PLAY & SUPPORT LEADERBOARD MODAL (🏆 تصنيف اللعب والدعم) */}
+      {/* PLAY & SUPPORT LEADERBOARD + ROOM PRESENCE MODAL */}
       <AnimatePresence>
         {showLeaderboardModal && (
           <div
@@ -1832,14 +2174,22 @@ export const RoomPage: React.FC = () => {
               <div className="flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FDE047] to-[#B45309] text-[#070913] flex items-center justify-center shadow">
-                    <Trophy className="w-5 h-5" />
+                    {leaderboardModalTab === 'presence' ? (
+                      <Users className="w-5 h-5" />
+                    ) : (
+                      <Trophy className="w-5 h-5" />
+                    )}
                   </div>
                   <div>
                     <h3 className="text-base font-extrabold gold-gradient-text">
-                      تصنيف اللعب والدعم 🏆
+                      {leaderboardModalTab === 'presence'
+                        ? `المتواجدون في الغرفة (${unifiedPresenceList.length})`
+                        : 'تصنيف اللعب والدعم 🏆'}
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      مرتب من الأعلى إلى الأقل حسب نقاط الدعم واللعب داخل الوكالة
+                      {leaderboardModalTab === 'presence'
+                        ? 'أعضاء الغرفة المتصلون وإطارات الـ VIP الخاصة بهم'
+                        : 'مرتب من الأعلى إلى الأقل حسب نقاط الدعم واللعب داخل الوكالة'}
                     </p>
                   </div>
                 </div>
@@ -1852,77 +2202,167 @@ export const RoomPage: React.FC = () => {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-                {supportAndPlayLeaderboard.length === 0 ? (
-                  <div className="rounded-2xl bg-[#070913]/70 border border-white/10 py-10 text-center text-xs text-slate-400">
-                    لم يتم تسجيل أي نقاط دعم أو لعب في هذه الوكالة حتى الآن.
-                  </div>
-                ) : (
-                  supportAndPlayLeaderboard.map((entry, idx) => (
-                    <div
-                      key={entry.userId}
-                      className={`rounded-2xl border p-3 flex items-center justify-between gap-2 ${
-                        idx === 0
-                          ? 'bg-gradient-to-r from-[#3B2607]/85 to-[#17120A]/90 border-[#FDE047]/65'
-                          : 'bg-[#070913]/80 border-white/10'
-                      }`}
-                    >
+              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/20 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setLeaderboardModalTab('leaderboard')}
+                  className={`min-h-[38px] rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                    leaderboardModalTab === 'leaderboard'
+                      ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  🏆 اللعب والدعم
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeaderboardModalTab('presence')}
+                  className={`min-h-[38px] rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                    leaderboardModalTab === 'presence'
+                      ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  👥 المتواجدون ({unifiedPresenceList.length})
+                </button>
+              </div>
+
+              {leaderboardModalTab === 'presence' ? (
+                <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
+                  {unifiedPresenceList.length === 0 ? (
+                    <div className="rounded-2xl bg-[#070913]/70 border border-white/10 py-10 text-center text-xs text-slate-400">
+                      لا يوجد أعضاء ظاهرون في القائمة حالياً.
+                    </div>
+                  ) : (
+                    unifiedPresenceList.map((member) => (
                       <button
+                        key={member.userId}
                         type="button"
                         onClick={() => {
                           setShowLeaderboardModal(false);
-                          openMiniProfile(entry.userId, {
-                            displayName: entry.displayName,
-                            avatarUrl: entry.avatarUrl,
-                            frameId: entry.frameId,
+                          openMiniProfile(member.userId, {
+                            displayName: member.displayName,
+                            avatarUrl: member.avatarUrl,
+                            frameId: member.frameId,
+                            vipLevel: member.vipLevel,
                           });
                         }}
-                        className="flex items-center gap-2.5 min-w-0 text-right cursor-pointer"
+                        className="w-full rounded-2xl border border-white/10 bg-[#070913]/80 hover:border-[#D4AF37]/40 p-3 flex items-center justify-between gap-2 text-right cursor-pointer transition"
                       >
-                        <span
-                          className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-mono-num font-black shrink-0 ${
-                            idx === 0
-                              ? 'bg-[#FDE047] text-[#070913]'
-                              : idx === 1
-                              ? 'bg-slate-200 text-slate-900'
-                              : idx === 2
-                              ? 'bg-amber-700 text-white'
-                              : 'bg-white/10 text-slate-300'
-                          }`}
-                        >
-                          {idx + 1}
-                        </span>
-                        <AvatarWithFrame
-                          src={entry.avatarUrl}
-                          alt={entry.displayName}
-                          frameId={entry.frameId}
-                          size="sm"
-                        />
-                        <div className="min-w-0">
-                          <p className="text-xs font-extrabold text-white truncate">
-                            {entry.displayName}
-                          </p>
-                          <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono-num mt-0.5">
-                            <span className="text-amber-300">
-                              🎁 دعم: {entry.supportCoins.toLocaleString('en-US')}
-                            </span>
-                            <span className="text-emerald-300">
-                              🎮 لعب: {entry.playCoins.toLocaleString('en-US')}
-                            </span>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <AvatarWithFrame
+                            src={member.avatarUrl}
+                            alt={member.displayName}
+                            frameId={member.frameId}
+                            vipTier={member.vipLevel}
+                            size="sm"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <VipUserName
+                                name={member.displayName}
+                                vipTier={member.vipLevel}
+                                className="text-xs font-extrabold text-white truncate"
+                              />
+                              <VipTierBadge vipTier={member.vipLevel} compact />
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {member.userId === room.hostId
+                                ? '👑 مالك الوكالة'
+                                : member.onSeat
+                                ? '🎙️ على المايك'
+                                : '🎧 مستمع في الغرفة'}
+                            </p>
                           </div>
                         </div>
                       </button>
-
-                      <div className="text-left shrink-0">
-                        <span className="block text-xs font-mono-num font-black text-[#FCE9A6]">
-                          {entry.totalCoins.toLocaleString('en-US')}
-                        </span>
-                        <span className="block text-[9px] text-slate-400">إجمالي</span>
-                      </div>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
+                  {supportAndPlayLeaderboard.length === 0 ? (
+                    <div className="rounded-2xl bg-[#070913]/70 border border-white/10 py-10 text-center text-xs text-slate-400">
+                      لم يتم تسجيل أي نقاط دعم أو لعب في هذه الوكالة حتى الآن.
                     </div>
-                  ))
-                )}
-              </div>
+                  ) : (
+                    supportAndPlayLeaderboard.map((entry, idx) => {
+                      const entryInfo = userProfileLookup.get(entry.userId);
+                      const entryVip = entryInfo?.vipLevel || 'none';
+                      return (
+                        <div
+                          key={entry.userId}
+                          className={`rounded-2xl border p-3 flex items-center justify-between gap-2 ${
+                            idx === 0
+                              ? 'bg-gradient-to-r from-[#3B2607]/85 to-[#17120A]/90 border-[#FDE047]/65'
+                              : 'bg-[#070913]/80 border-white/10'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowLeaderboardModal(false);
+                              openMiniProfile(entry.userId, {
+                                displayName: entry.displayName,
+                                avatarUrl: entry.avatarUrl,
+                                frameId: entry.frameId,
+                                vipLevel: entryVip,
+                              });
+                            }}
+                            className="flex items-center gap-2.5 min-w-0 text-right cursor-pointer"
+                          >
+                            <span
+                              className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-mono-num font-black shrink-0 ${
+                                idx === 0
+                                  ? 'bg-[#FDE047] text-[#070913]'
+                                  : idx === 1
+                                  ? 'bg-slate-200 text-slate-900'
+                                  : idx === 2
+                                  ? 'bg-amber-700 text-white'
+                                  : 'bg-white/10 text-slate-300'
+                              }`}
+                            >
+                              {idx + 1}
+                            </span>
+                            <AvatarWithFrame
+                              src={entry.avatarUrl}
+                              alt={entry.displayName}
+                              frameId={entry.frameId}
+                              vipTier={entryVip}
+                              size="sm"
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <VipUserName
+                                  name={entry.displayName}
+                                  vipTier={entryVip}
+                                  className="text-xs font-extrabold text-white truncate"
+                                />
+                                <VipTierBadge vipTier={entryVip} compact />
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono-num mt-0.5">
+                                <span className="text-amber-300">
+                                  🎁 دعم: {entry.supportCoins.toLocaleString('en-US')}
+                                </span>
+                                <span className="text-emerald-300">
+                                  🎮 لعب: {entry.playCoins.toLocaleString('en-US')}
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+
+                          <div className="text-left shrink-0">
+                            <span className="block text-xs font-mono-num font-black text-[#FCE9A6]">
+                              {entry.totalCoins.toLocaleString('en-US')}
+                            </span>
+                            <span className="block text-[9px] text-slate-400">إجمالي</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </motion.div>
           </div>
         )}
@@ -1939,6 +2379,15 @@ export const RoomPage: React.FC = () => {
           initialTab={settingsInitialTab}
           ownedBackgrounds={ownedBackgrounds}
           isAdmin={Boolean(user?.is_admin)}
+          effectsMuted={effectsMuted}
+          onToggleEffectsMuted={(nextMuted) => {
+            setEffectsMuted(nextMuted);
+            showToast(
+              nextMuted
+                ? '🔇 تم كتم صوت مؤثرات الهدايا والألعاب'
+                : '🔊 تم تشغيل صوت مؤثرات الهدايا والألعاب'
+            );
+          }}
           onUpdateSettings={updateSettings}
           onAdminAction={runAdminAction}
           onClose={() => setShowSettingsModal(false)}
@@ -1967,11 +2416,21 @@ export const RoomPage: React.FC = () => {
           musicState={musicState}
           musicVolume={musicVolume}
           musicMutedLocally={musicMutedLocally}
+          effectsMuted={effectsMuted}
           onVolumeChange={(v) => {
             setMusicVolume(v);
             if (v > 0 && musicMutedLocally) setMusicMutedLocally(false);
           }}
           onToggleLocalMute={() => setMusicMutedLocally(!musicMutedLocally)}
+          onToggleEffectsMuted={() => {
+            const nextMuted = !effectsMuted;
+            setEffectsMuted(nextMuted);
+            showToast(
+              nextMuted
+                ? '🔇 تم كتم صوت مؤثرات الهدايا والألعاب'
+                : '🔊 تم تشغيل صوت مؤثرات الهدايا والألعاب'
+            );
+          }}
           onPlayUploaded={playUploadedMusic}
           onTogglePlayPause={toggleMusicPlayPause}
           onStopMusic={stopRoomMusic}

@@ -17,7 +17,13 @@ import { useActiveRoom } from '../context/ActiveRoomContext';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { getUserPublicProfileFromSupabase } from '../lib/sadaAuth';
-import { ARAB_COUNTRIES, formatShortNumericId, getVipTierLabel } from '../lib/sadaCatalog';
+import {
+  ARAB_COUNTRIES,
+  formatShortNumericId,
+  getUserVipTierInfo,
+  getVipTierLabel,
+  parseVipTierKey,
+} from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
 import {
   getFollowStatus,
@@ -26,7 +32,7 @@ import {
   toggleFollowUserInSupabase,
 } from '../lib/sadaSocialService';
 import type { User } from '../types';
-import { AvatarWithFrame } from './AvatarWithFrame';
+import { AvatarWithFrame, VipTierBadge, VipUserName } from './AvatarWithFrame';
 import { FemaleVerifiedBadge } from './FemaleVoiceVerificationCard';
 
 export const UserMiniProfileModal: React.FC = () => {
@@ -97,7 +103,16 @@ export const UserMiniProfileModal: React.FC = () => {
     gender: fetchedUser?.gender ?? previewUser?.gender ?? 'male',
     age: fetchedUser?.age ?? previewUser?.age,
     country: fetchedUser?.country ?? previewUser?.country,
+    vipLevel: parseVipTierKey(
+      fetchedUser?.vipLevel || previewUser?.vipLevel,
+      fetchedUser || previewUser
+    ),
   };
+
+  const resolvedVipTier =
+    profile.vipLevel !== 'none'
+      ? profile.vipLevel
+      : getUserVipTierInfo(fetchedUser || previewUser).key;
 
   const numericId = formatShortNumericId(profile.id);
   const isSelf = currentUser?.id === profile.id;
@@ -170,12 +185,16 @@ export const UserMiniProfileModal: React.FC = () => {
               src={profile.avatarUrl}
               alt={profile.displayName}
               frameId={profile.frameId}
+              vipTier={resolvedVipTier}
               size="xl"
             />
 
             <div className="space-y-1">
               <div className="flex items-center justify-center flex-wrap gap-1.5">
-                <h3 className="text-lg font-extrabold text-white">{profile.displayName}</h3>
+                <h3 className="text-lg font-extrabold text-white">
+                  <VipUserName name={profile.displayName} vipTier={resolvedVipTier} />
+                </h3>
+                <VipTierBadge vipTier={resolvedVipTier} />
                 {profile.is_admin && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#D4AF37]/25 border border-[#D4AF37]/60 px-2 py-0.5 text-[10px] font-bold text-[#FCE9A6]">
                     <ShieldCheck className="w-3 h-3" />
@@ -211,9 +230,11 @@ export const UserMiniProfileModal: React.FC = () => {
                   مضيف Lv.{giftLevels.receiveLevel}
                 </span>
 
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-0.5 font-bold text-emerald-200">
-                  {getVipTierLabel(profile.level, profile.is_admin)}
-                </span>
+                {resolvedVipTier === 'none' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-0.5 font-bold text-emerald-200">
+                    {getVipTierLabel(profile.level, profile.is_admin)}
+                  </span>
+                )}
               </div>
             </div>
           </div>

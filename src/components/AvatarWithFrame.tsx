@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { User } from 'lucide-react';
 import { resolveAsset } from '../lib/assets';
+import { getVipTierConfig, parseVipTierKey } from '../lib/sadaCatalog';
+import type { VipTierKey } from '../types';
 
 const FRAME_CLASSES: Record<string, string> = {
   frame_obsidian: 'ring-2 ring-[#D4AF37]/50 shadow-[0_0_12px_rgba(212,175,55,0.25)]',
@@ -59,7 +61,9 @@ interface AvatarWithFrameProps {
   src?: string | null;
   alt: string;
   frameId?: string | null;
+  vipTier?: VipTierKey | string | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  customSizeClass?: string;
   isSpeaking?: boolean;
   onClick?: () => void;
 }
@@ -76,7 +80,9 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   src,
   alt,
   frameId = 'frame_obsidian',
+  vipTier,
   size = 'md',
+  customSizeClass,
   isSpeaking = false,
   onClick,
 }) => {
@@ -86,6 +92,9 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   const frame3D = FRAME_3D_BADGE[activeFrameId];
   const resolved = resolveAsset(src);
 
+  const resolvedVip: VipTierKey = vipTier ? parseVipTierKey(vipTier) : 'none';
+  const dimClass = customSizeClass || SIZE_MAP[size];
+
   const badgeSize =
     size === 'xl'
       ? 'w-7 h-7 text-sm -top-1.5 -right-1.5'
@@ -94,6 +103,19 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
       : size === 'md'
       ? 'w-4 h-4 text-[9px] -top-0.5 -right-0.5'
       : 'hidden';
+
+  const vipRingVisualClass =
+    resolvedVip === 'svip'
+      ? 'vip-frame-svip ring-2 ring-[#FEF08A]'
+      : resolvedVip === 'vip3'
+      ? 'vip-frame-gold'
+      : resolvedVip === 'vip2'
+      ? 'vip-frame-silver'
+      : resolvedVip === 'vip1'
+      ? 'vip-frame-bronze'
+      : frame3D
+      ? 'ring-2 ring-white/90'
+      : frameClass;
 
   return (
     <div
@@ -106,7 +128,130 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
         <span className="absolute -inset-1.5 rounded-full border-2 border-emerald-400/85 animate-ping pointer-events-none" />
       )}
 
-      {frame3D && (
+      {/* VIP 1: Metallic Bronze Rim */}
+      {resolvedVip === 'vip1' && (
+        <span
+          aria-hidden="true"
+          className="absolute -inset-[2.5px] rounded-full pointer-events-none opacity-95"
+          style={{
+            background:
+              'conic-gradient(from 135deg, #F6C48B, #8C5220, #CD7F32, #FFE4C4, #7C4418, #F6C48B)',
+          }}
+        />
+      )}
+
+      {/* VIP 2: Chrome Silver Frame with Animated Moving Light Sheen */}
+      {resolvedVip === 'vip2' && (
+        <span
+          aria-hidden="true"
+          className="absolute -inset-[3px] rounded-full overflow-hidden pointer-events-none"
+          style={{
+            background:
+              'conic-gradient(from 0deg, #94A3B8, #F8FAFC, #BAE6FD, #64748B, #FFFFFF, #94A3B8)',
+          }}
+        >
+          <span
+            className="vip-frame-silver-sheen absolute -inset-y-4 w-5 bg-gradient-to-r from-transparent via-white/95 to-transparent blur-[1px]"
+          />
+        </span>
+      )}
+
+      {/* VIP 3: Royal Gold Frame with Crown & Glowing Wings */}
+      {resolvedVip === 'vip3' && (
+        <>
+          <span
+            aria-hidden="true"
+            className="absolute -inset-[3px] rounded-full pointer-events-none"
+            style={{
+              background:
+                'conic-gradient(from 45deg, #B45309, #FEF08A, #F59E0B, #FFFBEB, #D97706, #B45309)',
+            }}
+          />
+          {size !== 'xs' && (
+            <>
+              <span
+                aria-hidden="true"
+                className={`vip-wing-glow absolute pointer-events-none z-10 select-none ${
+                  size === 'xl'
+                    ? '-right-3.5 text-lg'
+                    : size === 'lg'
+                    ? '-right-2.5 text-sm'
+                    : size === 'sm'
+                    ? '-right-1.5 text-[10px]'
+                    : '-right-2 text-xs'
+                }`}
+              >
+                🪽
+              </span>
+              <span
+                aria-hidden="true"
+                className={`vip-wing-glow absolute pointer-events-none z-10 select-none ${
+                  size === 'xl'
+                    ? '-left-3.5 text-lg'
+                    : size === 'lg'
+                    ? '-left-2.5 text-sm'
+                    : size === 'sm'
+                    ? '-left-1.5 text-[10px]'
+                    : '-left-2 text-xs'
+                }`}
+              >
+                <span className="inline-block scale-x-[-1]">🪽</span>
+              </span>
+              <span
+                aria-hidden="true"
+                className={`absolute left-1/2 -translate-x-1/2 pointer-events-none z-20 drop-shadow-[0_2px_6px_rgba(245,158,11,0.9)] ${
+                  size === 'xl'
+                    ? '-top-3.5 text-xl'
+                    : size === 'lg'
+                    ? '-top-2.5 text-base'
+                    : size === 'sm'
+                    ? '-top-2 text-[11px]'
+                    : '-top-2.5 text-xs'
+                }`}
+              >
+                👑
+              </span>
+            </>
+          )}
+        </>
+      )}
+
+      {/* SVIP: 360° Rotating Diamond & Fire Animated Frame */}
+      {resolvedVip === 'svip' && (
+        <>
+          <span
+            aria-hidden="true"
+            className="absolute -inset-[3.5px] rounded-full animate-frame-orbit pointer-events-none"
+            style={{
+              background:
+                'conic-gradient(from 0deg, #38BDF8, #FEF08A, #F97316, #EF4444, #BAE6FD, #F59E0B, #38BDF8)',
+            }}
+          />
+          <span
+            aria-hidden="true"
+            className="absolute -inset-[1.5px] rounded-full bg-[#0B0F1A]/40 pointer-events-none"
+          />
+          {size !== 'xs' && (
+            <span
+              aria-hidden="true"
+              className={`absolute left-1/2 -translate-x-1/2 pointer-events-none z-20 drop-shadow-[0_2px_10px_rgba(56,189,248,0.95)] ${
+                size === 'xl'
+                  ? '-top-3.5 text-xl'
+                  : size === 'lg'
+                  ? '-top-2.5 text-base'
+                  : size === 'sm'
+                  ? '-top-2 text-[11px]'
+                  : '-top-2.5 text-sm'
+              }`}
+            >
+              💎
+            </span>
+          )}
+        </>
+      )}
+
+      {/* Store 3D Orbit Ring when no higher VIP ring overrides */}
+      {frame3D && resolvedVip === 'none' && (
         <span
           className="absolute -inset-[3px] rounded-full animate-frame-orbit pointer-events-none opacity-90"
           style={{ background: frame3D.ringBg }}
@@ -117,21 +262,36 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
         <img
           src={resolved}
           alt={alt}
+          loading="lazy"
+          decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setFailed(true)}
-          className={`relative ${SIZE_MAP[size]} rounded-full object-cover bg-slate-900 ${
-            frame3D ? 'ring-2 ring-white/90' : frameClass
-          }`}
+          className={`relative ${dimClass} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
         />
       ) : (
         <div
-          className={`relative ${SIZE_MAP[size]} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${frameClass}`}
+          className={`relative ${dimClass} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${vipRingVisualClass}`}
         >
           <User className="w-1/2 h-1/2" />
         </div>
       )}
 
-      {frame3D && size !== 'xs' && size !== 'sm' && (
+      {/* VIP Corner Emblem Badge for md/lg/xl */}
+      {resolvedVip !== 'none' && size !== 'xs' && size !== 'sm' && (
+        <span
+          className={`absolute ${badgeSize} rounded-full bg-slate-950/95 border border-[#FCE9A6]/85 flex items-center justify-center shadow-md pointer-events-none z-20`}
+        >
+          {resolvedVip === 'svip'
+            ? '🔥'
+            : resolvedVip === 'vip3'
+            ? '✨'
+            : resolvedVip === 'vip2'
+            ? '🥈'
+            : '🥉'}
+        </span>
+      )}
+
+      {resolvedVip === 'none' && frame3D && size !== 'xs' && size !== 'sm' && (
         <span
           className={`absolute ${badgeSize} rounded-full bg-slate-950/90 border border-[#FCE9A6]/80 flex items-center justify-center shadow-md pointer-events-none z-10`}
         >
@@ -139,5 +299,37 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
         </span>
       )}
     </div>
+  );
+};
+
+export const VipTierBadge: React.FC<{
+  vipTier?: VipTierKey | string | null;
+  compact?: boolean;
+  className?: string;
+}> = ({ vipTier, compact = false, className = '' }) => {
+  const key = parseVipTierKey(vipTier);
+  if (key === 'none') return null;
+  const cfg = getVipTierConfig(key);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded-md border px-1.5 py-[1px] text-[9px] font-black tracking-wide leading-tight shrink-0 ${cfg.badgeBgClass} ${cfg.badgeTextClass} ${className}`}
+    >
+      <span>{cfg.badgeGlyph}</span>
+      <span>{compact ? cfg.shortLabel : cfg.label}</span>
+    </span>
+  );
+};
+
+export const VipUserName: React.FC<{
+  name: string;
+  vipTier?: VipTierKey | string | null;
+  className?: string;
+}> = ({ name, vipTier, className = '' }) => {
+  const key = parseVipTierKey(vipTier);
+  return (
+    <span className={`${className} ${key === 'svip' ? 'svip-name-glow' : ''}`}>
+      {name}
+    </span>
   );
 };

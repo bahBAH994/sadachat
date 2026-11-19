@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
-import { formatShortNumericId } from '../lib/sadaCatalog';
+import { formatShortNumericId, getCachedGiftCatalog } from '../lib/sadaCatalog';
 import {
   getFollowStatus,
   getPmOverviewFromSupabase,
@@ -36,13 +36,12 @@ import type {
   GiftItem,
   PrivateConversation,
   PrivateConversationPeer,
+  PrivateMessage,
   User,
 } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
-import {
-  FemaleVerifiedBadge,
-  FemaleVoiceVerificationCard,
-} from '../components/FemaleVoiceVerificationCard';
+import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
+import { Fluent3DAsset } from '../components/Fluent3DAsset';
 
 type InboxFilter = 'كامل' | 'غير مقروء' | 'وجوه مألوفة' | 'المجموعات';
 
@@ -56,6 +55,94 @@ interface PmComboSession {
   comboCount: number;
   expiresAt: number;
 }
+
+const PrivateChatMessageItem = memo<{ message: PrivateMessage; isMine: boolean }>(
+  ({ message: m, isMine }) => (
+    <div className={`flex flex-col ${isMine ? 'items-start' : 'items-end'}`}>
+      <div
+        className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm border ${
+          m.giftId
+            ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-300 text-amber-950'
+            : isMine
+            ? 'bg-emerald-700 border-emerald-700 text-white'
+            : 'bg-slate-100 border-slate-200 text-slate-900'
+        }`}
+      >
+        {m.giftId && (
+          <div className="flex items-center gap-2 mb-1.5 text-xs font-extrabold text-amber-900">
+            <Fluent3DAsset
+              glyph={m.giftGlyph || '🎁'}
+              alt={m.giftName || 'هدية'}
+              sizeClass="w-8 h-8"
+              fallbackTextClass="text-xl"
+            />
+            <span>{m.giftName}</span>
+          </div>
+        )}
+        <p className="leading-relaxed">{m.text}</p>
+        {(m.coinsPaid > 0 || m.diamondsPotential > 0) && (
+          <div
+            className={`mt-1.5 pt-1 border-t flex flex-wrap items-center gap-2 text-[10px] font-mono-num ${
+              isMine
+                ? 'border-white/20 text-emerald-50'
+                : 'border-slate-200 text-slate-500'
+            }`}
+          >
+            {m.coinsPaid > 0 && (
+              <span className="flex items-center gap-1">
+                <Coins className="w-3 h-3" />
+                {m.coinsPaid.toLocaleString('en-US')} كوينز
+              </span>
+            )}
+            {m.diamondsPotential > 0 && (
+              <span className="font-bold">
+                {m.diamondsClaimed
+                  ? `💎 +${(m.diamondsAwarded || m.diamondsPotential).toLocaleString('en-US')} ألماسة ✓`
+                  : `💎 +${m.diamondsPotential.toLocaleString('en-US')} ألماسة عند الرد`}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+);
+
+const PmGiftItem = memo<{
+  gift: GiftItem;
+  active: boolean;
+  onSelect: (giftId: string) => void;
+}>(({ gift: g, active, onSelect }) => (
+  <button
+    type="button"
+    onClick={() => onSelect(g.id)}
+    className={`shrink-0 w-24 rounded-xl border p-2 text-center flex flex-col items-center gap-1 cursor-pointer transition ${
+      active
+        ? 'bg-[#362407] border-[#FCE9A6] shadow-[0_0_14px_rgba(243,211,122,0.45)]'
+        : 'bg-white/5 border-white/10 hover:border-[#D4AF37]/50'
+    }`}
+  >
+    <div className="relative w-11 h-11 flex items-center justify-center">
+      <span
+        aria-hidden="true"
+        className={`absolute inset-1 rounded-full blur-sm ${
+          active ? 'bg-amber-300/45' : 'bg-amber-400/15'
+        }`}
+      />
+      <Fluent3DAsset
+        glyph={g.glyph}
+        alt={g.name}
+        sizeClass="w-10 h-10"
+        fallbackTextClass="text-2xl"
+      />
+    </div>
+    <span className="text-[11px] font-bold text-white line-clamp-1">{g.name}</span>
+    <span className="text-[10px] font-mono-num text-[#FCE9A6] font-extrabold inline-flex items-center gap-1">
+      <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3 h-3" fallbackTextClass="text-[10px]" />
+      <span>{g.coinsCost.toLocaleString('en-US')}</span>
+    </span>
+  </button>
+));
 
 export interface MessagesPageProps {
   embedded?: boolean;
@@ -77,7 +164,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
   const [conversations, setConversations] = useState<PrivateConversation[]>([]);
   const [recipients, setRecipients] = useState<PrivateConversationPeer[]>([]);
-  const [gifts, setGifts] = useState<GiftItem[]>([]);
+  const [gifts, setGifts] = useState<GiftItem[]>(() => getCachedGiftCatalog());
   const [pmCost, setPmCost] = useState(50);
   const [pendingDiamondsTotal, setPendingDiamondsTotal] = useState(0);
   const [canReceivePaidPm, setCanReceivePaidPm] = useState(false);
@@ -530,11 +617,10 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       <div
         className={
           embedded
-            ? 'flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3'
-            : 'max-w-5xl mx-auto px-3.5 sm:px-5 pt-3 space-y-4'
+            ? 'flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-3 py-3 space-y-3'
+            : 'max-w-5xl mx-auto px-3.5 sm:px-5 pt-3 space-y-4 pb-24'
         }
       >
-        {!embedded && <FemaleVoiceVerificationCard />}
 
         {/* Celebratory Diamond Banner */}
         <AnimatePresence>
@@ -855,56 +941,13 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                       </p>
                     </div>
                   ) : (
-                    activeConversation.messages.map((m) => {
-                      const isMine = m.senderId === user?.id;
-                      return (
-                        <div
-                          key={m.id}
-                          className={`flex flex-col ${isMine ? 'items-start' : 'items-end'}`}
-                        >
-                          <div
-                            className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm border ${
-                              m.giftId
-                                ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-300 text-amber-950'
-                                : isMine
-                                ? 'bg-emerald-700 border-emerald-700 text-white'
-                                : 'bg-slate-100 border-slate-200 text-slate-900'
-                            }`}
-                          >
-                            {m.giftId && (
-                              <div className="flex items-center gap-2 mb-1 text-xs font-extrabold text-amber-800">
-                                <span className="text-xl">{m.giftGlyph}</span>
-                                <span>{m.giftName}</span>
-                              </div>
-                            )}
-                            <p className="leading-relaxed">{m.text}</p>
-                            {(m.coinsPaid > 0 || m.diamondsPotential > 0) && (
-                              <div
-                                className={`mt-1.5 pt-1 border-t flex flex-wrap items-center gap-2 text-[10px] font-mono-num ${
-                                  isMine
-                                    ? 'border-white/20 text-emerald-50'
-                                    : 'border-slate-200 text-slate-500'
-                                }`}
-                              >
-                                {m.coinsPaid > 0 && (
-                                  <span className="flex items-center gap-1">
-                                    <Coins className="w-3 h-3" />
-                                    {m.coinsPaid.toLocaleString('en-US')} كوينز
-                                  </span>
-                                )}
-                                {m.diamondsPotential > 0 && (
-                                  <span className="font-bold">
-                                    {m.diamondsClaimed
-                                      ? `💎 +${(m.diamondsAwarded || m.diamondsPotential).toLocaleString('en-US')} ألماسة ✓`
-                                      : `💎 +${m.diamondsPotential.toLocaleString('en-US')} ألماسة عند الرد`}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
+                    activeConversation.messages.map((m) => (
+                      <PrivateChatMessageItem
+                        key={m.id}
+                        message={m}
+                        isMine={m.senderId === user?.id}
+                      />
+                    ))
                   )}
                   <div ref={endRef} />
                 </div>
@@ -959,29 +1002,14 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                        {visibleGifts.map((g) => {
-                          const active = selectedGift?.id === g.id;
-                          return (
-                            <button
-                              key={g.id}
-                              type="button"
-                              onClick={() => setSelectedGiftId(g.id)}
-                              className={`shrink-0 w-24 rounded-xl border p-2 text-center flex flex-col items-center gap-1 cursor-pointer transition ${
-                                active
-                                  ? 'bg-[#362407] border-[#FCE9A6] shadow-[0_0_14px_rgba(243,211,122,0.45)]'
-                                  : 'bg-white/5 border-white/10 hover:border-[#D4AF37]/50'
-                              }`}
-                            >
-                              <span className="text-2xl">{g.glyph}</span>
-                              <span className="text-[11px] font-bold text-white line-clamp-1">
-                                {g.name}
-                              </span>
-                              <span className="text-[10px] font-mono-num text-[#FCE9A6] font-extrabold">
-                                🪙 {g.coinsCost.toLocaleString('en-US')}
-                              </span>
-                            </button>
-                          );
-                        })}
+                        {visibleGifts.map((g) => (
+                          <PmGiftItem
+                            key={g.id}
+                            gift={g}
+                            active={selectedGift?.id === g.id}
+                            onSelect={setSelectedGiftId}
+                          />
+                        ))}
                       </div>
 
                       {selectedGift && (
@@ -1004,11 +1032,13 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                               ))}
                             </div>
                             <span
-                              className={`text-xs font-mono-num font-extrabold shrink-0 ${
+                              className={`text-xs font-mono-num font-extrabold shrink-0 inline-flex items-center gap-1 ${
                                 canAffordGift ? 'text-[#FCE9A6]' : 'text-rose-400'
                               }`}
                             >
-                              الإجمالي: 🪙 {giftTotalCost.toLocaleString('en-US')}
+                              <span>الإجمالي:</span>
+                              <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3.5 h-3.5" priority />
+                              <span>{giftTotalCost.toLocaleString('en-US')}</span>
                             </span>
                           </div>
 
@@ -1026,12 +1056,20 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                               }`}
                             >
                               <Sparkles className="w-3.5 h-3.5" />
+                              {canAffordGift && !sending && (
+                                <Fluent3DAsset
+                                  glyph={selectedGift.glyph}
+                                  alt={selectedGift.name}
+                                  sizeClass="w-5 h-5"
+                                  priority
+                                />
+                              )}
                               <span className="truncate">
                                 {sending
                                   ? 'جارٍ الإرسال...'
                                   : !canAffordGift
                                   ? 'رصيد الكوينز غير كافٍ'
-                                  : `إرسال ${selectedGift.glyph} (${selectedGift.name}) ×${giftQuantity}`}
+                                  : `إرسال ${selectedGift.name} ×${giftQuantity}`}
                               </span>
                             </button>
 
@@ -1042,7 +1080,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                               className="flex items-center gap-1.5 rounded-xl bg-black/70 border border-[#F3D37A]/50 px-2.5 py-1.5 shrink-0 cursor-pointer hover:border-[#FCE9A6]"
                               title="رصيدك الحالي · اضغط للشحن السريع"
                             >
-                              <span className="text-xs leading-none">🪙</span>
+                              <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3.5 h-3.5" priority />
                               <span className="text-xs font-mono-num font-black text-[#FCE9A6]">
                                 {(user?.coins ?? 0).toLocaleString('en-US')}
                               </span>
@@ -1146,7 +1184,12 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                           />
                         </svg>
                         <div className="relative flex flex-col items-center justify-center text-center leading-none">
-                          <span className="text-lg">{comboSession.gift.glyph}</span>
+                          <Fluent3DAsset
+                            glyph={comboSession.gift.glyph}
+                            alt={comboSession.gift.name}
+                            sizeClass="w-6 h-6"
+                            priority
+                          />
                           <span className="mt-0.5 text-[9px] font-mono-num font-extrabold text-[#FDE047]">
                             Combo ×{comboSession.comboCount}
                           </span>

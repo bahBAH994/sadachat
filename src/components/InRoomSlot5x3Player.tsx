@@ -13,7 +13,9 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Fluent3DAsset } from './Fluent3DAsset';
 import { RoyalSlotSymbol3D } from './RoyalSlotSymbol3D';
+import { SlotMachine3DLever, SlotMarqueePerimeter } from './SlotMachine3DLever';
 import {
   fireGoldCoinConfetti,
   isAudioMuted,
@@ -446,26 +448,58 @@ export const InRoomSlot5x3Player: React.FC<InRoomSlot5x3PlayerProps> = ({
           </div>
         </div>
 
-        {/* 5x3 Reel Cabinet with Left & Right "15" Payline Markers */}
-        <div dir="ltr" className="relative w-full max-w-md flex items-center justify-center">
+        {/* 5x3 Reel Cabinet with 3D Metallic Gold Frame, Chasing Perimeter Lights & Pullable 3D Lever */}
+        <div dir="ltr" className="relative w-full max-w-md flex items-center justify-center gap-0.5">
           {/* Left Payline Badge "15" */}
-          <div className="hidden xs:flex -mr-1.5 z-20 w-5 h-6 rounded-l-md bg-gradient-to-b from-[#92400E] to-[#451A03] border border-[#FBBF24]/70 items-center justify-center text-[10px] font-mono-num font-extrabold text-[#FEF08A] shadow">
+          <div className="hidden xs:flex -mr-1.5 z-20 w-5 h-6 rounded-l-md bg-gradient-to-b from-[#FDE047] via-[#B45309] to-[#451A03] border border-[#FEF08A]/80 items-center justify-center text-[10px] font-mono-num font-extrabold text-[#FFFBEB] shadow">
             15
           </div>
 
-          <div
-            className={`relative w-full rounded-2xl border-[3px] p-1.5 ${theme.cabinetFrame} overflow-hidden`}
-          >
-            {/* Decorative golden corner rivets / jungle vines */}
-            <div className="pointer-events-none absolute inset-0 rounded-xl border border-[#FDE047]/35" />
-
-            {/* Cylindrical Top/Bottom Shadow Bevel */}
+          {/* 3D Brushed Metallic Gold Outer Cabinet Bezel */}
+          <div className="relative flex-1 min-w-0 rounded-2xl p-[3px] bg-gradient-to-br from-[#FFFBEB] via-[#D4AF37] to-[#78350F] shadow-[0_14px_34px_rgba(0,0,0,0.85),0_0_32px_rgba(212,175,55,0.38)]">
             <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-3.5 z-10"
-              style={{
-                background: 'linear-gradient(to bottom, rgba(0,0,0,0.72), transparent)',
-              }}
-            />
+              className={`relative w-full rounded-[14px] border-2 px-1.5 py-0.5 ${theme.cabinetFrame} overflow-hidden`}
+            >
+              {/* Top Chasing Perimeter Lights */}
+              <SlotMarqueePerimeter
+                spinning={isSpinning}
+                winning={Boolean(lastResult && !isSpinning && lastResult.payout > 0)}
+                count={14}
+              />
+
+              {/* Decorative golden corner bevel */}
+              <div className="pointer-events-none absolute inset-0 rounded-[12px] border border-[#FDE047]/35" />
+
+              {/* Jackpot / Big Win Light Burst Banner */}
+              {lastResult && !isSpinning && (lastResult.jackpotHit || lastResult.multiplier >= 10) && (
+                <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/35 backdrop-blur-[1px]">
+                  <div className="rounded-2xl border-2 border-[#FEF08A] bg-gradient-to-r from-[#451A03]/95 via-[#B45309]/95 to-[#451A03]/95 px-4 py-2 flex items-center gap-2 shadow-[0_0_35px_rgba(250,204,21,0.9)] animate-bounce">
+                    <Fluent3DAsset glyph="👑" alt="Jackpot" priority sizeClass="w-8 h-8" />
+                    <div className="text-center">
+                      <span dir="ltr" className="block text-xs font-black tracking-widest text-[#FEF08A]">
+                        JACKPOT! ×{lastResult.multiplier}
+                      </span>
+                      <span className="block text-xs font-mono-num font-extrabold text-white">
+                        +{lastResult.payout.toLocaleString('en-US')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Cylindrical Top/Bottom Shadow Bevel */}
+              <div
+                className="pointer-events-none absolute inset-x-0 top-4 h-3.5 z-10"
+                style={{
+                  background: 'linear-gradient(to bottom, rgba(0,0,0,0.72), transparent)',
+                }}
+              />
+              <div
+                className="pointer-events-none absolute inset-x-0 bottom-4 h-3.5 z-10"
+                style={{
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.72), transparent)',
+                }}
+              />
             <div
               className="pointer-events-none absolute inset-x-0 bottom-0 h-3.5 z-10"
               style={{
@@ -531,12 +565,28 @@ export const InRoomSlot5x3Player: React.FC<InRoomSlot5x3PlayerProps> = ({
                 );
               })}
             </div>
+
+            {/* Bottom Chasing Perimeter Lights */}
+            <SlotMarqueePerimeter
+              spinning={isSpinning}
+              winning={Boolean(lastResult && !isSpinning && lastResult.payout > 0)}
+              count={14}
+            />
+          </div>
           </div>
 
           {/* Right Payline Badge "15" */}
-          <div className="hidden xs:flex -ml-1.5 z-20 w-5 h-6 rounded-r-md bg-gradient-to-b from-[#92400E] to-[#451A03] border border-[#FBBF24]/70 items-center justify-center text-[10px] font-mono-num font-extrabold text-[#FEF08A] shadow">
+          <div className="hidden xs:flex -ml-1.5 z-20 w-5 h-6 rounded-r-md bg-gradient-to-b from-[#FDE047] via-[#B45309] to-[#451A03] border border-[#FEF08A]/80 items-center justify-center text-[10px] font-mono-num font-extrabold text-[#FFFBEB] shadow">
             15
           </div>
+
+          {/* Interactive Pullable 3D Slot Lever */}
+          <SlotMachine3DLever
+            compact
+            spinning={isSpinning}
+            disabled={insufficientBalance}
+            onPull={() => void handleSpin()}
+          />
         </div>
 
         {/* Inline Status / Feedback Micro-Banner */}

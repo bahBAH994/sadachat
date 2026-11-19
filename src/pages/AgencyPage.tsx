@@ -256,7 +256,7 @@ export const AgencyPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28">
+    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
       <div className="max-w-5xl mx-auto px-4 pt-4 space-y-5">
         {/* Crisp Dark Royal Top Banner */}
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#17253D] to-[#064E3B] p-5 sm:p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">

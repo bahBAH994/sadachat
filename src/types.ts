@@ -40,6 +40,9 @@ export interface User {
   diamonds: number;
   level: number;
   xp: number;
+  totalRecharged?: number;
+  totalSpentCoins?: number;
+  vipLevel?: VipTierKey;
   role?: string;
   is_admin: boolean;
   is_banned: boolean;
@@ -48,13 +51,16 @@ export interface User {
   lastSeen: string;
 }
 
+export type VipTierKey = 'none' | 'vip1' | 'vip2' | 'vip3' | 'svip';
+
 export interface RoomEntryEvent {
   userId: string;
   displayName: string;
   avatarUrl: string;
   frameId: string;
   level: number;
-  entryId: 'entry_car_15d' | 'entry_legendary_30d';
+  vipLevel?: VipTierKey;
+  entryId?: 'entry_car_15d' | 'entry_legendary_30d' | null;
   entryName: string;
   timestamp: string;
 }
@@ -66,6 +72,7 @@ export interface RoomSeat {
   avatarUrl: string | null;
   frameId: string | null;
   level: number | null;
+  vipLevel?: VipTierKey | null;
   isMuted: boolean;
   isLocked: boolean;
   isSpeaking: boolean;
@@ -80,6 +87,9 @@ export interface RoomMessage {
   level: number;
   isAdmin: boolean;
   vipTier?: string;
+  vipLevel?: VipTierKey;
+  avatarUrl?: string;
+  frameId?: string;
   hostBadge?: string | null;
   femaleVerifiedBadge?: string | null;
   text: string;
@@ -409,6 +419,7 @@ export interface GameWinRatesSettings {
   speedDiceWinRate: number;
   rouletteWinRate: number;
   mysteryBoxWinRate: number;
+  rpsWinRate?: number;
 }
 
 export interface PlatformSettings {

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
-import { ARAB_COUNTRIES, formatShortNumericId } from '../lib/sadaCatalog';
+import { ARAB_COUNTRIES, formatShortNumericId, getUserVipTierInfo } from '../lib/sadaCatalog';
 import {
   getDiscoveryDirectoryFromSupabase,
   getFollowStatus,
@@ -19,7 +19,7 @@ import {
 } from '../lib/sadaSocialService';
 import { supabase } from '../lib/supabase';
 import type { User } from '../types';
-import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 
 const RECENT_ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -142,6 +142,7 @@ export const MeetPage: React.FC = () => {
     const numId = formatShortNumericId(u.id);
     const countryLabel = getCountryDisplay(u.country);
     const isToggling = togglingFollowId === u.id;
+    const vipInfo = getUserVipTierInfo(u);
 
     return (
       <div
@@ -157,12 +158,13 @@ export const MeetPage: React.FC = () => {
               src={u.avatarUrl}
               alt={u.displayName}
               frameId={u.frameId}
+              vipTier={vipInfo.key}
               size="md"
             />
             {liveOnline && (
               <span
                 title="متصل الآن"
-                className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-white shadow-sm animate-pulse"
+                className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-white shadow-sm animate-pulse z-20"
               />
             )}
           </div>
@@ -170,8 +172,9 @@ export const MeetPage: React.FC = () => {
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <p className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
-                {u.displayName}
+                <VipUserName name={u.displayName} vipTier={vipInfo.key} />
               </p>
+              <VipTierBadge vipTier={vipInfo.key} compact />
               {u.femaleVerifiedBadge && <FemaleVerifiedBadge badge={u.femaleVerifiedBadge} />}
             </div>
 
@@ -247,7 +250,7 @@ export const MeetPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28">
+    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
       <div className="max-w-3xl mx-auto px-4 pt-4 space-y-5">
         {/* Fast Search Bar by Name or Numeric ID */}
         <section className="light-card rounded-2xl p-3 space-y-2.5">

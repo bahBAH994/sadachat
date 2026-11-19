@@ -96,7 +96,7 @@ export const BagPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28">
+    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
       <div className="max-w-4xl mx-auto px-4 pt-4 space-y-5">
         {/* Crisp Bag & Coins Header */}
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#132238] to-[#064E3B] p-5 sm:p-6 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">

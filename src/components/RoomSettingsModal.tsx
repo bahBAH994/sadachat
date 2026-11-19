@@ -14,12 +14,15 @@ import {
   Upload,
   UserMinus,
   Users,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
 import { AVATAR_CHOICES, resolveAsset } from '../lib/assets';
 import { ROOM_BACKGROUNDS } from '../lib/sadaCatalog';
-import type { Room, RoomExtrasConfig } from '../types';
+import type { Room, RoomExtrasConfig, VipTierKey } from '../types';
 import type { RoomPresenceMember } from '../context/ActiveRoomContext';
+import { AvatarWithFrame, VipTierBadge, VipUserName } from './AvatarWithFrame';
 
 interface RoomSettingsModalProps {
   room: Room;
@@ -30,6 +33,8 @@ interface RoomSettingsModalProps {
   initialTab?: 'agency' | 'members' | 'logs';
   ownedBackgrounds?: string[];
   isAdmin?: boolean;
+  effectsMuted?: boolean;
+  onToggleEffectsMuted?: (muted: boolean) => void;
   onUpdateSettings: (patch: {
     maxSeats?: number;
     hostAvatar?: string;
@@ -62,6 +67,8 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   initialTab = 'agency',
   ownedBackgrounds = [],
   isAdmin = false,
+  effectsMuted = false,
+  onToggleEffectsMuted,
   onUpdateSettings,
   onAdminAction,
   onClose,
@@ -157,6 +164,8 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
       userId: string;
       displayName: string;
       avatarUrl: string;
+      frameId?: string;
+      vipLevel?: VipTierKey;
       onSeat: boolean;
       isMuted: boolean;
     }
@@ -167,20 +176,27 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
         userId: s.userId,
         displayName: s.displayName || 'متحدث',
         avatarUrl: s.avatarUrl || 'host_male',
+        frameId: s.frameId || 'frame_obsidian',
+        vipLevel: s.vipLevel || 'none',
         onSeat: true,
         isMuted: s.isMuted,
       });
     }
   });
   presenceMembers.forEach((p) => {
-    if (!allMembersMap.has(p.userId)) {
+    const existing = allMembersMap.get(p.userId);
+    if (!existing) {
       allMembersMap.set(p.userId, {
         userId: p.userId,
         displayName: p.displayName,
         avatarUrl: p.avatarUrl,
+        frameId: p.frameId || 'frame_obsidian',
+        vipLevel: p.vipLevel || 'none',
         onSeat: false,
         isMuted: false,
       });
+    } else if (p.vipLevel && p.vipLevel !== 'none') {
+      existing.vipLevel = p.vipLevel;
     }
   });
   const memberList = Array.from(allMembersMap.values());
@@ -355,6 +371,48 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           </div>
         ) : tab === 'agency' ? (
           <form onSubmit={handleSaveAll} className="space-y-4">
+            {/* Local Room Sound Effects Mute Toggle */}
+            {onToggleEffectsMuted && (
+              <div className="rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/30 p-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                      effectsMuted
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-400/40'
+                        : 'bg-[#D4AF37]/20 text-[#FCE9A6] border border-[#D4AF37]/40'
+                    }`}
+                  >
+                    {effectsMuted ? (
+                      <VolumeX className="w-4 h-4" />
+                    ) : (
+                      <Volume2 className="w-4 h-4" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-extrabold text-white">
+                      كتم صوت مؤثرات الهدايا والألعاب
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      {effectsMuted
+                        ? 'المؤثرات الصوتية للهدايا والعروض السينمائية مكتومة حالياً'
+                        : 'تشغيل المؤثرات الصوتية المتزامنة مع عروض الهدايا'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onToggleEffectsMuted(!effectsMuted)}
+                  className={`min-h-[38px] px-3.5 rounded-xl text-xs font-extrabold shrink-0 transition cursor-pointer ${
+                    effectsMuted
+                      ? 'bg-rose-600 text-white shadow-[0_0_14px_rgba(225,29,72,0.4)]'
+                      : 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 hover:bg-emerald-500/35'
+                  }`}
+                >
+                  {effectsMuted ? 'مكتوم 🔇' : 'مُفعّل 🔊'}
+                </button>
+              </div>
+            )}
+
             {/* Active Mic Grid Size Selector */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-[#F3D37A] flex items-center gap-1.5">
@@ -431,6 +489,8 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                 <img
                   src={resolveAsset(avatarUrl)}
                   alt="معاينة"
+                  loading="lazy"
+                  decoding="async"
                   className="w-12 h-12 rounded-xl object-cover border-2 border-[#FCE9A6] shrink-0"
                 />
                 {AVATAR_CHOICES.map((ch) => (
@@ -442,7 +502,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                       avatarUrl === ch.id ? 'border-emerald-400' : 'border-white/15'
                     }`}
                   >
-                    <img src={ch.src} alt={ch.label} className="w-full h-full object-cover" />
+                    <img src={ch.src} alt={ch.label} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -564,15 +624,22 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                         className="rounded-2xl bg-[#070913]/75 border border-white/10 p-2.5 flex items-center justify-between gap-2"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <img
-                            src={resolveAsset(m.avatarUrl)}
+                          <AvatarWithFrame
+                            src={m.avatarUrl}
                             alt={m.displayName}
-                            className="w-9 h-9 rounded-full object-cover border border-[#D4AF37]/40 shrink-0"
+                            frameId={m.frameId}
+                            vipTier={m.vipLevel}
+                            size="sm"
                           />
                           <div className="min-w-0">
-                            <p className="text-xs font-bold text-white truncate">
-                              {m.displayName}
-                            </p>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <VipUserName
+                                name={m.displayName}
+                                vipTier={m.vipLevel}
+                                className="text-xs font-bold text-white truncate"
+                              />
+                              <VipTierBadge vipTier={m.vipLevel} compact />
+                            </div>
                             <p className="text-[10px] text-slate-400">
                               {isHost
                                 ? '👑 مالك الوكالة'

@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Check, Coins, MessageCircleHeart, Plus, Sparkles, Users, X } from 'lucide-react';
 import { resolveAsset } from '../lib/assets';
-import type { GiftItem, Room } from '../types';
+import { getCachedGiftCatalog } from '../lib/sadaCatalog';
+import { Fluent3DAsset } from './Fluent3DAsset';
+import type { GiftItem, Room, RoomSeat } from '../types';
 
 interface RoomGiftDrawerProps {
   room: Room;
@@ -19,19 +21,162 @@ interface RoomGiftDrawerProps {
 
 const QUANTITIES = [1, 9, 25, 50, 100] as const;
 
-const FEATURED_LUXURY_IDS = new Set([
-  'gift_01',
-  'gift_02',
-  'gift_03',
-  'gift_04',
-  'gift_05',
-  'gift_06',
-  'gift_07',
-]);
+const FEATURED_LUXURY_ORDER = [
+  'gift_03', // تاج ملكي ذهبي
+  'gift_05', // سيارة رياضية فاخرة
+  'gift_01', // باقة ورد حمراء
+  'gift_21', // ألماسة زرقاء ملكية
+  'gift_24', // صاروخ صَدَى الأسطوري
+  'gift_06', // يخت صَدَى الملكي
+  'gift_07', // قلعة الأحلام الملكية
+  'gift_02', // قلب ذهبي فاخر
+];
 
-export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
+const FEATURED_LUXURY_IDS = new Set(FEATURED_LUXURY_ORDER);
+
+interface GiftGridItemProps {
+  gift: GiftItem;
+  active: boolean;
+  onSelect: (giftId: string) => void;
+}
+
+const GiftGridItem = memo<GiftGridItemProps>(({ gift, active, onSelect }) => {
+  const isFeatured = FEATURED_LUXURY_IDS.has(gift.id);
+  const isImperial = gift.tier === 'imperial';
+  const isRoyal = gift.tier === 'royal';
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(gift.id)}
+      className={`relative rounded-2xl p-2.5 flex flex-col items-center text-center transition cursor-pointer overflow-hidden ${
+        active
+          ? 'bg-gradient-to-b from-[#3A280B] via-[#241807] to-[#120D05] border-2 border-[#FCE9A6] shadow-[0_0_22px_rgba(243,211,122,0.5)] scale-[1.03]'
+          : isImperial
+          ? 'bg-gradient-to-b from-[#2A170C]/80 to-[#120C08]/90 border border-amber-400/35 hover:border-[#F3D37A]/70'
+          : 'bg-gradient-to-b from-white/[0.08] to-black/55 border border-white/12 hover:border-[#D4AF37]/50'
+      }`}
+    >
+      {(isFeatured || isImperial || gift.category === 'lucky') && (
+        <span
+          className={`absolute top-1.5 right-1.5 rounded-full px-1.5 py-[1px] text-[8px] font-extrabold tracking-tight ${
+            gift.category === 'lucky'
+              ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/40'
+              : isImperial
+              ? 'bg-gradient-to-r from-amber-300 to-rose-400 text-[#070913]'
+              : isRoyal
+              ? 'bg-amber-400/25 text-[#FCE9A6] border border-amber-300/40'
+              : 'bg-sky-400/20 text-sky-200 border border-sky-300/35'
+          }`}
+        >
+          {gift.category === 'lucky' ? 'حظ' : isImperial ? 'VIP 3D' : '3D'}
+        </span>
+      )}
+
+      <div className="relative mt-1 mb-1.5 w-14 h-14 flex items-center justify-center">
+        <span
+          aria-hidden="true"
+          className={`absolute inset-0.5 rounded-full blur-[6px] transition duration-300 ${
+            active
+              ? 'bg-gradient-to-tr from-amber-300/60 via-yellow-200/40 to-amber-500/50 scale-115'
+              : isImperial
+              ? 'bg-gradient-to-tr from-amber-500/35 to-rose-500/25'
+              : isRoyal
+              ? 'bg-gradient-to-tr from-fuchsia-400/25 to-amber-300/20'
+              : 'bg-gradient-to-tr from-sky-400/25 to-indigo-400/15'
+          }`}
+        />
+        <span
+          aria-hidden="true"
+          className="absolute bottom-0.5 w-11 h-2.5 rounded-full bg-gradient-to-r from-transparent via-[#F3D37A]/45 to-transparent blur-[1px]"
+        />
+        <div
+          className={`relative transition-transform duration-300 drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)] ${
+            active ? 'scale-110 -translate-y-1' : 'group-hover:scale-105'
+          }`}
+        >
+          <Fluent3DAsset
+            glyph={gift.glyph}
+            alt={gift.name}
+            sizeClass="w-12 h-12"
+            fallbackTextClass="text-3xl"
+            priority={isFeatured}
+          />
+        </div>
+      </div>
+
+      <span className="text-[11px] font-extrabold text-white line-clamp-1 leading-tight">
+        {gift.name}
+      </span>
+
+      <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-mono-num font-extrabold text-[#FCE9A6]">
+        <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3.5 h-3.5" fallbackTextClass="text-[10px]" />
+        <span>{gift.coinsCost.toLocaleString('en-US')}</span>
+      </div>
+    </button>
+  );
+});
+
+interface RecipientSpeakerChipProps {
+  seat: RoomSeat;
+  isSelected: boolean;
+  onToggle: (uid: string) => void;
+}
+
+const RecipientSpeakerChip = memo<RecipientSpeakerChipProps>(
+  ({ seat, isSelected, onToggle }) => {
+    const uid = seat.userId!;
+    return (
+      <button
+        type="button"
+        onClick={() => onToggle(uid)}
+        className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
+      >
+        <div
+          className={`relative w-11 h-11 rounded-full p-[2px] transition ${
+            isSelected
+              ? 'bg-gradient-to-tr from-[#FCE9A6] via-[#F3D37A] to-amber-500 shadow-[0_0_16px_rgba(243,211,122,0.75)] scale-105'
+              : 'bg-white/20 opacity-75 hover:opacity-100'
+          }`}
+        >
+          <img
+            src={resolveAsset(seat.avatarUrl)}
+            alt={seat.displayName || 'متحدث'}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            className="w-full h-full rounded-full object-cover bg-[#14110B]"
+          />
+          <span
+            className={`absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full px-1.5 text-[8px] font-mono-num font-extrabold leading-tight shadow ${
+              isSelected
+                ? 'bg-[#FCE9A6] text-[#070913]'
+                : 'bg-black/80 text-white border border-white/20'
+            }`}
+          >
+            {seat.seatIndex + 1}
+          </span>
+          {isSelected && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border border-black text-white flex items-center justify-center shadow">
+              <Check className="w-2.5 h-2.5 stroke-[3]" />
+            </span>
+          )}
+        </div>
+        <span
+          className={`text-[10px] font-bold max-w-[50px] truncate ${
+            isSelected ? 'text-[#FCE9A6]' : 'text-slate-300'
+          }`}
+        >
+          {seat.displayName}
+        </span>
+      </button>
+    );
+  }
+);
+
+export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
   room,
-  gifts,
+  gifts: rawGifts,
   userCoins,
   currentUserId,
   initialTargets,
@@ -41,6 +186,10 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
   onRecharge,
   onClose,
 }) => {
+  const gifts = useMemo(
+    () => (rawGifts.length > 0 ? rawGifts : getCachedGiftCatalog()),
+    [rawGifts]
+  );
   const seatedSpeakers = useMemo(
     () => room.seats.filter((s) => Boolean(s.userId)),
     [room.seats]
@@ -64,22 +213,39 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
   }, [initialTargets]);
 
   const [giftTab, setGiftTab] = useState<'fixed' | 'lucky' | 'history'>('fixed');
+  const [tierFilter, setTierFilter] = useState<'all' | 'light' | 'medium' | 'royal'>('all');
   const [quantity, setQuantity] = useState<number>(1);
   const [selectedGiftId, setSelectedGiftId] = useState<string>(() => {
     const firstFixed = gifts.find((g) => g.category !== 'lucky');
     return firstFixed?.id || gifts[0]?.id || 'gift_01';
   });
 
-  const fixedGifts = useMemo(
-    () => gifts.filter((g) => g.category !== 'lucky'),
-    [gifts]
-  );
+  const fixedGifts = useMemo(() => {
+    const list = gifts.filter((g) => g.category !== 'lucky');
+    return [...list].sort((a, b) => {
+      const idxA = FEATURED_LUXURY_ORDER.indexOf(a.id);
+      const idxB = FEATURED_LUXURY_ORDER.indexOf(b.id);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.coinsCost - b.coinsCost;
+    });
+  }, [gifts]);
   const luckyGifts = useMemo(
     () => gifts.filter((g) => g.category === 'lucky'),
     [gifts]
   );
 
-  const visibleGifts = giftTab === 'lucky' ? luckyGifts : fixedGifts;
+  const visibleGifts = useMemo(() => {
+    const base = giftTab === 'lucky' ? luckyGifts : fixedGifts;
+    if (tierFilter === 'light') return base.filter((g) => g.coinsCost < 100);
+    if (tierFilter === 'medium') {
+      return base.filter((g) => g.coinsCost >= 100 && g.coinsCost < 1000);
+    }
+    if (tierFilter === 'royal') return base.filter((g) => g.coinsCost >= 1000);
+    return base;
+  }, [fixedGifts, giftTab, luckyGifts, tierFilter]);
+
   const selectedGift = useMemo(
     () =>
       gifts.find((g) => g.id === selectedGiftId) ||
@@ -115,7 +281,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
     }
   };
 
-  const toggleTarget = (uid: string) => {
+  const toggleTarget = useCallback((uid: string) => {
     setSelectedTargetIds((prev) => {
       if (prev.includes(uid)) {
         if (prev.length === 1) return prev;
@@ -123,7 +289,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
       }
       return [...prev, uid];
     });
-  };
+  }, []);
 
   const effectiveTargetCount = Math.max(1, selectedTargetIds.length);
   const totalCost = selectedGift
@@ -152,8 +318,8 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
         {/* Top Drawer Header */}
         <div className="flex items-center justify-between px-4 pt-3.5 pb-2 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#FDE047] via-[#D4AF37] to-[#9A6E13] flex items-center justify-center shadow-[0_0_16px_rgba(243,211,122,0.5)] text-lg">
-              🎁
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#FDE047] via-[#D4AF37] to-[#9A6E13] flex items-center justify-center shadow-[0_0_16px_rgba(243,211,122,0.5)]">
+              <Fluent3DAsset glyph="🎁" alt="الهدايا الملكية" sizeClass="w-7 h-7" priority />
             </div>
             <div>
               <h3 className="text-sm sm:text-base font-extrabold gold-gradient-text leading-tight">
@@ -248,6 +414,8 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
                   <img
                     src={resolveAsset(room.hostAvatar)}
                     alt={room.hostName}
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     className="w-full h-full rounded-full object-cover bg-[#14110B]"
                   />
@@ -267,54 +435,14 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
             )}
 
             {/* Seated Mic Speakers */}
-            {seatedSpeakers.map((seat) => {
-              const uid = seat.userId!;
-              const isSelected = selectedTargetIds.includes(uid);
-              return (
-                <button
-                  key={seat.seatIndex}
-                  type="button"
-                  onClick={() => toggleTarget(uid)}
-                  className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
-                >
-                  <div
-                    className={`relative w-11 h-11 rounded-full p-[2px] transition ${
-                      isSelected
-                        ? 'bg-gradient-to-tr from-[#FCE9A6] via-[#F3D37A] to-amber-500 shadow-[0_0_16px_rgba(243,211,122,0.75)] scale-105'
-                        : 'bg-white/20 opacity-75 hover:opacity-100'
-                    }`}
-                  >
-                    <img
-                      src={resolveAsset(seat.avatarUrl)}
-                      alt={seat.displayName || 'متحدث'}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full rounded-full object-cover bg-[#14110B]"
-                    />
-                    <span
-                      className={`absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full px-1.5 text-[8px] font-mono-num font-extrabold leading-tight shadow ${
-                        isSelected
-                          ? 'bg-[#FCE9A6] text-[#070913]'
-                          : 'bg-black/80 text-white border border-white/20'
-                      }`}
-                    >
-                      {seat.seatIndex + 1}
-                    </span>
-                    {isSelected && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border border-black text-white flex items-center justify-center shadow">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </span>
-                    )}
-                  </div>
-                  <span
-                    className={`text-[10px] font-bold max-w-[50px] truncate ${
-                      isSelected ? 'text-[#FCE9A6]' : 'text-slate-300'
-                    }`}
-                  >
-                    {seat.displayName}
-                  </span>
-                </button>
-              );
-            })}
+            {seatedSpeakers.map((seat) => (
+              <RecipientSpeakerChip
+                key={seat.seatIndex}
+                seat={seat}
+                isSelected={selectedTargetIds.includes(seat.userId!)}
+                onToggle={toggleTarget}
+              />
+            ))}
           </div>
         </div>
 
@@ -348,6 +476,32 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
               </button>
             ))}
           </div>
+
+          {giftTab !== 'history' && (
+            <div className="flex items-center gap-1.5 mt-1.5 overflow-x-auto no-scrollbar">
+              {[
+                { id: 'all', label: 'الكل' },
+                { id: 'light', label: 'خفيفة (<100)' },
+                { id: 'medium', label: 'متوسطة (100-999)' },
+                { id: 'royal', label: 'ملكية (1000+)' },
+              ].map((tf) => (
+                <button
+                  key={tf.id}
+                  type="button"
+                  onClick={() =>
+                    setTierFilter(tf.id as 'all' | 'light' | 'medium' | 'royal')
+                  }
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold whitespace-nowrap shrink-0 transition cursor-pointer ${
+                    tierFilter === tf.id
+                      ? 'bg-[#D4AF37]/25 border border-[#FCE9A6]/70 text-[#FCE9A6]'
+                      : 'bg-white/5 border border-white/10 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Gifts Grid OR History */}
@@ -373,86 +527,20 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
                   ))
               )}
             </div>
+          ) : visibleGifts.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-10">
+              لا توجد هدايا في هذه الفئة ضمن هذا التبويب.
+            </p>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 pb-2">
-              {visibleGifts.map((gift) => {
-                const active = selectedGift?.id === gift.id;
-                const isFeatured = FEATURED_LUXURY_IDS.has(gift.id);
-                const isImperial = gift.tier === 'imperial';
-                const isRoyal = gift.tier === 'royal';
-
-                return (
-                  <button
-                    key={gift.id}
-                    type="button"
-                    onClick={() => setSelectedGiftId(gift.id)}
-                    className={`relative rounded-2xl p-2.5 flex flex-col items-center text-center transition cursor-pointer overflow-hidden ${
-                      active
-                        ? 'bg-gradient-to-b from-[#3A280B] via-[#241807] to-[#120D05] border-2 border-[#FCE9A6] shadow-[0_0_22px_rgba(243,211,122,0.5)] scale-[1.03]'
-                        : isImperial
-                        ? 'bg-gradient-to-b from-[#2A170C]/80 to-[#120C08]/90 border border-amber-400/35 hover:border-[#F3D37A]/70'
-                        : 'bg-gradient-to-b from-white/[0.08] to-black/55 border border-white/12 hover:border-[#D4AF37]/50'
-                    }`}
-                  >
-                    {/* Tier / 3D Badge */}
-                    {(isFeatured || isImperial || gift.category === 'lucky') && (
-                      <span
-                        className={`absolute top-1.5 right-1.5 rounded-full px-1.5 py-[1px] text-[8px] font-extrabold tracking-tight ${
-                          gift.category === 'lucky'
-                            ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/40'
-                            : isImperial
-                            ? 'bg-gradient-to-r from-amber-300 to-rose-400 text-[#070913]'
-                            : isRoyal
-                            ? 'bg-amber-400/25 text-[#FCE9A6] border border-amber-300/40'
-                            : 'bg-sky-400/20 text-sky-200 border border-sky-300/35'
-                        }`}
-                      >
-                        {gift.category === 'lucky'
-                          ? 'حظ'
-                          : isImperial
-                          ? 'VIP 3D'
-                          : '3D'}
-                      </span>
-                    )}
-
-                    {/* 3D Pedestal + Floating Glowing Icon */}
-                    <div className="relative mt-1 mb-1.5 w-14 h-14 flex items-center justify-center">
-                      <span
-                        aria-hidden="true"
-                        className={`absolute inset-1 rounded-full blur-md transition ${
-                          active
-                            ? 'bg-amber-300/45 scale-110'
-                            : isImperial
-                            ? 'bg-amber-500/30'
-                            : isRoyal
-                            ? 'bg-fuchsia-400/25'
-                            : 'bg-sky-400/20'
-                        }`}
-                      />
-                      <span
-                        aria-hidden="true"
-                        className="absolute bottom-0.5 w-11 h-2.5 rounded-full bg-gradient-to-r from-transparent via-[#F3D37A]/45 to-transparent blur-[1px]"
-                      />
-                      <span
-                        className={`relative text-[34px] leading-none select-none transition-transform duration-300 drop-shadow-[0_6px_10px_rgba(0,0,0,0.65)] ${
-                          active ? 'scale-115 -translate-y-0.5' : ''
-                        }`}
-                      >
-                        {gift.glyph}
-                      </span>
-                    </div>
-
-                    <span className="text-[11px] font-extrabold text-white line-clamp-1 leading-tight">
-                      {gift.name}
-                    </span>
-
-                    <div className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-mono-num font-extrabold text-[#FCE9A6]">
-                      <span>🪙</span>
-                      <span>{gift.coinsCost.toLocaleString('en-US')}</span>
-                    </div>
-                  </button>
-                );
-              })}
+              {visibleGifts.map((gift) => (
+                <GiftGridItem
+                  key={gift.id}
+                  gift={gift}
+                  active={selectedGift?.id === gift.id}
+                  onSelect={setSelectedGiftId}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -481,11 +569,12 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
               <div className="text-left shrink-0">
                 <div className="text-[10px] text-slate-400">الإجمالي</div>
                 <div
-                  className={`text-xs font-mono-num font-extrabold ${
+                  className={`text-xs font-mono-num font-extrabold flex items-center gap-1 ${
                     canAfford ? 'text-[#FCE9A6]' : 'text-rose-400'
                   }`}
                 >
-                  🪙 {totalCost.toLocaleString('en-US')}
+                  <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3.5 h-3.5" priority />
+                  <span>{totalCost.toLocaleString('en-US')}</span>
                 </div>
               </div>
             </div>
@@ -502,12 +591,20 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
                 }`}
               >
                 <Sparkles className="w-4 h-4 shrink-0" />
+                {canAfford && !sending && (
+                  <Fluent3DAsset
+                    glyph={selectedGift.glyph}
+                    alt={selectedGift.name}
+                    sizeClass="w-5 h-5"
+                    priority
+                  />
+                )}
                 <span className="truncate">
                   {sending
                     ? 'جارٍ الإرسال...'
                     : !canAfford
                     ? 'رصيد الكوينز غير كافٍ'
-                    : `إرسال ${selectedGift.glyph} (${selectedGift.name}) ×${quantity}${
+                    : `إرسال ${selectedGift.name} ×${quantity}${
                         effectiveTargetCount > 1 ? ` إلى ${effectiveTargetCount}` : ''
                       }`}
                 </span>
@@ -524,7 +621,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
                 className="flex items-center gap-1.5 rounded-2xl bg-[#1A1308] border border-[#F3D37A]/50 px-2.5 py-1.5 shadow-[0_0_12px_rgba(212,175,55,0.22)] shrink-0 cursor-pointer hover:border-[#FCE9A6]"
                 title="رصيدك الحالي · اضغط للشحن السريع"
               >
-                <span className="text-sm leading-none">🪙</span>
+                <Fluent3DAsset glyph="🪙" alt="رصيد الكوينز" sizeClass="w-4 h-4" priority />
                 <span className="text-xs sm:text-sm font-mono-num font-black text-[#FCE9A6]">
                   {userCoins.toLocaleString('en-US')}
                 </span>
@@ -538,4 +635,4 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = ({
       </motion.div>
     </div>
   );
-};
+});

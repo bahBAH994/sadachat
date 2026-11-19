@@ -8,7 +8,18 @@ import React, {
   useState,
 } from 'react';
 import { useAuth } from './AuthContext';
-import { setAudioMuted } from '../lib/sadaAudio';
+import {
+  getEffectsMutedSetting,
+  playLightGiftCoinChime,
+  playMediumGiftCelebrationSound,
+  setAudioMuted,
+  setEffectsMuted as setAudioEffectsMuted,
+} from '../lib/sadaAudio';
+import {
+  getGiftEffectTier,
+  getUserVipTierInfo,
+  type GiftEffectTier,
+} from '../lib/sadaCatalog';
 import {
   adminControlRoomInSupabase,
   canManageRoom,
@@ -42,6 +53,7 @@ import type {
   RoomMessage,
   RoomMusicState,
   RoomSeat,
+  VipTierKey,
 } from '../types';
 
 export interface RoomPresenceMember {
@@ -51,20 +63,44 @@ export interface RoomPresenceMember {
   avatarUrl: string;
   frameId?: string;
   level?: number;
+  vipLevel?: VipTierKey;
 }
 
 export interface RoomFlyingGiftEvent {
   id: string;
   gift: GiftItem;
+  tierLevel: GiftEffectTier;
   quantity: number;
   comboCount: number;
   senderId: string;
   senderName: string;
+  senderAvatarUrl?: string;
   recipientIds: string[];
   recipientNames: string[];
   luckyMultiplier?: number | null;
   luckyBonusCoins?: number;
   isFullscreen: boolean;
+}
+
+export interface Tier1SideNotice {
+  id: string;
+  comboKey: string;
+  gift: GiftItem;
+  senderId: string;
+  senderName: string;
+  recipientName: string;
+  quantity: number;
+  comboCount: number;
+  luckyMultiplier?: number | null;
+}
+
+export interface SeatGiftReactionEvent {
+  id: string;
+  gift: GiftItem;
+  senderName: string;
+  quantity: number;
+  comboCount: number;
+  tierLevel: GiftEffectTier;
 }
 
 export interface RoomSeatEmojiEvent {
@@ -124,15 +160,21 @@ interface ActiveRoomContextValue {
   } | null;
   entryBanner: RoomEntryEvent | null;
   flyingGifts: RoomFlyingGiftEvent[];
+  tier1SideNotices: Tier1SideNotice[];
+  mediumCelebrationGift: RoomFlyingGiftEvent | null;
   fullscreenGift: RoomFlyingGiftEvent | null;
+  seatGiftReactions: Record<string, SeatGiftReactionEvent>;
+  seatHaloEffects: Record<string, string>;
   seatEmojis: Record<string, RoomSeatEmojiEvent>;
   musicState: RoomMusicState | null;
   musicVolume: number;
   musicMutedLocally: boolean;
   roomAudioMuted: boolean;
+  effectsMuted: boolean;
   setMusicVolume: (vol: number) => void;
   setMusicMutedLocally: (muted: boolean) => void;
   setRoomAudioMuted: (muted: boolean) => void;
+  setEffectsMuted: (muted: boolean) => void;
   enterRoom: (roomId: string) => Promise<void>;
   minimizeRoom: () => void;
   restoreRoom: () => void;
@@ -217,16 +259,51 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [wheelBanner, setWheelBanner] = useState<ActiveRoomContextValue['wheelBanner']>(null);
   const [entryBanner, setEntryBanner] = useState<RoomEntryEvent | null>(null);
   const [flyingGifts, setFlyingGifts] = useState<RoomFlyingGiftEvent[]>([]);
+  const [tier1SideNotices, setTier1SideNotices] = useState<Tier1SideNotice[]>([]);
+  const [mediumCelebrationGift, setMediumCelebrationGift] =
+    useState<RoomFlyingGiftEvent | null>(null);
   const [fullscreenGift, setFullscreenGift] = useState<RoomFlyingGiftEvent | null>(null);
+  const [seatGiftReactions, setSeatGiftReactions] = useState<
+    Record<string, SeatGiftReactionEvent>
+  >({});
+  const [seatHaloEffects, setSeatHaloEffects] = useState<Record<string, string>>({});
   const [seatEmojis, setSeatEmojis] = useState<Record<string, RoomSeatEmojiEvent>>({});
 
   const [musicVolume, setMusicVolume] = useState<number>(0.45);
   const [musicMutedLocally, setMusicMutedLocally] = useState<boolean>(false);
   const [roomAudioMuted, setRoomAudioMutedState] = useState<boolean>(false);
+  const [effectsMuted, setEffectsMutedState] = useState<boolean>(() =>
+    getEffectsMutedSetting()
+  );
   const [giftTargetRequest, setGiftTargetRequest] = useState<{
     userId: string;
     nonce: number;
   } | null>(null);
+
+  const processedGiftIdsRef = useRef<Set<string>>(new Set());
+  const entryTimerRef = useRef<number | null>(null);
+
+  const showTimedEntryBanner = useCallback((ev: RoomEntryEvent) => {
+    if (entryTimerRef.current) {
+      window.clearTimeout(entryTimerRef.current);
+      entryTimerRef.current = null;
+    }
+    setEntryBanner(ev);
+    const duration =
+      ev.vipLevel === 'svip'
+        ? 3500
+        : ev.vipLevel === 'vip3'
+        ? 3500
+        : ev.vipLevel === 'vip2'
+        ? 3200
+        : 4500;
+    entryTimerRef.current = window.setTimeout(() => {
+      setEntryBanner((prev) =>
+        prev && prev.userId === ev.userId && prev.timestamp === ev.timestamp ? null : prev
+      );
+      entryTimerRef.current = null;
+    }, duration);
+  }, []);
 
   const requestGiftForUser = useCallback((userId: string) => {
     setGiftTargetRequest({ userId, nonce: Date.now() });
@@ -239,6 +316,135 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const setRoomAudioMuted = useCallback((muted: boolean) => {
     setRoomAudioMutedState(muted);
     setAudioMuted(muted);
+  }, []);
+
+  const setEffectsMuted = useCallback((muted: boolean) => {
+    setEffectsMutedState(muted);
+    setAudioEffectsMuted(muted);
+  }, []);
+
+  const dispatchTieredGiftEffects = useCallback((rawFly: RoomFlyingGiftEvent) => {
+    if (!rawFly?.id || !rawFly?.gift) return;
+    if (processedGiftIdsRef.current.has(rawFly.id)) return;
+    processedGiftIdsRef.current.add(rawFly.id);
+    if (processedGiftIdsRef.current.size > 120) {
+      const oldest = processedGiftIdsRef.current.values().next().value;
+      if (oldest) processedGiftIdsRef.current.delete(oldest);
+    }
+
+    const tierLevel = rawFly.tierLevel || getGiftEffectTier(rawFly.gift.coinsCost);
+    const flyData: RoomFlyingGiftEvent = {
+      ...rawFly,
+      tierLevel,
+      isFullscreen: tierLevel === 3 || Boolean(rawFly.isFullscreen),
+    };
+
+    // 1) Flying 3D Gift Trajectory toward recipient mics
+    setFlyingGifts((prev) => [...prev, flyData]);
+    window.setTimeout(() => {
+      setFlyingGifts((prev) => prev.filter((item) => item.id !== flyData.id));
+    }, 1700);
+
+    // 2) Tier-specific visual & audio effects
+    if (tierLevel === 1) {
+      // Tier 1 (<100 coins): 3D gift above recipient mic + side combo banner + soft coin chime
+      playLightGiftCoinChime(flyData.comboCount || 1);
+
+      flyData.recipientIds.forEach((uid) => {
+        if (!uid) return;
+        const reaction: SeatGiftReactionEvent = {
+          id: flyData.id,
+          gift: flyData.gift,
+          senderName: flyData.senderName,
+          quantity: flyData.quantity,
+          comboCount: flyData.comboCount,
+          tierLevel: 1,
+        };
+        setSeatGiftReactions((prev) => ({ ...prev, [uid]: reaction }));
+        window.setTimeout(() => {
+          setSeatGiftReactions((prev) => {
+            if (prev[uid]?.id !== flyData.id) return prev;
+            const copy = { ...prev };
+            delete copy[uid];
+            return copy;
+          });
+        }, 2600);
+      });
+
+      const recipientLabel =
+        flyData.recipientNames.length > 1
+          ? `الجميع (${flyData.recipientNames.length})`
+          : flyData.recipientNames[0] || 'المتواجدين';
+      const comboKey = `${flyData.senderId}_${flyData.gift.id}_${recipientLabel}`;
+      const noticeId = flyData.id;
+
+      setTier1SideNotices((prev) => {
+        const existingIdx = prev.findIndex((n) => n.comboKey === comboKey);
+        const nextNotice: Tier1SideNotice = {
+          id: noticeId,
+          comboKey,
+          gift: flyData.gift,
+          senderId: flyData.senderId,
+          senderName: flyData.senderName,
+          recipientName: recipientLabel,
+          quantity: flyData.quantity,
+          comboCount: Math.max(1, flyData.comboCount || 1),
+          luckyMultiplier: flyData.luckyMultiplier,
+        };
+        if (existingIdx !== -1) {
+          const updated = [...prev];
+          updated[existingIdx] = nextNotice;
+          return updated;
+        }
+        return [nextNotice, ...prev].slice(0, 3);
+      });
+
+      window.setTimeout(() => {
+        setTier1SideNotices((prev) => prev.filter((n) => n.id !== noticeId));
+      }, 3200);
+    } else if (tierLevel === 2) {
+      // Tier 2 (100-999 coins): 3s center-screen glowing card + golden particles + mic halo + celebratory sound
+      playMediumGiftCelebrationSound();
+
+      setMediumCelebrationGift(flyData);
+      window.setTimeout(() => {
+        setMediumCelebrationGift((curr) => (curr?.id === flyData.id ? null : curr));
+      }, 3000);
+
+      flyData.recipientIds.forEach((uid) => {
+        if (!uid) return;
+        setSeatHaloEffects((prev) => ({ ...prev, [uid]: flyData.id }));
+        const reaction: SeatGiftReactionEvent = {
+          id: flyData.id,
+          gift: flyData.gift,
+          senderName: flyData.senderName,
+          quantity: flyData.quantity,
+          comboCount: flyData.comboCount,
+          tierLevel: 2,
+        };
+        setSeatGiftReactions((prev) => ({ ...prev, [uid]: reaction }));
+        window.setTimeout(() => {
+          setSeatHaloEffects((prev) => {
+            if (prev[uid] !== flyData.id) return prev;
+            const copy = { ...prev };
+            delete copy[uid];
+            return copy;
+          });
+          setSeatGiftReactions((prev) => {
+            if (prev[uid]?.id !== flyData.id) return prev;
+            const copy = { ...prev };
+            delete copy[uid];
+            return copy;
+          });
+        }, 3000);
+      });
+    } else {
+      // Tier 3 (>=1000 coins): 4.5s Full-Screen Cinema Overlay (audio & confetti triggered inside overlay)
+      setFullscreenGift(flyData);
+      window.setTimeout(() => {
+        setFullscreenGift((curr) => (curr?.id === flyData.id ? null : curr));
+      }, 4500);
+    }
   }, []);
 
   const roomChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -479,21 +685,14 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           )
           .on('broadcast', { event: 'room:gift' }, ({ payload }) => {
             const giftData = payload as NonNullable<ActiveRoomContextValue['giftBanner']>;
-            setGiftBanner(giftData);
-            setTimeout(() => setGiftBanner(null), 4800);
+            if (giftData?.gift) {
+              setGiftBanner(giftData);
+              setTimeout(() => setGiftBanner(null), 3500);
+            }
           })
           .on('broadcast', { event: 'room:gift-fly' }, ({ payload }) => {
             const flyData = payload as RoomFlyingGiftEvent;
-            setFlyingGifts((prev) => [...prev, flyData]);
-            setTimeout(() => {
-              setFlyingGifts((prev) => prev.filter((item) => item.id !== flyData.id));
-            }, 1700);
-            if (flyData.isFullscreen) {
-              setFullscreenGift(flyData);
-              setTimeout(() => {
-                setFullscreenGift((curr) => (curr?.id === flyData.id ? null : curr));
-              }, 5000);
-            }
+            dispatchTieredGiftEffects(flyData);
           })
           .on('broadcast', { event: 'seat:emoji' }, ({ payload }) => {
             const em = payload as RoomSeatEmojiEvent;
@@ -505,11 +704,12 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 delete copy[em.userId];
                 return copy;
               });
-            }, 4000);
+            }, 3000);
           })
           .on('broadcast', { event: 'room:entry' }, ({ payload }) => {
-            setEntryBanner(payload as RoomEntryEvent);
-            setTimeout(() => setEntryBanner(null), 5500);
+            if (payload) {
+              showTimedEntryBanner(payload as RoomEntryEvent);
+            }
           })
           .on('broadcast', { event: 'room:wheel-win' }, ({ payload }) => {
             setWheelBanner(payload as NonNullable<ActiveRoomContextValue['wheelBanner']>);
@@ -582,6 +782,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                       avatarUrl: user.avatarUrl,
                       frameId: user.frameId,
                       level: user.level,
+                      vipLevel: getUserVipTierInfo(user).key,
                     });
                   } catch {
                     // ignore presence track errors
@@ -599,8 +800,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setRoom(joinRes.room);
         setExtras(joinRes.extras);
         if (joinRes.entryEvent) {
-          setEntryBanner(joinRes.entryEvent);
-          setTimeout(() => setEntryBanner(null), 5500);
+          showTimedEntryBanner(joinRes.entryEvent);
           if (roomChannelRef.current) {
             try {
               void roomChannelRef.current.send({
@@ -621,7 +821,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setLoading(false);
       }
     },
-    [leaveActiveRoom, room, teardownActiveChannels, user]
+    [leaveActiveRoom, room, showTimedEntryBanner, teardownActiveChannels, user]
   );
 
   // Auto-eject if kicked from agency by manager
@@ -897,37 +1097,46 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     async (giftId: string, targetUserId?: string) => {
       if (!room || !user) return;
       setError(null);
+      const recipientId = targetUserId || room.hostId;
       const data = await sendRoomGiftInSupabase(
         room.id,
         user,
         giftId,
-        targetUserId || room.hostId
+        recipientId
       );
       updateLocalUser(data.user);
       setRoom(data.room);
 
       const targetName =
-        data.room.seats.find((s) => s.userId === (targetUserId || room.hostId))
-          ?.displayName || data.room.hostName;
-      const banner = {
+        data.room.seats.find((s) => s.userId === recipientId)?.displayName ||
+        data.room.hostName;
+      const tierLevel = getGiftEffectTier(data.gift.coinsCost);
+      const flyEvent: RoomFlyingGiftEvent = {
+        id: `fly_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         gift: data.gift,
+        tierLevel,
+        quantity: 1,
+        comboCount: 1,
+        senderId: data.user.id,
+        senderName: data.user.displayName,
+        senderAvatarUrl: data.user.avatarUrl,
+        recipientIds: [recipientId],
+        recipientNames: [targetName],
         luckyMultiplier: data.luckyMultiplier,
         luckyBonusCoins: data.luckyBonusCoins,
-        senderName: data.user.displayName,
-        recipientName: targetName,
+        isFullscreen: tierLevel === 3,
       };
-      setGiftBanner(banner);
-      setTimeout(() => setGiftBanner(null), 4800);
+      dispatchTieredGiftEffects(flyEvent);
       void roomChannelRef.current?.send({
         type: 'broadcast',
-        event: 'room:gift',
-        payload: banner,
+        event: 'room:gift-fly',
+        payload: flyEvent,
       });
 
       const refreshed = await getRoomDetailsFromSupabase(room.id);
       setExtras(refreshed.extras);
     },
-    [room, updateLocalUser, user]
+    [dispatchTieredGiftEffects, room, updateLocalUser, user]
   );
 
   const sendGiftBatch = useCallback(
@@ -951,69 +1160,32 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setRoom(data.room);
       setExtras(data.extras);
 
-      const totalCoinsSpent =
-        data.gift.coinsCost * data.quantity * Math.max(1, data.recipientIds.length);
-      const isFullscreen =
-        ['gift_05', 'gift_06', 'gift_07', 'gift_28'].includes(data.gift.id) ||
-        data.gift.tier === 'imperial' ||
-        data.gift.coinsCost >= 12000 ||
-        totalCoinsSpent >= 25000;
-
+      const tierLevel = getGiftEffectTier(data.gift.coinsCost);
       const flyEvent: RoomFlyingGiftEvent = {
         id: `fly_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         gift: data.gift,
+        tierLevel,
         quantity: data.quantity,
         comboCount,
         senderId: data.user.id,
         senderName: data.user.displayName,
+        senderAvatarUrl: data.user.avatarUrl,
         recipientIds: data.recipientIds,
         recipientNames: data.recipientNames,
         luckyMultiplier: data.luckyMultiplier,
         luckyBonusCoins: data.luckyBonusCoins,
-        isFullscreen,
+        isFullscreen: tierLevel === 3,
       };
 
-      setFlyingGifts((prev) => [...prev, flyEvent]);
-      setTimeout(() => {
-        setFlyingGifts((prev) => prev.filter((item) => item.id !== flyEvent.id));
-      }, 1700);
-
-      if (isFullscreen) {
-        setFullscreenGift(flyEvent);
-        setTimeout(() => {
-          setFullscreenGift((curr) => (curr?.id === flyEvent.id ? null : curr));
-        }, 5000);
-      }
-
-      const targetLabel =
-        data.recipientNames.length > 1
-          ? `الجميع (${data.recipientNames.length})`
-          : data.recipientNames[0] || data.room.hostName;
-      const banner = {
-        gift: data.gift,
-        luckyMultiplier: data.luckyMultiplier,
-        luckyBonusCoins: data.luckyBonusCoins,
-        senderName: data.user.displayName,
-        recipientName:
-          data.quantity > 1 || comboCount > 1
-            ? `${targetLabel} (×${data.quantity}${comboCount > 1 ? ` · Combo x${comboCount}` : ''})`
-            : targetLabel,
-      };
-      setGiftBanner(banner);
-      setTimeout(() => setGiftBanner(null), 4800);
+      dispatchTieredGiftEffects(flyEvent);
 
       void roomChannelRef.current?.send({
         type: 'broadcast',
         event: 'room:gift-fly',
         payload: flyEvent,
       });
-      void roomChannelRef.current?.send({
-        type: 'broadcast',
-        event: 'room:gift',
-        payload: banner,
-      });
     },
-    [room, updateLocalUser, user]
+    [dispatchTieredGiftEffects, room, updateLocalUser, user]
   );
 
   const sendSeatEmoji = useCallback(
@@ -1027,7 +1199,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         emoji: payload.emoji,
         label: payload.label,
         diceValue,
-        expiresAt: Date.now() + 4000,
+        expiresAt: Date.now() + 3000,
       };
 
       setSeatEmojis((prev) => ({ ...prev, [user.id]: event }));
@@ -1038,7 +1210,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           delete copy[user.id];
           return copy;
         });
-      }, 4000);
+      }, 3000);
 
       void roomChannelRef.current?.send({
         type: 'broadcast',
@@ -1309,15 +1481,21 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         wheelBanner,
         entryBanner,
         flyingGifts,
+        tier1SideNotices,
+        mediumCelebrationGift,
         fullscreenGift,
+        seatGiftReactions,
+        seatHaloEffects,
         seatEmojis,
         musicState: extras.musicState || null,
         musicVolume,
         musicMutedLocally,
         roomAudioMuted,
+        effectsMuted,
         setMusicVolume,
         setMusicMutedLocally,
         setRoomAudioMuted,
+        setEffectsMuted,
         enterRoom,
         minimizeRoom,
         restoreRoom,

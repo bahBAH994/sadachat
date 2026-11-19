@@ -5,6 +5,7 @@ import {
   recordTransaction,
   rowToUser,
   savePlatformState,
+  USER_COLUMNS,
 } from './sadaMappers';
 import { supabase } from './supabase';
 
@@ -554,7 +555,7 @@ function forceLosingGrid(gameId: SlotGameId, spec: SlotMachineSpec): string[][] 
 async function fetchFreshUser(userId: string): Promise<User> {
   const { data, error } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', userId)
     .maybeSingle();
   if (error || !data) throw new Error('تعذّر تحميل رصيد العضو من Supabase.');
@@ -585,7 +586,7 @@ async function applyGameBalance(
       last_seen: now,
     })
     .eq('id', user.id)
-    .select('*')
+    .select(USER_COLUMNS)
     .single();
 
   if (error || !updated) {
@@ -855,7 +856,7 @@ export async function playLadderActionInSupabase(
         level: computeLevelFromXp(nextXp),
       })
       .eq('id', userId)
-      .select('*')
+      .select(USER_COLUMNS)
       .single();
 
     await recordTransaction({
@@ -890,7 +891,7 @@ export async function playLadderActionInSupabase(
       .from('sada_users')
       .update({ coins: nextCoins })
       .eq('id', userId)
-      .select('*')
+      .select(USER_COLUMNS)
       .single();
     if (deducted) workingUser = rowToUser(deducted);
     await recordTransaction({
@@ -941,7 +942,7 @@ export async function playLadderActionInSupabase(
         level: computeLevelFromXp(nextXp),
       })
       .eq('id', userId)
-      .select('*')
+      .select(USER_COLUMNS)
       .single();
 
     await recordTransaction({
@@ -1165,10 +1166,97 @@ export async function getRealJackpotPoolFromSupabase(): Promise<number> {
   return Math.max(0, Number(state.appPrizePoolCoins || 0));
 }
 
+export type RpsMove = 'rock' | 'paper' | 'scissors';
+
+export interface RpsPlayResponse {
+  playerMove: RpsMove;
+  botMove: RpsMove;
+  outcome: 'win' | 'draw' | 'lose';
+  multiplier: number;
+  bet: number;
+  payout: number;
+  xpGain: number;
+  user: User;
+}
+
+const RPS_WIN_MAP: Record<RpsMove, RpsMove> = {
+  rock: 'scissors',
+  paper: 'rock',
+  scissors: 'paper',
+};
+
+const RPS_LOSE_MAP: Record<RpsMove, RpsMove> = {
+  rock: 'paper',
+  paper: 'scissors',
+  scissors: 'rock',
+};
+
+export async function playRpsInSupabase(
+  userId: string,
+  betInput: number,
+  playerMove: RpsMove
+): Promise<RpsPlayResponse> {
+  const bet = Math.floor(Number(betInput) || 0);
+  if (bet < 10) throw new Error('الحد الأدنى للرهان 10 كوينز.');
+
+  const [freshUser, state] = await Promise.all([
+    fetchFreshUser(userId),
+    getPlatformState(),
+  ]);
+  if (freshUser.coins < bet) throw new Error('رصيد الكوينز غير كافٍ.');
+
+  const winRatePct = Math.max(
+    10,
+    Math.min(85, Number(state.settings.gameRates?.rpsWinRate ?? 42))
+  );
+  const roll = Math.random() * 100;
+  let outcome: 'win' | 'draw' | 'lose';
+  let botMove: RpsMove;
+
+  if (roll < winRatePct) {
+    outcome = 'win';
+    botMove = RPS_WIN_MAP[playerMove];
+  } else if (roll < winRatePct + 18) {
+    outcome = 'draw';
+    botMove = playerMove;
+  } else {
+    outcome = 'lose';
+    botMove = RPS_LOSE_MAP[playerMove];
+  }
+
+  const multiplier = outcome === 'win' ? 1.95 : outcome === 'draw' ? 1 : 0;
+  const payout = Math.round(bet * multiplier);
+  const xpGain = Math.max(8, Math.round(bet * 0.06) + (outcome === 'win' ? 20 : 0));
+
+  const updatedUser = await applyGameBalance(
+    freshUser,
+    bet,
+    payout,
+    xpGain,
+    'game_bet',
+    'game_win',
+    'رهان حجر ورقة مقص 3D',
+    outcome === 'win'
+      ? `فوز حجر ورقة مقص 3D (×${multiplier})`
+      : 'تعادل حجر ورقة مقص 3D (استرداد الرهان)'
+  );
+
+  return {
+    playerMove,
+    botMove,
+    outcome,
+    multiplier,
+    bet,
+    payout,
+    xpGain,
+    user: updatedUser,
+  };
+}
+
 export async function getHallOfFameFromSupabase(): Promise<User[]> {
   const { data, error } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .order('xp', { ascending: false })
     .limit(12);
   if (error || !data) return [];

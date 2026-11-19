@@ -20,8 +20,15 @@ import {
   TEMP_ONLY_FRAME_IDS,
 } from './sadaCatalog';
 import {
+  AGENCY_COLUMNS,
+  COMPETITION_COLUMNS,
+  DEPOSIT_COLUMNS,
+  DEVICE_LOCK_COLUMNS,
+  FEMALE_VOICE_REQ_COLUMNS,
   getPlatformState,
+  QUESTION_COLUMNS,
   recordTransaction,
+  ROOM_COLUMNS,
   rowToAgency,
   rowToCompetition,
   rowToDeposit,
@@ -33,6 +40,9 @@ import {
   rowToUser,
   rowToWithdrawal,
   savePlatformState,
+  SECURITY_LOG_COLUMNS,
+  USER_COLUMNS,
+  WITHDRAWAL_COLUMNS,
 } from './sadaMappers';
 import { supabase } from './supabase';
 
@@ -74,18 +84,18 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
     femaleRes,
     state,
   ] = await Promise.all([
-    supabase.from('sada_users').select('*').order('created_at', { ascending: false }),
-    supabase.from('sada_device_locks').select('*').order('last_attempt_at', { ascending: false }),
-    supabase.from('sada_security_logs').select('*').order('timestamp', { ascending: false }).limit(80),
-    supabase.from('sada_rooms').select('*').order('created_at', { ascending: false }),
-    supabase.from('sada_competitions').select('*').order('ends_at', { ascending: false }),
-    supabase.from('sada_agencies').select('*').order('created_at', { ascending: false }),
-    supabase.from('sada_cultural_questions').select('*'),
-    supabase.from('sada_usdt_deposits').select('*').order('created_at', { ascending: false }),
-    supabase.from('sada_usdt_withdrawals').select('*').order('created_at', { ascending: false }),
+    supabase.from('sada_users').select(USER_COLUMNS).order('created_at', { ascending: false }),
+    supabase.from('sada_device_locks').select(DEVICE_LOCK_COLUMNS).order('last_attempt_at', { ascending: false }),
+    supabase.from('sada_security_logs').select(SECURITY_LOG_COLUMNS).order('timestamp', { ascending: false }).limit(80),
+    supabase.from('sada_rooms').select(ROOM_COLUMNS).order('created_at', { ascending: false }),
+    supabase.from('sada_competitions').select(COMPETITION_COLUMNS).order('ends_at', { ascending: false }),
+    supabase.from('sada_agencies').select(AGENCY_COLUMNS).order('created_at', { ascending: false }),
+    supabase.from('sada_cultural_questions').select(QUESTION_COLUMNS),
+    supabase.from('sada_usdt_deposits').select(DEPOSIT_COLUMNS).order('created_at', { ascending: false }),
+    supabase.from('sada_usdt_withdrawals').select(WITHDRAWAL_COLUMNS).order('created_at', { ascending: false }),
     supabase
       .from('sada_female_voice_requests')
-      .select('*')
+      .select(FEMALE_VOICE_REQ_COLUMNS)
       .order('created_at', { ascending: false }),
     getPlatformState(),
   ]);
@@ -145,7 +155,7 @@ export async function updateAdminUserInSupabase(
 ): Promise<User> {
   const { data: row, error } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', targetId)
     .maybeSingle();
   if (error || !row) throw new Error('العضو غير موجود.');
@@ -191,7 +201,7 @@ export async function updateAdminUserInSupabase(
     .from('sada_users')
     .update(updatePatch)
     .eq('id', targetId)
-    .select('*')
+    .select(USER_COLUMNS)
     .single();
   if (upErr || !updated) throw new Error('تعذّر تحديث بيانات العضو.');
   return rowToUser(updated);
@@ -200,7 +210,7 @@ export async function updateAdminUserInSupabase(
 export async function unlockDeviceInSupabase(uuid: string): Promise<void> {
   const { data: existing } = await supabase
     .from('sada_device_locks')
-    .select('*')
+    .select(DEVICE_LOCK_COLUMNS)
     .eq('device_uuid', uuid)
     .maybeSingle();
 
@@ -223,7 +233,7 @@ export async function blockDeviceInSupabase(
 ): Promise<void> {
   const { data: existing } = await supabase
     .from('sada_device_locks')
-    .select('*')
+    .select(DEVICE_LOCK_COLUMNS)
     .eq('device_uuid', uuid)
     .maybeSingle();
 
@@ -279,7 +289,7 @@ export async function createCompetitionInSupabase(payload: {
   const { data, error } = await supabase
     .from('sada_competitions')
     .insert(row)
-    .select('*')
+    .select(COMPETITION_COLUMNS)
     .single();
   if (error || !data) throw new Error('تعذّر إطلاق المسابقة الجديدة.');
   return rowToCompetition(data);
@@ -288,7 +298,7 @@ export async function createCompetitionInSupabase(payload: {
 export async function finishCompetitionInSupabase(compId: string): Promise<void> {
   const { data: compRow, error } = await supabase
     .from('sada_competitions')
-    .select('*')
+    .select(COMPETITION_COLUMNS)
     .eq('id', compId)
     .maybeSingle();
   if (error || !compRow) throw new Error('المسابقة غير موجودة.');
@@ -357,7 +367,7 @@ export async function updatePrizePoolInSupabase(
 
 export async function approveUsdtDepositInSupabase(depositId: string): Promise<void> {
   const [{ data: depRow }, state] = await Promise.all([
-    supabase.from('sada_usdt_deposits').select('*').eq('id', depositId).maybeSingle(),
+    supabase.from('sada_usdt_deposits').select(DEPOSIT_COLUMNS).eq('id', depositId).maybeSingle(),
     getPlatformState(),
   ]);
   if (!depRow) throw new Error('طلب الإيداع غير موجود.');
@@ -366,7 +376,7 @@ export async function approveUsdtDepositInSupabase(depositId: string): Promise<v
   const dep = rowToDeposit(depRow);
   const { data: userRow } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', dep.userId)
     .maybeSingle();
   if (!userRow) throw new Error('صاحب الطلب غير موجود.');
@@ -534,7 +544,7 @@ export async function rejectUsdtWithdrawalInSupabase(
 ): Promise<void> {
   const { data: wdRow } = await supabase
     .from('sada_usdt_withdrawals')
-    .select('*')
+    .select(WITHDRAWAL_COLUMNS)
     .eq('id', wdId)
     .maybeSingle();
   if (!wdRow) throw new Error('طلب السحب غير موجود.');
@@ -577,7 +587,7 @@ export async function rejectUsdtWithdrawalInSupabase(
 export async function approveFemaleVoiceInSupabase(requestId: string): Promise<void> {
   const { data: reqRow } = await supabase
     .from('sada_female_voice_requests')
-    .select('*')
+    .select(FEMALE_VOICE_REQ_COLUMNS)
     .eq('id', requestId)
     .maybeSingle();
   if (!reqRow) throw new Error('طلب التوثيق غير موجود.');
@@ -631,7 +641,7 @@ export async function rejectFemaleVoiceInSupabase(
 ): Promise<void> {
   const { data: reqRow } = await supabase
     .from('sada_female_voice_requests')
-    .select('*')
+    .select(FEMALE_VOICE_REQ_COLUMNS)
     .eq('id', requestId)
     .maybeSingle();
   if (!reqRow) throw new Error('طلب التوثيق غير موجود.');
@@ -664,7 +674,7 @@ export async function updateAgencyInSupabase(
 ): Promise<void> {
   const { data: agRow } = await supabase
     .from('sada_agencies')
-    .select('*')
+    .select(AGENCY_COLUMNS)
     .eq('id', agencyId)
     .maybeSingle();
   if (!agRow) throw new Error('الوكالة غير موجودة.');
@@ -684,7 +694,7 @@ export async function payoutAgencyCommissionInSupabase(
 ): Promise<{ paidDiamonds: number; agencyName: string }> {
   const { data: agRow } = await supabase
     .from('sada_agencies')
-    .select('*')
+    .select(AGENCY_COLUMNS)
     .eq('id', agencyId)
     .maybeSingle();
   if (!agRow) throw new Error('الوكالة غير موجودة.');
@@ -745,7 +755,7 @@ export async function updateHostApprovalInSupabase(
 ): Promise<void> {
   const { data: uRow } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', targetId)
     .maybeSingle();
   if (!uRow) throw new Error('العضو غير موجود.');
@@ -779,7 +789,7 @@ export async function updateHostApprovalInSupabase(
     if (payload.agencyId) {
       const { data: nextAg } = await supabase
         .from('sada_agencies')
-        .select('*')
+        .select(AGENCY_COLUMNS)
         .eq('id', payload.agencyId)
         .maybeSingle();
       if (nextAg) {
@@ -989,7 +999,7 @@ export async function deleteQuestionInSupabase(
   qId: string
 ): Promise<CulturalQuestionAdminItem[]> {
   await supabase.from('sada_cultural_questions').delete().eq('id', qId);
-  const { data } = await supabase.from('sada_cultural_questions').select('*');
+  const { data } = await supabase.from('sada_cultural_questions').select(QUESTION_COLUMNS);
   return (data || []).map(rowToQuestion);
 }
 

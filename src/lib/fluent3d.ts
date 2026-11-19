@@ -1,0 +1,132 @@
+const FLUENT_RAW_BASE =
+  'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/';
+
+function f3d(folderAndFile: string): string {
+  return `${FLUENT_RAW_BASE}${folderAndFile}`;
+}
+
+/**
+ * Verified HTTP-200 Microsoft FluentUI 3D Emoji PNG assets (transparent background).
+ */
+export const FLUENT_3D_MAP: Record<string, string> = {
+  // Mic Reactions & Expressions
+  '💓': f3d('Beating%20heart/3D/beating_heart_3d.png'),
+  '❤️': f3d('Red%20heart/3D/red_heart_3d.png'),
+  '😂': f3d('Face%20with%20tears%20of%20joy/3D/face_with_tears_of_joy_3d.png'),
+  '👏': f3d('Clapping%20hands/Default/3D/clapping_hands_3d_default.png'),
+  '😍': f3d('Smiling%20face%20with%20heart-eyes/3D/smiling_face_with_heart-eyes_3d.png'),
+  '🔥': f3d('Fire/3D/fire_3d.png'),
+  '⭐': f3d('Star/3D/star_3d.png'),
+  '🌟': f3d('Glowing%20star/3D/glowing_star_3d.png'),
+  '😱': f3d('Face%20screaming%20in%20fear/3D/face_screaming_in_fear_3d.png'),
+  '🫡': f3d('Saluting%20face/3D/saluting_face_3d.png'),
+  '😘': f3d('Face%20blowing%20a%20kiss/3D/face_blowing_a_kiss_3d.png'),
+  '🎲': f3d('Game%20die/3D/game_die_3d.png'),
+
+  // Luxury Gifts & Featured 3D Renders
+  '👑': f3d('Crown/3D/crown_3d.png'),
+  '🏎️': f3d('Racing%20car/3D/racing_car_3d.png'),
+  '💐': f3d('Bouquet/3D/bouquet_3d.png'),
+  '🌹': f3d('Rose/3D/rose_3d.png'),
+  '💎': f3d('Gem%20stone/3D/gem_stone_3d.png'),
+  '💠': f3d('Diamond%20with%20a%20dot/3D/diamond_with_a_dot_3d.png'),
+  '🚀': f3d('Rocket/3D/rocket_3d.png'),
+  '🛥️': f3d('Motor%20boat/3D/motor_boat_3d.png'),
+  '🏰': f3d('Castle/3D/castle_3d.png'),
+  '💖': f3d('Sparkling%20heart/3D/sparkling_heart_3d.png'),
+  '🦅': f3d('Eagle/3D/eagle_3d.png'),
+  '🪕': f3d('Banjo/3D/banjo_3d.png'),
+  '🗡️': f3d('Dagger/3D/dagger_3d.png'),
+  '⌚': f3d('Watch/3D/watch_3d.png'),
+  '🕌': f3d('Mosque/3D/mosque_3d.png'),
+  '🏆': f3d('Trophy/3D/trophy_3d.png'),
+  '☕': f3d('Hot%20beverage/3D/hot_beverage_3d.png'),
+  '🐎': f3d('Horse/3D/horse_3d.png'),
+  '🪔': f3d('Diya%20lamp/3D/diya_lamp_3d.png'),
+  '🦪': f3d('Oyster/3D/oyster_3d.png'),
+  '⚔️': f3d('Crossed%20swords/3D/crossed_swords_3d.png'),
+  '🏮': f3d('Red%20paper%20lantern/3D/red_paper_lantern_3d.png'),
+  '⚜️': f3d('Fleur-de-lis/3D/fleur-de-lis_3d.png'),
+  '🚘': f3d('Oncoming%20automobile/3D/oncoming_automobile_3d.png'),
+  '🚗': f3d('Automobile/3D/automobile_3d.png'),
+  '🚁': f3d('Helicopter/3D/helicopter_3d.png'),
+  '🎙️': f3d('Studio%20microphone/3D/studio_microphone_3d.png'),
+  '✈️': f3d('Airplane/3D/airplane_3d.png'),
+  '🌙': f3d('Crescent%20moon/3D/crescent_moon_3d.png'),
+  '🪑': f3d('Chair/3D/chair_3d.png'),
+  '🐉': f3d('Dragon/3D/dragon_3d.png'),
+  '🎖️': f3d('Military%20medal/3D/military_medal_3d.png'),
+
+  // Lucky Gifts & Wheel Prizes
+  '🍀': f3d('Four%20leaf%20clover/3D/four_leaf_clover_3d.png'),
+  '✨': f3d('Sparkles/3D/sparkles_3d.png'),
+  '💘': f3d('Heart%20with%20arrow/3D/heart_with_arrow_3d.png'),
+  '⚡': f3d('High%20voltage/3D/high_voltage_3d.png'),
+  '🔮': f3d('Crystal%20ball/3D/crystal_ball_3d.png'),
+  '🦋': f3d('Butterfly/3D/butterfly_3d.png'),
+  '🃏': f3d('Joker/3D/joker_3d.png'),
+  '🎆': f3d('Fireworks/3D/fireworks_3d.png'),
+  '🧲': f3d('Magnet/3D/magnet_3d.png'),
+  '🎰': f3d('Slot%20machine/3D/slot_machine_3d.png'),
+  '🌺': f3d('Hibiscus/3D/hibiscus_3d.png'),
+  '🧭': f3d('Compass/3D/compass_3d.png'),
+  '🎁': f3d('Wrapped%20gift/3D/wrapped_gift_3d.png'),
+  '🗝️': f3d('Old%20key/3D/old_key_3d.png'),
+  '☄️': f3d('Comet/3D/comet_3d.png'),
+  '🦚': f3d('Peacock/3D/peacock_3d.png'),
+  '🌋': f3d('Volcano/3D/volcano_3d.png'),
+  '🪩': f3d('Mirror%20ball/3D/mirror_ball_3d.png'),
+  '🪙': f3d('Coin/3D/coin_3d.png'),
+  '💰': f3d('Money%20bag/3D/money_bag_3d.png'),
+
+  // Mini-Games: Rock Paper Scissors, Slots, Mystery Boxes & Center
+  '✊': f3d('Raised%20fist/Default/3D/raised_fist_3d_default.png'),
+  '🪨': f3d('Rock/3D/rock_3d.png'),
+  '✋': f3d('Raised%20hand/Default/3D/raised_hand_3d_default.png'),
+  '📄': f3d('Page%20facing%20up/3D/page_facing_up_3d.png'),
+  '✌️': f3d('Victory%20hand/Default/3D/victory_hand_3d_default.png'),
+  '✂️': f3d('Scissors/3D/scissors_3d.png'),
+  '🎮': f3d('Video%20game/3D/video_game_3d.png'),
+  '🧰': f3d('Toolbox/3D/toolbox_3d.png'),
+  '🎡': f3d('Ferris%20wheel/3D/ferris_wheel_3d.png'),
+  '💨': f3d('Dashing%20away/3D/dashing_away_3d.png'),
+  '🦁': f3d('Lion/3D/lion_3d.png'),
+  '🦍': f3d('Gorilla/3D/gorilla_3d.png'),
+  '🐘': f3d('Elephant/3D/elephant_3d.png'),
+  '🐊': f3d('Crocodile/3D/crocodile_3d.png'),
+  '10': f3d('Keycap%2010/3D/keycap_10_3d.png'),
+  '🍒': f3d('Cherries/3D/cherries_3d.png'),
+  '🍋': f3d('Lemon/3D/lemon_3d.png'),
+  '🍇': f3d('Grapes/3D/grapes_3d.png'),
+  '🔔': f3d('Bell/3D/bell_3d.png'),
+  '7️⃣': f3d('Keycap%207/3D/keycap_7_3d.png'),
+  '🏺': f3d('Amphora/3D/amphora_3d.png'),
+  '🐍': f3d('Snake/3D/snake_3d.png'),
+  '⚱️': f3d('Funeral%20urn/3D/funeral_urn_3d.png'),
+  '☀️': f3d('Sun/3D/sun_3d.png'),
+  '👁️': f3d('Eye/3D/eye_3d.png'),
+  '🪲': f3d('Beetle/3D/beetle_3d.png'),
+  '👾': f3d('Alien%20monster/3D/alien_monster_3d.png'),
+  '🌌': f3d('Milky%20way/3D/milky_way_3d.png'),
+  '🪐': f3d('Ringed%20planet/3D/ringed_planet_3d.png'),
+  '🛸': f3d('Flying%20saucer/3D/flying_saucer_3d.png'),
+  '🏛️': f3d('Classical%20building/3D/classical_building_3d.png'),
+  '⏳': f3d('Hourglass%20not%20done/3D/hourglass_not_done_3d.png'),
+  '💍': f3d('Ring/3D/ring_3d.png'),
+  '⚓': f3d('Anchor/3D/anchor_3d.png'),
+  '🦜': f3d('Parrot/3D/parrot_3d.png'),
+  '🏴‍☠️': f3d('Pirate%20flag/3D/pirate_flag_3d.png'),
+  '💣': f3d('Bomb/3D/bomb_3d.png'),
+  '🛞': f3d('Wheel/3D/wheel_3d.png'),
+  '⛽': f3d('Fuel%20pump/3D/fuel_pump_3d.png'),
+  '🏁': f3d('Chequered%20flag/3D/chequered_flag_3d.png'),
+  '🌴': f3d('Palm%20tree/3D/palm_tree_3d.png'),
+  '🐪': f3d('Camel/3D/camel_3d.png'),
+  '🏜️': f3d('Desert/3D/desert_3d.png'),
+};
+
+export function getFluent3DUrl(glyph?: string | null): string | null {
+  if (!glyph) return null;
+  const trimmed = glyph.trim();
+  return FLUENT_3D_MAP[trimmed] || null;
+}

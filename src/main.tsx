@@ -84,20 +84,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     hideNetlifyDrawerBadge();
   }
 
-  // Strictly block pinch-zoom gestures on mobile devices
+  // Prevent pinch-zoom gestures without blocking native touchmove scrolling
   document.addEventListener(
     'gesturestart',
     (e) => {
       e.preventDefault();
-    },
-    {passive: false}
-  );
-  document.addEventListener(
-    'touchmove',
-    (e) => {
-      if (e.touches.length > 1) {
-        e.preventDefault();
-      }
     },
     {passive: false}
   );

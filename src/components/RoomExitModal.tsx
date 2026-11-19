@@ -52,6 +52,8 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
           <img
             src={resolveAsset(roomAvatar || '')}
             alt={roomTitle || 'الغرفة'}
+            loading="lazy"
+            decoding="async"
             referrerPolicy="no-referrer"
             className="w-16 h-16 rounded-2xl object-cover border-2 border-[#D4AF37]/70 shadow-[0_0_20px_rgba(212,175,55,0.4)]"
           />

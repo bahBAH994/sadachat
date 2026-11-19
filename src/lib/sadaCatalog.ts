@@ -10,6 +10,7 @@ import type {
   Store3DItem,
   StoreBackgroundItem,
   User,
+  VipTierKey,
 } from '../types';
 
 export const SUPER_ADMIN_EMAIL = 'bahaa.f36@gmail.com';
@@ -191,13 +192,13 @@ export const ROOM_REACTION_EMOJIS: Array<{
   emoji: string;
   isDice?: boolean;
 }> = [
+  { id: 'heartbeat', label: 'قلب نابض', emoji: '💓' },
   { id: 'laugh', label: 'ضحك', emoji: '😂' },
-  { id: 'love', label: 'حب', emoji: '😍' },
   { id: 'clap', label: 'تصفيق', emoji: '👏' },
+  { id: 'love', label: 'عيون قلوب', emoji: '😍' },
   { id: 'fire', label: 'نار', emoji: '🔥' },
-  { id: 'shock', label: 'صدمة', emoji: '😱' },
+  { id: 'star', label: 'نجمة', emoji: '⭐' },
   { id: 'crown', label: 'تاج', emoji: '👑' },
-  { id: 'salute', label: 'تحية', emoji: '🫡' },
   { id: 'kiss', label: 'بوسة', emoji: '😘' },
   { id: 'dice', label: 'نرد عشوائي', emoji: '🎲', isDice: true },
 ];
@@ -240,6 +241,193 @@ export function computeGiftLevelStats(sentCoins: number, receivedCoins: number) 
   };
 }
 
+export interface VipTierConfig {
+  key: VipTierKey;
+  rank: number;
+  minScore: number;
+  label: string;
+  shortLabel: string;
+  arabicTitle: string;
+  badgeGlyph: string;
+  badgeBgClass: string;
+  badgeTextClass: string;
+  progressBarClass: string;
+}
+
+export interface VipTierInfo extends VipTierConfig {
+  score: number;
+  nextTier: VipTierConfig | null;
+  progressPct: number;
+  coinsToNext: number;
+}
+
+export const VIP_TIER_CONFIGS: VipTierConfig[] = [
+  {
+    key: 'none',
+    rank: 0,
+    minScore: 0,
+    label: 'عضو عادي',
+    shortLabel: 'عضو',
+    arabicTitle: 'عضوية صَدَى',
+    badgeGlyph: '✦',
+    badgeBgClass: 'bg-slate-700/70 border-slate-500/40',
+    badgeTextClass: 'text-slate-200',
+    progressBarClass: 'from-slate-400 to-slate-500',
+  },
+  {
+    key: 'vip1',
+    rank: 1,
+    minScore: 1000,
+    label: 'VIP 1 البرونزي',
+    shortLabel: 'VIP 1',
+    arabicTitle: 'الإطار البرونزي المعدني',
+    badgeGlyph: '🥉',
+    badgeBgClass: 'bg-gradient-to-r from-[#8C5220] via-[#CD7F32] to-[#7C4418] border-[#F6C48B]/70',
+    badgeTextClass: 'text-[#FFF2DE]',
+    progressBarClass: 'from-[#A16227] via-[#D98B44] to-[#F3BE86]',
+  },
+  {
+    key: 'vip2',
+    rank: 2,
+    minScore: 5000,
+    label: 'VIP 2 الفضي',
+    shortLabel: 'VIP 2',
+    arabicTitle: 'الإطار الفضي الكرومي',
+    badgeGlyph: '🥈',
+    badgeBgClass: 'bg-gradient-to-r from-[#475569] via-[#CBD5E1] to-[#64748B] border-white/80',
+    badgeTextClass: 'text-[#0F172A]',
+    progressBarClass: 'from-slate-300 via-sky-200 to-slate-400',
+  },
+  {
+    key: 'vip3',
+    rank: 3,
+    minScore: 20000,
+    label: 'VIP 3 الملكي',
+    shortLabel: 'VIP 3',
+    arabicTitle: 'الإطار الذهبي الملكي',
+    badgeGlyph: '👑',
+    badgeBgClass: 'bg-gradient-to-r from-[#B45309] via-[#FDE047] to-[#D97706] border-[#FEF08A]',
+    badgeTextClass: 'text-[#1F1202]',
+    progressBarClass: 'from-amber-500 via-yellow-300 to-amber-400',
+  },
+  {
+    key: 'svip',
+    rank: 4,
+    minScore: 50000,
+    label: 'SVIP الإمبراطوري',
+    shortLabel: 'SVIP',
+    arabicTitle: 'الإمبراطور الألماسي',
+    badgeGlyph: '💎',
+    badgeBgClass:
+      'bg-gradient-to-r from-[#7C2D12] via-[#F59E0B] to-[#38BDF8] border-[#FEF08A] shadow-[0_0_16px_rgba(251,191,36,0.65)]',
+    badgeTextClass: 'text-white',
+    progressBarClass: 'from-rose-500 via-amber-300 to-sky-400',
+  },
+];
+
+export function getVipTierConfig(key?: VipTierKey | null): VipTierConfig {
+  return VIP_TIER_CONFIGS.find((c) => c.key === key) || VIP_TIER_CONFIGS[0];
+}
+
+export function getUserVipScore(
+  user?: Partial<Pick<User, 'coins' | 'totalRecharged' | 'totalSpentCoins'>> | null
+): number {
+  if (!user) return 0;
+  return Math.max(
+    0,
+    Math.round(Number(user.totalRecharged || 0)),
+    Math.round(Number(user.totalSpentCoins || 0)),
+    Math.round(Number(user.coins || 0))
+  );
+}
+
+export function getVipTierFromScore(score: number): VipTierInfo {
+  const safeScore = Math.max(0, Math.round(Number(score || 0)));
+  let current = VIP_TIER_CONFIGS[0];
+  let currentIdx = 0;
+
+  for (let i = VIP_TIER_CONFIGS.length - 1; i >= 0; i--) {
+    if (safeScore >= VIP_TIER_CONFIGS[i].minScore) {
+      current = VIP_TIER_CONFIGS[i];
+      currentIdx = i;
+      break;
+    }
+  }
+
+  const nextTier =
+    currentIdx < VIP_TIER_CONFIGS.length - 1 ? VIP_TIER_CONFIGS[currentIdx + 1] : null;
+
+  if (!nextTier) {
+    return {
+      ...current,
+      score: safeScore,
+      nextTier: null,
+      progressPct: 100,
+      coinsToNext: 0,
+    };
+  }
+
+  const span = Math.max(1, nextTier.minScore - current.minScore);
+  const gained = Math.max(0, safeScore - current.minScore);
+  const progressPct = Math.min(100, Math.max(0, Math.round((gained / span) * 100)));
+  const coinsToNext = Math.max(0, nextTier.minScore - safeScore);
+
+  return {
+    ...current,
+    score: safeScore,
+    nextTier,
+    progressPct,
+    coinsToNext,
+  };
+}
+
+export function getUserVipTierInfo(
+  user?: Partial<Pick<User, 'coins' | 'totalRecharged' | 'totalSpentCoins' | 'vipLevel'>> | null
+): VipTierInfo {
+  if (!user) return getVipTierFromScore(0);
+  const fromScore = getVipTierFromScore(getUserVipScore(user));
+  if (user.vipLevel && user.vipLevel !== 'none') {
+    const explicitCfg = getVipTierConfig(user.vipLevel);
+    if (explicitCfg.rank > fromScore.rank) {
+      return {
+        ...explicitCfg,
+        score: Math.max(fromScore.score, explicitCfg.minScore),
+        nextTier:
+          explicitCfg.rank < VIP_TIER_CONFIGS.length - 1
+            ? VIP_TIER_CONFIGS[explicitCfg.rank + 1]
+            : null,
+        progressPct: explicitCfg.key === 'svip' ? 100 : fromScore.progressPct,
+        coinsToNext:
+          explicitCfg.key === 'svip'
+            ? 0
+            : Math.max(
+                0,
+                (VIP_TIER_CONFIGS[explicitCfg.rank + 1]?.minScore || 0) -
+                  Math.max(fromScore.score, explicitCfg.minScore)
+              ),
+      };
+    }
+  }
+  return fromScore;
+}
+
+export function parseVipTierKey(
+  vipTierOrKey?: string | null,
+  fallbackUser?: Partial<Pick<User, 'coins' | 'totalRecharged' | 'totalSpentCoins' | 'vipLevel'>> | null
+): VipTierKey {
+  if (vipTierOrKey) {
+    const clean = vipTierOrKey.trim().toLowerCase();
+    if (clean === 'svip' || clean.includes('svip') || clean.includes('إمبراطوري')) return 'svip';
+    if (clean === 'vip3' || clean.includes('vip 3') || clean.includes('vip3')) return 'vip3';
+    if (clean === 'vip2' || clean.includes('vip 2') || clean.includes('vip2')) return 'vip2';
+    if (clean === 'vip1' || clean.includes('vip 1') || clean.includes('vip1')) return 'vip1';
+  }
+  if (fallbackUser) {
+    return getUserVipTierInfo(fallbackUser).key;
+  }
+  return 'none';
+}
+
 export function getVipTierLabel(level: number, isAdmin = false): string {
   if (isAdmin) return 'VIP الإدارة العليا';
   if (level >= 25) return 'VIP إمبراطوري';
@@ -270,13 +458,19 @@ const FIXED_GIFT_RAW: Array<{
   tier: 'classic' | 'royal' | 'imperial';
   glyph: string;
 }> = [
-  { id: 'gift_01', name: 'وردة متوهجة', coinsCost: 500, tier: 'classic', glyph: '🌹' },
-  { id: 'gift_02', name: 'قلب ماسي', coinsCost: 1500, tier: 'classic', glyph: '💖' },
-  { id: 'gift_03', name: 'تاج ملكي', coinsCost: 5000, tier: 'royal', glyph: '👑' },
+  { id: 'gift_l1', name: 'وردة سريعة', coinsCost: 10, tier: 'classic', glyph: '🌹' },
+  { id: 'gift_l2', name: 'فنجان ترحيب', coinsCost: 25, tier: 'classic', glyph: '☕' },
+  { id: 'gift_l3', name: 'قلب دافئ', coinsCost: 50, tier: 'classic', glyph: '❤️' },
+  { id: 'gift_l4', name: 'نجمة تقدير', coinsCost: 80, tier: 'classic', glyph: '⭐' },
+  { id: 'gift_m1', name: 'إكليل المودة', coinsCost: 250, tier: 'classic', glyph: '🌺' },
+  { id: 'gift_01', name: 'باقة ورد حمراء', coinsCost: 500, tier: 'classic', glyph: '💐' },
+  { id: 'gift_m2', name: 'قنديل السهرة', coinsCost: 800, tier: 'classic', glyph: '🏮' },
+  { id: 'gift_02', name: 'قلب ماسي', coinsCost: 1500, tier: 'royal', glyph: '💖' },
+  { id: 'gift_03', name: 'تاج ملكي ذهبي', coinsCost: 5000, tier: 'royal', glyph: '👑' },
   { id: 'gift_04', name: 'صقر ذهبي', coinsCost: 12000, tier: 'royal', glyph: '🦅' },
-  { id: 'gift_05', name: 'سيارة رياضية', coinsCost: 30000, tier: 'royal', glyph: '🏎️' },
+  { id: 'gift_05', name: 'سيارة رياضية فاخرة', coinsCost: 30000, tier: 'royal', glyph: '🏎️' },
   { id: 'gift_06', name: 'يخت ملكي', coinsCost: 60000, tier: 'imperial', glyph: '🛥️' },
-  { id: 'gift_07', name: 'قصر الأحلام', coinsCost: 120000, tier: 'imperial', glyph: '🏰' },
+  { id: 'gift_07', name: 'قلعة الأحلام الملكية', coinsCost: 120000, tier: 'imperial', glyph: '🏰' },
   { id: 'gift_08', name: 'عود الطرب الشرقي', coinsCost: 15000, tier: 'classic', glyph: '🪕' },
   { id: 'gift_09', name: 'خنجر الفخر المذهّب', coinsCost: 18000, tier: 'classic', glyph: '🗡️' },
   { id: 'gift_10', name: 'ساعة القصر الليلية', coinsCost: 21000, tier: 'classic', glyph: '⌚' },
@@ -290,10 +484,10 @@ const FIXED_GIFT_RAW: Array<{
   { id: 'gift_18', name: 'قنديل السمر الذهبي', coinsCost: 8000, tier: 'classic', glyph: '🏮' },
   { id: 'gift_19', name: 'شعار المجد الذهبي', coinsCost: 76000, tier: 'royal', glyph: '⚜️' },
   { id: 'gift_20', name: 'سيارة القصر الفارهة', coinsCost: 85000, tier: 'royal', glyph: '🚘' },
-  { id: 'gift_21', name: 'جوهرة الياقوت الأزرق', coinsCost: 95000, tier: 'imperial', glyph: '💠' },
+  { id: 'gift_21', name: 'ألماسة زرقاء ملكية', coinsCost: 95000, tier: 'imperial', glyph: '💎' },
   { id: 'gift_22', name: 'مروحية كبار الشخصيات', coinsCost: 105000, tier: 'imperial', glyph: '🚁' },
   { id: 'gift_23', name: 'وسام الصوت العذب', coinsCost: 6000, tier: 'classic', glyph: '🎙️' },
-  { id: 'gift_24', name: 'طائرة صَدَى الخاصة', coinsCost: 128000, tier: 'imperial', glyph: '✈️' },
+  { id: 'gift_24', name: 'صاروخ صَدَى الأسطوري', coinsCost: 128000, tier: 'imperial', glyph: '🚀' },
   { id: 'gift_25', name: 'نجم الثريا الساطع', coinsCost: 140000, tier: 'imperial', glyph: '🌟' },
   { id: 'gift_26', name: 'هلال السلاطين الماسي', coinsCost: 155000, tier: 'imperial', glyph: '🌙' },
   { id: 'gift_27', name: 'عرش البيان الملكي', coinsCost: 170000, tier: 'imperial', glyph: '🪑' },
@@ -354,6 +548,10 @@ export function rollLuckyGiftMultiplier(
   return source[0].multiplier;
 }
 
+const GIFT_CATALOG_STORAGE_KEY = 'sada_gift_catalog_v3';
+let cachedGiftCatalog: GiftItem[] | null = null;
+let cachedGiftMap: Map<string, GiftItem> | null = null;
+
 export const GIFT_CATALOG: GiftItem[] = [
   ...FIXED_GIFT_RAW.map((g) => ({
     ...g,
@@ -368,6 +566,45 @@ export const GIFT_CATALOG: GiftItem[] = [
     xpGain: Math.round(g.coinsCost * 0.5),
   })),
 ];
+
+export function getCachedGiftCatalog(): GiftItem[] {
+  if (cachedGiftCatalog) return cachedGiftCatalog;
+
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = window.localStorage.getItem(GIFT_CATALOG_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as GiftItem[];
+        if (Array.isArray(parsed) && parsed.length === GIFT_CATALOG.length) {
+          cachedGiftCatalog = parsed;
+          return cachedGiftCatalog;
+        }
+      }
+      window.localStorage.setItem(GIFT_CATALOG_STORAGE_KEY, JSON.stringify(GIFT_CATALOG));
+    } catch {
+      // Ignore storage quota / privacy mode errors
+    }
+  }
+
+  cachedGiftCatalog = GIFT_CATALOG;
+  return cachedGiftCatalog;
+}
+
+export function findGiftById(giftId: string): GiftItem | undefined {
+  if (!cachedGiftMap) {
+    cachedGiftMap = new Map(getCachedGiftCatalog().map((g) => [g.id, g]));
+  }
+  return cachedGiftMap.get(giftId);
+}
+
+export type GiftEffectTier = 1 | 2 | 3;
+
+export function getGiftEffectTier(coinsCost: number): GiftEffectTier {
+  const safeCost = Math.max(0, Number(coinsCost || 0));
+  if (safeCost < 100) return 1;
+  if (safeCost < 1000) return 2;
+  return 3;
+}
 
 export const FRAME_CATALOG: FrameItem[] = [
   {
@@ -955,6 +1192,7 @@ export function makeEmptySeats(count: number, host?: User): RoomSeat[] {
         avatarUrl: host.avatarUrl,
         frameId: host.frameId,
         level: host.level,
+        vipLevel: getUserVipTierInfo(host).key,
         isMuted: false,
         isLocked: false,
         isSpeaking: false,

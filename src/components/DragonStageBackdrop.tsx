@@ -19,6 +19,8 @@ export const DragonStageBackdrop: React.FC<DragonStageBackdropProps> = ({
         <img
           src={isCustomUrl ? key : resolveAsset(key)}
           alt="خلفية الوكالة"
+          loading="lazy"
+          decoding="async"
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover opacity-55"
         />

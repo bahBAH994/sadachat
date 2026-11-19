@@ -16,17 +16,23 @@ import {
   computeGiftLevelStats,
   computeLevelFromXp,
   CULTURAL_QUESTIONS,
+  findGiftById,
   formatShortNumericId,
   genId,
-  GIFT_CATALOG,
+  getCachedGiftCatalog,
+  getUserVipTierInfo,
   isFemaleVoiceLocked,
   makeConversationId,
   REFERRAL_WHEEL_SEGMENTS,
   rollLuckyGiftMultiplier,
 } from './sadaCatalog';
 import {
+  AGENCY_COLUMNS,
   applyHostEarningsAndAgencyCommission,
+  COMPETITION_COLUMNS,
   getPlatformState,
+  PRIVATE_MESSAGE_COLUMNS,
+  QUESTION_COLUMNS,
   recordTransaction,
   rowToAgency,
   rowToCompetition,
@@ -35,13 +41,16 @@ import {
   rowToTransaction,
   rowToUser,
   savePlatformState,
+  TRANSACTION_COLUMNS,
+  USER_COLUMNS,
 } from './sadaMappers';
+import { fetchUsersVipTotalsBatch } from './sadaVipService';
 import { supabase } from './supabase';
 
 // ======================== COMPETITIONS & CULTURAL QUIZ ========================
 
 export async function getCompetitionsFromSupabase(): Promise<Competition[]> {
-  const { data } = await supabase.from('sada_competitions').select('*');
+  const { data } = await supabase.from('sada_competitions').select(COMPETITION_COLUMNS);
   return (data || []).map(rowToCompetition);
 }
 
@@ -55,7 +64,7 @@ export async function joinCompetitionInSupabase(
   }
   const { data: compRow } = await supabase
     .from('sada_competitions')
-    .select('*')
+    .select(COMPETITION_COLUMNS)
     .eq('id', compId)
     .maybeSingle();
   if (!compRow) throw new Error('المسابقة غير موجودة.');
@@ -92,8 +101,8 @@ export async function voteCompetitionInSupabase(
   boost: boolean
 ): Promise<{ competition: Competition; user: User }> {
   const [{ data: compRow }, { data: userRow }, state] = await Promise.all([
-    supabase.from('sada_competitions').select('*').eq('id', compId).maybeSingle(),
-    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
+    supabase.from('sada_competitions').select(COMPETITION_COLUMNS).eq('id', compId).maybeSingle(),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
     getPlatformState(),
   ]);
 
@@ -159,7 +168,7 @@ export async function startCulturalQuizInSupabase(
   user: User
 ): Promise<CulturalQuizRound> {
   const [{ data: qRows }, state] = await Promise.all([
-    supabase.from('sada_cultural_questions').select('*'),
+    supabase.from('sada_cultural_questions').select(QUESTION_COLUMNS),
     getPlatformState(),
   ]);
 
@@ -209,7 +218,7 @@ export async function answerCulturalQuizInSupabase(
 ): Promise<CulturalQuizResult> {
   const [state, { data: userRow }] = await Promise.all([
     getPlatformState(),
-    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
   ]);
 
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
@@ -272,7 +281,7 @@ export async function answerCulturalQuizInSupabase(
 
 export async function getReferralWheelOverviewFromSupabase(user: User) {
   const [{ data: userRow }, state] = await Promise.all([
-    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
     getPlatformState(),
   ]);
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
@@ -298,7 +307,7 @@ export async function spinReferralWheelInSupabase(
   user: User
 ): Promise<ReferralWheelResult> {
   const [{ data: userRow }, state] = await Promise.all([
-    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
     getPlatformState(),
   ]);
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
@@ -509,7 +518,7 @@ export async function getProfileSocialListFromSupabase(
 
   const { data: rows } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .in('id', uniqueIds);
 
   const map = new Map(
@@ -570,10 +579,11 @@ export async function getDiscoveryDirectoryFromSupabase(currentUserId: string): 
   const [{ data: usersRows }, { data: activeRooms }, state] = await Promise.all([
     supabase
       .from('sada_users')
-      .select('*')
+      .select(USER_COLUMNS)
       .eq('is_banned', false)
-      .order('last_seen', { ascending: false }),
-    supabase.from('sada_rooms').select('seats').eq('is_active', true),
+      .order('last_seen', { ascending: false })
+      .limit(100),
+    supabase.from('sada_rooms').select('seats').eq('is_active', true).limit(30),
     getPlatformState(),
   ]);
 
@@ -586,17 +596,27 @@ export async function getDiscoveryDirectoryFromSupabase(currentUserId: string): 
     }
   }
 
-  const users = (usersRows || [])
+  const rawUsers = (usersRows || [])
     .map(rowToUser)
-    .filter((u) => u.id !== currentUserId)
-    .map((u) => {
-      const meta = userMeta[u.id];
-      return {
-        ...u,
-        age: meta?.age,
-        country: meta?.country,
-      };
-    });
+    .filter((u) => u.id !== currentUserId);
+
+  const vipBatch = await fetchUsersVipTotalsBatch(rawUsers.map((u) => u.id)).catch(
+    (): Record<string, { totalRechargedCoins: number; totalSpentCoins: number }> => ({})
+  );
+
+  const users = rawUsers.map((u) => {
+    const meta = userMeta[u.id];
+    const totals = vipBatch[u.id];
+    const enriched: User = {
+      ...u,
+      age: meta?.age,
+      country: meta?.country,
+      totalRecharged: totals?.totalRechargedCoins || 0,
+      totalSpentCoins: totals?.totalSpentCoins || 0,
+    };
+    enriched.vipLevel = getUserVipTierInfo(enriched).key;
+    return enriched;
+  });
 
   return {
     users,
@@ -614,9 +634,10 @@ export async function searchUsersForFriendInSupabase(
   const [{ data: usersRows }, state] = await Promise.all([
     supabase
       .from('sada_users')
-      .select('*')
+      .select(USER_COLUMNS)
       .eq('is_banned', false)
-      .order('last_seen', { ascending: false }),
+      .order('last_seen', { ascending: false })
+      .limit(100),
     getPlatformState(),
   ]);
 
@@ -658,12 +679,17 @@ function isUserFemaleOrHost(u: User, hostedUserIds: Set<string>): boolean {
 export async function getPmOverviewFromSupabase(user: User) {
   const [{ data: allUsers }, { data: myMsgs }, { data: rooms }, state] =
     await Promise.all([
-      supabase.from('sada_users').select('*'),
+      supabase
+        .from('sada_users')
+        .select(USER_COLUMNS)
+        .order('last_seen', { ascending: false })
+        .limit(100),
       supabase
         .from('sada_private_messages')
-        .select('*')
+        .select(PRIVATE_MESSAGE_COLUMNS)
         .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
-        .order('created_at', { ascending: true }),
+        .order('created_at', { ascending: false })
+        .limit(50),
       supabase.from('sada_rooms').select('host_id'),
       getPlatformState(),
     ]);
@@ -680,7 +706,7 @@ export async function getPmOverviewFromSupabase(user: User) {
   const usersMap = new Map(usersList.map((u) => [u.id, u]));
 
   const convMap = new Map<string, PrivateMessage[]>();
-  for (const row of myMsgs || []) {
+  for (const row of (myMsgs || []).slice().reverse()) {
     const pm = rowToPrivateMessage(row);
     const list = convMap.get(pm.conversationId) || [];
     list.push(pm);
@@ -761,7 +787,7 @@ export async function getPmOverviewFromSupabase(user: User) {
     conversations,
     recipients,
     userFollows,
-    gifts: GIFT_CATALOG,
+    gifts: getCachedGiftCatalog(),
     pmMessageCost: state.settings.pmMessageCost,
     pmReplyDiamonds: state.settings.pmReplyDiamonds,
     pendingDiamondsTotal,
@@ -790,8 +816,8 @@ export async function sendPrivateMessageInSupabase(
 }> {
   const [{ data: senderRow }, { data: recRow }, { data: rooms }, state] =
     await Promise.all([
-      supabase.from('sada_users').select('*').eq('id', sender.id).maybeSingle(),
-      supabase.from('sada_users').select('*').eq('id', payload.recipientId).maybeSingle(),
+      supabase.from('sada_users').select(USER_COLUMNS).eq('id', sender.id).maybeSingle(),
+      supabase.from('sada_users').select(USER_COLUMNS).eq('id', payload.recipientId).maybeSingle(),
       supabase.from('sada_rooms').select('host_id'),
       getPlatformState(),
     ]);
@@ -822,10 +848,12 @@ export async function sendPrivateMessageInSupabase(
 
   const { data: convMsgsRaw } = await supabase
     .from('sada_private_messages')
-    .select('*')
-    .eq('conversation_id', convId);
+    .select(PRIVATE_MESSAGE_COLUMNS)
+    .eq('conversation_id', convId)
+    .order('created_at', { ascending: false })
+    .limit(50);
 
-  const convMsgs = (convMsgsRaw || []).map(rowToPrivateMessage);
+  const convMsgs = (convMsgsRaw || []).slice().reverse().map(rowToPrivateMessage);
   const unclaimedIncoming = convMsgs.filter(
     (m) =>
       m.senderId === recipient.id &&
@@ -863,7 +891,7 @@ export async function sendPrivateMessageInSupabase(
   }
 
   const selectedGift = payload.giftId
-    ? GIFT_CATALOG.find((g) => g.id === payload.giftId)
+    ? findGiftById(payload.giftId)
     : undefined;
   if (payload.giftId && !selectedGift) {
     throw new Error('الهدية المختارة غير متوفرة.');
@@ -1153,12 +1181,12 @@ export async function getAgencyOverviewFromSupabase(user: User): Promise<{
     { data: weeklyTxRows },
     state,
   ] = await Promise.all([
-    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
-    supabase.from('sada_agencies').select('*'),
-    supabase.from('sada_users').select('*'),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
+    supabase.from('sada_agencies').select(AGENCY_COLUMNS),
+    supabase.from('sada_users').select(USER_COLUMNS),
     supabase
       .from('sada_transactions')
-      .select('*')
+      .select(TRANSACTION_COLUMNS)
       .eq('user_id', user.id)
       .eq('type', 'agency_commission')
       .order('timestamp', { ascending: false })
@@ -1257,7 +1285,7 @@ export async function lookupAgencyByIdOrCodeInSupabase(
   if (!clean) return null;
   const upper = clean.toUpperCase();
 
-  const { data: rows } = await supabase.from('sada_agencies').select('*');
+  const { data: rows } = await supabase.from('sada_agencies').select(AGENCY_COLUMNS);
   const agencies = (rows || []).map(rowToAgency);
 
   return (
@@ -1430,7 +1458,7 @@ export async function joinAgencyByCodeInSupabase(
 
   const { data: agencyRow } = await supabase
     .from('sada_agencies')
-    .select('*')
+    .select(AGENCY_COLUMNS)
     .ilike('code', cleanCode)
     .maybeSingle();
 

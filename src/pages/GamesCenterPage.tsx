@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'motion/react';
 import {
   Box,
   Coins,
@@ -8,6 +9,7 @@ import {
   Disc3,
   Flame,
   Gamepad2,
+  Hand,
   History,
   Info,
   RotateCw,
@@ -18,8 +20,10 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Fluent3DAsset } from '../components/Fluent3DAsset';
 import { Royal3DDieCube } from '../components/Royal3DDice';
 import { RoyalSlotSymbol3D } from '../components/RoyalSlotSymbol3D';
+import { SlotMachine3DLever, SlotMarqueePerimeter } from '../components/SlotMachine3DLever';
 import {
   fireGoldCoinConfetti,
   playCoinWinSound,
@@ -32,14 +36,17 @@ import {
   getLadderStateFromSupabase,
   openMysteryBoxInSupabase,
   playLadderActionInSupabase,
+  playRpsInSupabase,
   playStandardDiceInSupabase,
   spinRouletteInSupabase,
   spinSlotMachineInSupabase,
+  type RpsMove,
+  type RpsPlayResponse,
   type SlotGameId,
 } from '../lib/sadaGamesService';
 import type { User } from '../types';
 
-type CenterCategory = 'slots' | 'dice' | 'roulette' | 'mystery';
+type CenterCategory = 'slots' | 'dice' | 'roulette' | 'mystery' | 'rps';
 
 type DiceGameId = 'double_dice' | 'prediction_dice' | 'ladder_dice' | 'speed_dice';
 
@@ -553,6 +560,11 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   const [isOpeningBox, setIsOpeningBox] = useState(false);
   const [mysteryResult, setMysteryResult] = useState<MysteryBoxResponse | null>(null);
 
+  // --- ROCK PAPER SCISSORS 3D STATE ---
+  const [rpsChoice, setRpsChoice] = useState<RpsMove>('rock');
+  const [isRpsPlaying, setIsRpsPlaying] = useState(false);
+  const [rpsResult, setRpsResult] = useState<RpsPlayResponse | null>(null);
+
   const clearSpinTimers = () => {
     timersRef.current.forEach((id) => window.clearTimeout(id));
     timersRef.current = [];
@@ -894,7 +906,44 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
     }
   };
 
-  const anyBusy = isSpinning || isDiceRolling || isRouletteSpinning || isOpeningBox;
+  // --- HANDLERS: ROCK PAPER SCISSORS 3D ---
+  const handlePlayRps = async (chosenMove?: RpsMove) => {
+    const move = chosenMove || rpsChoice;
+    if (!user || isRpsPlaying) return;
+    if (user.coins < bet || user.coins <= 0) {
+      setErrorMsg('رصيد الكوينز غير كافٍ للعب حجر ورقة مقص 3D.');
+      return;
+    }
+
+    setRpsChoice(move);
+    setErrorMsg(null);
+    setRpsResult(null);
+    setIsRpsPlaying(true);
+    playDiceTumbleSound();
+
+    try {
+      const res = await playRpsInSupabase(user.id, bet, move);
+      onPlaySpent?.(bet);
+
+      const t = window.setTimeout(() => {
+        setIsRpsPlaying(false);
+        setRpsResult(res);
+        updateLocalUser(res.user);
+        playDiceLandSound();
+        if (res.outcome === 'win') {
+          playCoinWinSound(false);
+          fireGoldCoinConfetti('normal');
+        }
+        pushHistory('حجر ورقة مقص 3D', res.bet, res.payout, res.multiplier);
+      }, 650);
+      timersRef.current.push(t);
+    } catch (err) {
+      setIsRpsPlaying(false);
+      setErrorMsg(err instanceof Error ? err.message : 'تعذّر تنفيذ جولة حجر ورقة مقص.');
+    }
+  };
+
+  const anyBusy = isSpinning || isDiceRolling || isRouletteSpinning || isOpeningBox || isRpsPlaying;
 
   if (!user) return null;
 
@@ -905,7 +954,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
           ? 'space-y-2.5'
           : embedded
           ? 'space-y-4 sm:space-y-5'
-          : 'max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6'
+          : 'max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6 overflow-y-auto overscroll-y-contain'
       }
     >
       {/* Header + Live Wallet Sync Strip (Hidden in compact 45% room mode) */}
@@ -947,7 +996,22 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   <p className="text-xs sm:text-sm text-slate-300">
                     ماكينات السلوت الثلاثية الأبعاد + طاولة النرد 3D + الروليت الملكية وصناديق الحظ
                   </p>
+                    </div>
+                    <SlotMarqueePerimeter
+                      spinning={isSpinning}
+                      winning={Boolean(lastResult && !isSpinning && lastResult.payout > 0)}
+                      count={compactRoomMode ? 12 : 18}
+                    />
+                  </div>
                 </div>
+
+                {/* Interactive Pullable 3D Slot Lever */}
+                <SlotMachine3DLever
+                  compact={compactRoomMode}
+                  spinning={isSpinning}
+                  disabled={user.coins < bet || user.coins <= 0}
+                  onPull={() => void handleSpin()}
+                />
               </div>
             </div>
 
@@ -986,13 +1050,13 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
       {/* Main Category Switcher (Hidden in compact 45% room mode) */}
       {!compactRoomMode && (
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {(
             [
               {
                 id: 'slots',
                 title: 'السلوت الملكي 3D',
-                sub: '8 ماكينات ثلاثية الأبعاد',
+                sub: '9 ماكينات ثلاثية الأبعاد',
                 icon: Crown,
               },
               {
@@ -1012,6 +1076,12 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                 title: 'صناديق الحظ',
                 sub: '9 صناديق مغلقة بجوائز فورية',
                 icon: Box,
+              },
+              {
+                id: 'rps',
+                title: 'حجر ورقة مقص 3D',
+                sub: 'مواجهة سريعة بمضاعف ×1.95',
+                icon: Hand,
               },
             ] as const
           ).map((tabItem) => {
@@ -1091,7 +1161,9 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                         : 'bg-white/5 border-white/10 text-slate-300 hover:border-[#D4AF37]/40'
                     }`}
                   >
-                    <span>{machine.symbols[machine.symbols.length - 1]}</span>
+                    <span>
+                      <RoyalSlotSymbol3D symbol={machine.symbols[machine.symbols.length - 1]} compact />
+                    </span>
                     <span>{machine.title}</span>
                   </button>
                 );
@@ -1122,15 +1194,13 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                         </span>
                         <h2 className="text-base font-extrabold text-white">{machine.title}</h2>
                       </div>
-                      <span className="text-2xl leading-none select-none">
-                        {machine.symbols[machine.symbols.length - 1]}
-                      </span>
+                      <RoyalSlotSymbol3D symbol={machine.symbols[machine.symbols.length - 1]} compact />
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                      <div className="flex items-center gap-1 text-base leading-none">
+                      <div className="flex items-center gap-1 leading-none">
                         {machine.symbols.slice(0, 4).map((s, idx) => (
-                          <span key={idx}>{s}</span>
+                          <RoyalSlotSymbol3D key={idx} symbol={s} compact />
                         ))}
                       </div>
                       <span
@@ -1183,33 +1253,57 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                 </div>
               )}
 
-              {/* 3D Cylindrical Reel Drum Cabinet */}
-              <div
-                dir="ltr"
-                className={`rounded-2xl sm:rounded-3xl bg-gradient-to-b from-[#04060E] via-[#0B1024] to-[#04060E] border-2 border-[#D4AF37]/55 ${
-                  compactRoomMode ? 'p-1.5 sm:p-2' : 'p-3 sm:p-4'
-                } shadow-[inset_0_12px_28px_rgba(0,0,0,0.85),0_0_24px_rgba(212,175,55,0.2)] relative overflow-hidden`}
-              >
-                {/* Cylindrical Metallic Top & Bottom Gloss Bevel */}
-                <div
-                  className="pointer-events-none absolute inset-x-0 top-0 h-5 z-10"
-                  style={{
-                    background: 'linear-gradient(to bottom, rgba(0,0,0,0.82), transparent)',
-                  }}
-                />
-                <div
-                  className="pointer-events-none absolute inset-x-0 bottom-0 h-5 z-10"
-                  style={{
-                    background: 'linear-gradient(to top, rgba(0,0,0,0.82), transparent)',
-                  }}
-                />
+              {/* 3D Metallic Gold Cylindrical Reel Drum Cabinet + Chasing Lights + Interactive Lever */}
+              <div dir="ltr" className="flex items-center gap-1 sm:gap-1.5">
+                <div className="flex-1 min-w-0 rounded-2xl sm:rounded-3xl p-[3px] bg-gradient-to-br from-[#FFFBEB] via-[#D4AF37] to-[#6D4C0B] shadow-[0_16px_38px_rgba(0,0,0,0.85),0_0_32px_rgba(212,175,55,0.34)]">
+                  <div
+                    className={`rounded-[14px] sm:rounded-[20px] bg-gradient-to-b from-[#04060E] via-[#0B1024] to-[#04060E] border-2 border-[#D4AF37]/55 ${
+                      compactRoomMode ? 'p-1.5 sm:p-2' : 'p-3 sm:p-4'
+                    } shadow-[inset_0_12px_28px_rgba(0,0,0,0.85)] relative overflow-hidden`}
+                  >
+                    <SlotMarqueePerimeter
+                      spinning={isSpinning}
+                      winning={Boolean(lastResult && !isSpinning && lastResult.payout > 0)}
+                      count={compactRoomMode ? 12 : 18}
+                    />
 
-                <div
-                  className="grid gap-1.5 sm:gap-2.5"
-                  style={{
-                    gridTemplateColumns: `repeat(${activeMachine.cols}, minmax(0, 1fr))`,
-                  }}
-                >
+                    {/* Jackpot Celebration Overlay */}
+                    {lastResult && !isSpinning && (lastResult.jackpotHit || lastResult.multiplier >= 10) && (
+                      <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
+                        <div className="rounded-2xl border-2 border-[#FEF08A] bg-gradient-to-r from-[#451A03]/95 via-[#B45309]/95 to-[#451A03]/95 px-5 py-2.5 flex items-center gap-2.5 shadow-[0_0_40px_rgba(250,204,21,0.92)] animate-bounce">
+                          <Fluent3DAsset glyph="👑" alt="Jackpot" priority sizeClass="w-9 h-9" />
+                          <div className="text-center">
+                            <span dir="ltr" className="block text-sm font-black tracking-widest text-[#FEF08A]">
+                              JACKPOT! ×{lastResult.multiplier}
+                            </span>
+                            <span className="block text-xs font-mono-num font-extrabold text-white">
+                              +{lastResult.payout.toLocaleString('en-US')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Cylindrical Metallic Top & Bottom Gloss Bevel */}
+                    <div
+                      className="pointer-events-none absolute inset-x-0 top-5 h-5 z-10"
+                      style={{
+                        background: 'linear-gradient(to bottom, rgba(0,0,0,0.82), transparent)',
+                      }}
+                    />
+                    <div
+                      className="pointer-events-none absolute inset-x-0 bottom-5 h-5 z-10"
+                      style={{
+                        background: 'linear-gradient(to top, rgba(0,0,0,0.82), transparent)',
+                      }}
+                    />
+
+                    <div
+                      className="grid gap-1.5 sm:gap-2.5 my-1"
+                      style={{
+                        gridTemplateColumns: `repeat(${activeMachine.cols}, minmax(0, 1fr))`,
+                      }}
+                    >
                   {Array.from({ length: activeMachine.cols }).map((_, cIdx) => {
                     const colSpinning = Boolean(spinningCols[cIdx]);
                     const colLocked = Boolean(lockedColFlash[cIdx]);
@@ -1512,7 +1606,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                       <span className="text-[11px] font-extrabold font-mono-num text-[#FCE9A6]">
                         {d.badge}
                       </span>
-                      <Dices className="w-5 h-5 text-[#D4AF37]" />
+                      <Fluent3DAsset glyph="🎲" alt={d.title} priority sizeClass="w-7 h-7" />
                     </div>
                     <h3 className="text-base font-extrabold text-white">{d.title}</h3>
                     <p className="text-xs text-slate-300 leading-relaxed">{d.desc}</p>
@@ -1891,18 +1985,44 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
           {/* Wheel Showcase */}
           <div className="lg:col-span-5 flex flex-col items-center justify-center gap-4">
             <div className="relative w-72 h-72 sm:w-80 sm:h-80 flex items-center justify-center">
-              {/* Top Pointer */}
-              <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[20px] border-l-transparent border-r-transparent border-t-[#FCE9A6] drop-shadow-[0_0_10px_rgba(252,233,166,0.95)]" />
+              {/* Sculpted 3D Metallic Pointer with Ruby Jewel */}
+              <div
+                className="absolute -top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none drop-shadow-[0_6px_12px_rgba(0,0,0,0.85)]"
+                aria-hidden="true"
+              >
+                <svg viewBox="0 0 44 50" className="w-10 h-11">
+                  <defs>
+                    <linearGradient id="roulPtrGold" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#FFFBEB" />
+                      <stop offset="45%" stopColor="#FACC15" />
+                      <stop offset="100%" stopColor="#92400E" />
+                    </linearGradient>
+                    <radialGradient id="roulPtrGem" cx="35%" cy="35%" r="65%">
+                      <stop offset="0%" stopColor="#FECDD3" />
+                      <stop offset="45%" stopColor="#E11D48" />
+                      <stop offset="100%" stopColor="#881337" />
+                    </radialGradient>
+                  </defs>
+                  <path
+                    d="M22 48 L6 16 C4 9, 11 2, 22 2 C33 2, 40 9, 38 16 Z"
+                    fill="url(#roulPtrGold)"
+                    stroke="#FEF9C3"
+                    strokeWidth="2"
+                  />
+                  <circle cx="22" cy="14" r="6" fill="url(#roulPtrGem)" stroke="#FEF08A" strokeWidth="1.5" />
+                </svg>
+              </div>
 
-              {/* Outer Golden Rim */}
-              <div className="w-full h-full rounded-full p-2.5 bg-gradient-to-br from-[#FCE9A6] via-[#D4AF37] to-[#7A5912] shadow-[0_0_45px_rgba(212,175,55,0.35)]">
-                <div
-                  className="w-full h-full rounded-full relative overflow-hidden bg-[#080B18]"
-                  style={{
-                    transform: `rotate(${wheelRotation}deg)`,
-                    transition: 'transform 3200ms cubic-bezier(0.12, 0.85, 0.2, 1)',
-                  }}
-                >
+              {/* Outer Brushed Gold & Platinum 3D Metallic Rim */}
+              <div className="w-full h-full rounded-full p-2.5 bg-gradient-to-br from-[#FFF7CC] via-[#D4AF37] to-[#6D4C0B] shadow-[0_22px_50px_rgba(0,0,0,0.85),0_0_45px_rgba(212,175,55,0.45),inset_0_3px_6px_rgba(255,255,255,0.65)]">
+                <div className="w-full h-full rounded-full p-1 bg-gradient-to-b from-[#CBD5E1] via-[#64748B] to-[#1E293B] shadow-[inset_0_4px_10px_rgba(0,0,0,0.85)]">
+                  <div
+                    className="w-full h-full rounded-full relative overflow-hidden bg-[#080B18]"
+                    style={{
+                      transform: `rotate(${wheelRotation}deg)`,
+                      transition: 'transform 3200ms cubic-bezier(0.12, 0.85, 0.2, 1)',
+                    }}
+                  >
                   <svg viewBox="0 0 200 200" className="w-full h-full">
                     {ROULETTE_WHEEL_ORDER.map((num, idx) => {
                       const sliceDeg = 360 / 37;
@@ -1955,6 +2075,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                     />
                   </svg>
                 </div>
+              </div>
               </div>
 
               {/* Center Fixed Outcome Display */}
@@ -2185,7 +2306,13 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                 >
                   {revealed ? (
                     <>
-                      <span className="text-3xl sm:text-4xl">{revealed.glyph}</span>
+                      <Fluent3DAsset
+                        glyph={revealed.glyph}
+                        alt={revealed.label}
+                        priority
+                        sizeClass="w-12 h-12 sm:w-14 sm:h-14"
+                        fallbackTextClass="text-3xl sm:text-4xl"
+                      />
                       <span className="text-[11px] sm:text-xs font-extrabold text-white text-center">
                         {revealed.label}
                       </span>
@@ -2201,7 +2328,14 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                     </>
                   ) : (
                     <>
-                      <span className="text-3xl sm:text-5xl">🎁</span>
+                      <Fluent3DAsset
+                        glyph="🎁"
+                        alt={`صندوق #${idx + 1}`}
+                        priority
+                        sizeClass="w-12 h-12 sm:w-14 sm:h-14"
+                        fallbackTextClass="text-3xl sm:text-5xl"
+                        className="drop-shadow-[0_6px_12px_rgba(212,175,55,0.4)]"
+                      />
                       <span className="text-xs font-extrabold text-[#FCE9A6]">
                         صندوق #{idx + 1}
                       </span>
@@ -2233,6 +2367,233 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
               )}
             </div>
           )}
+        </section>
+      )}
+
+      {/* ===================== CATEGORY 5: ROCK PAPER SCISSORS 3D ===================== */}
+      {category === 'rps' && (
+        <section
+          className={`royal-glass ${
+            compactRoomMode ? 'rounded-2xl p-3 space-y-2.5' : 'rounded-[2rem] p-5 sm:p-7 space-y-5'
+          } border border-[#D4AF37]/35`}
+        >
+          {!compactRoomMode && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-xl font-extrabold text-[#FCE9A6]">
+                  تحدي حجر ورقة مقص 3D الملكي
+                </h2>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  اختر حركتك الثلاثية الأبعاد وتحدَّ البوت الملكي لمضاعفة رهانك ×1.95 أو استرداده عند التعادل!
+                </p>
+              </div>
+              <span className="rounded-xl bg-[#070913]/85 border border-[#D4AF37]/35 px-3.5 py-2 text-xs font-mono-num font-extrabold text-[#FCE9A6] shrink-0">
+                مضاعف الفوز ×1.95
+              </span>
+            </div>
+          )}
+
+          {/* 3D Clash Arena Stage */}
+          <div
+            className={`velvet-table-surface rounded-2xl sm:rounded-3xl border-[4px] border-[#4A2511] ${
+              compactRoomMode ? 'py-3 px-3' : 'py-6 sm:py-8 px-4'
+            } grid grid-cols-3 items-center gap-2 text-center relative overflow-hidden`}
+          >
+            <div className="pointer-events-none absolute inset-2 rounded-2xl border border-[#FCE9A6]/20" />
+
+            {/* Player Side */}
+            <div className="relative flex flex-col items-center gap-1.5 perspective-dice">
+              <span className="text-[10px] font-bold text-emerald-200 bg-black/50 px-2 py-0.5 rounded-full border border-emerald-400/35">
+                اختيارك
+              </span>
+              <motion.div
+                animate={
+                  isRpsPlaying
+                    ? {
+                        y: [0, -16, 0, -16, 0],
+                        rotateY: [0, 180, 360],
+                        rotateZ: [0, -14, 8, -14, 0],
+                        scale: [1, 1.12, 0.96, 1.12, 1],
+                      }
+                    : { y: 0, rotateY: 0, rotateZ: 0, scale: 1 }
+                }
+                transition={{ duration: 0.65, ease: 'easeInOut' }}
+                className="p-2 rounded-2xl bg-black/35 border border-[#FCE9A6]/35 shadow-[0_0_20px_rgba(251,191,36,0.25)] preserve-3d"
+              >
+                <Fluent3DAsset
+                  glyph={rpsChoice === 'rock' ? '✊' : rpsChoice === 'paper' ? '✋' : '✌️'}
+                  alt="اختيارك"
+                  priority
+                  sizeClass={compactRoomMode ? 'w-12 h-12' : 'w-16 h-16 sm:w-20 sm:h-20'}
+                  fallbackTextClass="text-4xl"
+                />
+              </motion.div>
+            </div>
+
+            {/* VS Badge */}
+            <div className="relative flex flex-col items-center justify-center gap-1">
+              <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-[#FEF08A] via-[#D4AF37] to-[#78350F] border-2 border-[#FFFBEB] flex items-center justify-center shadow-[0_0_24px_rgba(251,191,36,0.6)]">
+                <span dir="ltr" className="text-xs sm:text-base font-black text-[#070913]">
+                  VS
+                </span>
+              </div>
+              {rpsResult && !isRpsPlaying && (
+                <span
+                  className={`text-[10px] sm:text-xs font-extrabold px-2 py-0.5 rounded-full ${
+                    rpsResult.outcome === 'win'
+                      ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/50'
+                      : rpsResult.outcome === 'draw'
+                      ? 'bg-amber-500/25 text-amber-200 border border-amber-400/50'
+                      : 'bg-rose-500/25 text-rose-200 border border-rose-400/50'
+                  }`}
+                >
+                  {rpsResult.outcome === 'win'
+                    ? 'فوز ملكي!'
+                    : rpsResult.outcome === 'draw'
+                    ? 'تعادل'
+                    : 'حاول مجدداً'}
+                </span>
+              )}
+            </div>
+
+            {/* Bot Side */}
+            <div className="relative flex flex-col items-center gap-1.5 perspective-dice">
+              <span className="text-[10px] font-bold text-amber-200 bg-black/50 px-2 py-0.5 rounded-full border border-[#D4AF37]/35">
+                المنافس
+              </span>
+              <motion.div
+                animate={
+                  isRpsPlaying
+                    ? {
+                        y: [0, -16, 0, -16, 0],
+                        rotateY: [0, -180, -360],
+                        rotateZ: [0, 14, -8, 14, 0],
+                        scale: [1, 1.12, 0.96, 1.12, 1],
+                      }
+                    : { y: 0, rotateY: 0, rotateZ: 0, scale: 1 }
+                }
+                transition={{ duration: 0.65, ease: 'easeInOut' }}
+                className="p-2 rounded-2xl bg-black/35 border border-white/20 shadow-[0_0_20px_rgba(0,0,0,0.45)] preserve-3d"
+              >
+                <Fluent3DAsset
+                  glyph={
+                    isRpsPlaying
+                      ? '✊'
+                      : !rpsResult
+                      ? '🔮'
+                      : rpsResult.botMove === 'rock'
+                      ? '✊'
+                      : rpsResult.botMove === 'paper'
+                      ? '✋'
+                      : '✌️'
+                  }
+                  alt="المنافس"
+                  priority
+                  sizeClass={compactRoomMode ? 'w-12 h-12' : 'w-16 h-16 sm:w-20 sm:h-20'}
+                  fallbackTextClass="text-4xl"
+                />
+              </motion.div>
+            </div>
+          </div>
+
+          {/* 3 Move Selector Cards */}
+          <div className="grid grid-cols-3 gap-2.5">
+            {(
+              [
+                { id: 'rock', label: 'حجر 3D', glyph: '✊' },
+                { id: 'paper', label: 'ورقة 3D', glyph: '✋' },
+                { id: 'scissors', label: 'مقص 3D', glyph: '✌️' },
+              ] as const
+            ).map((opt) => {
+              const active = rpsChoice === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  disabled={isRpsPlaying}
+                  onClick={() => setRpsChoice(opt.id)}
+                  className={`rounded-2xl ${
+                    compactRoomMode ? 'p-2' : 'p-3.5'
+                  } border flex flex-col items-center justify-center gap-1.5 cursor-pointer transition active:scale-95 ${
+                    active
+                      ? 'bg-gradient-to-b from-[#3A280B] to-[#171107] border-[#FCE9A6] shadow-[0_0_20px_rgba(251,191,36,0.4)] scale-[1.02]'
+                      : 'bg-[#070913]/80 border-white/15 hover:border-[#D4AF37]/50'
+                  }`}
+                >
+                  <Fluent3DAsset
+                    glyph={opt.glyph}
+                    alt={opt.label}
+                    priority
+                    sizeClass={compactRoomMode ? 'w-9 h-9' : 'w-12 h-12'}
+                    fallbackTextClass="text-3xl"
+                  />
+                  <span className="text-xs font-extrabold text-white">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {rpsResult && !isRpsPlaying && (
+            <div
+              className={`rounded-2xl border p-3.5 flex items-center justify-between gap-2 text-xs sm:text-sm ${
+                rpsResult.outcome === 'win'
+                  ? 'border-[#FCE9A6]/75 bg-gradient-to-r from-[#D4AF37]/25 via-emerald-950/55 to-[#D4AF37]/20 text-emerald-200'
+                  : rpsResult.outcome === 'draw'
+                  ? 'border-amber-400/50 bg-amber-950/40 text-[#FCE9A6]'
+                  : 'border-white/10 bg-[#070913]/80 text-slate-300'
+              }`}
+            >
+              <span className="font-extrabold">
+                {rpsResult.outcome === 'win'
+                  ? `فوز رائع! ربحت +${rpsResult.payout.toLocaleString('en-US')} كوينز (×1.95)`
+                  : rpsResult.outcome === 'draw'
+                  ? `تعادل! تم استرداد رهانك (${rpsResult.payout.toLocaleString('en-US')} كوينز)`
+                  : `فاز المنافس هذه الجولة — خسرت ${rpsResult.bet.toLocaleString('en-US')} كوينز`}
+              </span>
+              <span className="font-mono-num text-[#FCE9A6] shrink-0">+{rpsResult.xpGain} XP</span>
+            </div>
+          )}
+
+          {/* Bet Chips + Play CTA */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-6 gap-1.5 sm:gap-2">
+              {BET_AMOUNTS.map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  disabled={isRpsPlaying}
+                  onClick={() => setBet(val)}
+                  className={`${
+                    compactRoomMode ? 'min-h-[30px] text-[10px]' : 'min-h-[40px] text-xs'
+                  } rounded-xl font-extrabold font-mono-num border cursor-pointer transition ${
+                    bet === val
+                      ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6]'
+                      : 'bg-white/5 border-white/15 text-slate-200 hover:border-[#D4AF37]/45'
+                  }`}
+                >
+                  {val >= 1000 ? `${val / 1000}K` : val}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              disabled={isRpsPlaying || user.coins < bet || user.coins <= 0}
+              onClick={() => void handlePlayRps()}
+              className={`gold-btn w-full ${
+                compactRoomMode ? 'min-h-[40px] text-xs sm:text-sm' : 'min-h-[52px] text-base'
+              } rounded-xl sm:rounded-2xl font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-45`}
+            >
+              <Hand className={compactRoomMode ? 'w-4 h-4' : 'w-5 h-5'} />
+              <span>
+                {isRpsPlaying
+                  ? 'المواجهة جارية...'
+                  : user.coins < bet || user.coins <= 0
+                  ? 'رصيدك غير كافٍ للعب'
+                  : `تحدي حجر ورقة مقص 3D (${bet.toLocaleString('en-US')} كوينز)`}
+              </span>
+            </button>
+          </div>
         </section>
       )}
 

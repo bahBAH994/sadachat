@@ -12,6 +12,7 @@ import {
   FRAME_CATALOG,
   genId,
   getRechargeRewardTier,
+  getUserVipTierInfo,
   isFemaleVoiceLocked,
   MIN_WITHDRAW_USDT,
   STORE_3D_ITEMS,
@@ -20,6 +21,8 @@ import {
   TEMP_ONLY_FRAME_IDS,
 } from './sadaCatalog';
 import {
+  DEPOSIT_COLUMNS,
+  FEMALE_VOICE_REQ_COLUMNS,
   getPlatformState,
   purgeExpiredRewardsOnUser,
   recordTransaction,
@@ -29,8 +32,12 @@ import {
   rowToUser,
   rowToWithdrawal,
   savePlatformState,
+  TRANSACTION_COLUMNS,
+  USER_COLUMNS,
+  WITHDRAWAL_COLUMNS,
 } from './sadaMappers';
 import { syncUserOnActiveRoomSeats } from './sadaAuth';
+import { fetchUserVipTotals } from './sadaVipService';
 import { supabase } from './supabase';
 
 export async function checkWithdrawalEligibility(user: User): Promise<{
@@ -70,22 +77,22 @@ export async function getWalletOverviewFromSupabase(userId: string) {
     { data: wdRows },
     state,
   ] = await Promise.all([
-    supabase.from('sada_users').select('*').eq('id', userId).maybeSingle(),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', userId).maybeSingle(),
     supabase
       .from('sada_transactions')
-      .select('*')
+      .select(TRANSACTION_COLUMNS)
       .eq('user_id', userId)
       .order('timestamp', { ascending: false })
       .limit(30),
     supabase
       .from('sada_usdt_deposits')
-      .select('*')
+      .select(DEPOSIT_COLUMNS)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(20),
     supabase
       .from('sada_usdt_withdrawals')
-      .select('*')
+      .select(WITHDRAWAL_COLUMNS)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(20),
@@ -209,7 +216,7 @@ export async function submitUsdtWithdrawalInSupabase(
 ): Promise<{ withdrawal: UsdtWithdrawalRequest; user: User }> {
   const { data: userRow } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', user.id)
     .maybeSingle();
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
@@ -318,7 +325,7 @@ export async function convertDiamondsToCoinsInSupabase(
 ): Promise<User> {
   const { data: userRow } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', user.id)
     .maybeSingle();
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
@@ -368,7 +375,7 @@ export async function purchaseOrEquipFrameInSupabase(
 
   const { data: userRow } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', user.id)
     .maybeSingle();
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
@@ -418,7 +425,7 @@ export async function getFemaleVoiceStatusFromSupabase(user: User): Promise<{
 }> {
   const { data } = await supabase
     .from('sada_female_voice_requests')
-    .select('*')
+    .select(FEMALE_VOICE_REQ_COLUMNS)
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -504,35 +511,10 @@ export async function submitFemaleVoiceVerificationInSupabase(
 
 export async function computeUserCumulativeRechargeCoins(user: User): Promise<{
   totalRechargedCoins: number;
+  totalSpentCoins: number;
   user: User;
 }> {
-  const [{ data: approvedDeps }, { data: rechargeTxs }] = await Promise.all([
-    supabase
-      .from('sada_usdt_deposits')
-      .select('coins_credited')
-      .eq('user_id', user.id)
-      .eq('status', 'approved'),
-    supabase
-      .from('sada_transactions')
-      .select('type, amount, description')
-      .eq('user_id', user.id)
-      .in('type', ['topup', 'admin_grant']),
-  ]);
-
-  const fromDeposits = (approvedDeps || []).reduce(
-    (sum, d) => sum + Math.max(0, Number(d.coins_credited || 0)),
-    0
-  );
-  const fromTxs = (rechargeTxs || []).reduce((sum, t) => {
-    const amt = Number(t.amount || 0);
-    if (amt <= 0) return sum;
-    if (t.type === 'admin_grant' && String(t.description || '').includes('ترحيبي')) {
-      return sum;
-    }
-    return sum + amt;
-  }, 0);
-
-  const totalRechargedCoins = fromDeposits + fromTxs;
+  const { totalRechargedCoins, totalSpentCoins } = await fetchUserVipTotals(user.id, true);
   const reachedIds = STORE_3D_ITEMS.filter(
     (item) => totalRechargedCoins >= item.minRechargeCoins
   ).map((item) => item.id);
@@ -547,7 +529,11 @@ export async function computeUserCumulativeRechargeCoins(user: User): Promise<{
       .eq('id', user.id);
   }
 
-  return { totalRechargedCoins, user };
+  user.totalRecharged = totalRechargedCoins;
+  user.totalSpentCoins = totalSpentCoins;
+  user.vipLevel = getUserVipTierInfo(user).key;
+
+  return { totalRechargedCoins, totalSpentCoins, user };
 }
 
 export async function getStoreAndBagOverviewFromSupabase(userId: string) {
@@ -590,7 +576,7 @@ export async function purchaseStoreCoinItemInSupabase(
 
   const { data: userRow } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', user.id)
     .maybeSingle();
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
@@ -645,7 +631,7 @@ export async function purchaseRoomBackgroundInSupabase(
   if (!bg) throw new Error('خلفية الوكالة غير موجودة.');
 
   const [{ data: userRow }, state] = await Promise.all([
-    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
     getPlatformState(),
   ]);
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
@@ -799,7 +785,7 @@ export async function claimHostTaskMilestoneInSupabase(
   milestone: 7 | 15
 ): Promise<{ user: User; progress: HostTaskProgress; rewardMessage: string }> {
   const [{ data: userRow }, state] = await Promise.all([
-    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
     getPlatformState(),
   ]);
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
@@ -884,7 +870,7 @@ export async function equipStoreOrBagItemInSupabase(
   if (storeItem) {
     const { data: userRow } = await supabase
       .from('sada_users')
-      .select('*')
+      .select(USER_COLUMNS)
       .eq('id', user.id)
       .maybeSingle();
     const freshUser = userRow ? rowToUser(userRow) : { ...user };

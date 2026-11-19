@@ -38,6 +38,7 @@ import type {
   ReferralWheelSegment,
 } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import { Fluent3DAsset } from '../components/Fluent3DAsset';
 
 type CompTab = 'cultural' | 'referral' | 'voice';
 
@@ -329,7 +330,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
     if (refSegments.length === 0) return [];
     const total = refSegments.length;
     const slice = 360 / total;
-    const r = 140;
+    const r = 148;
     const cx = 150;
     const cy = 150;
     return refSegments.map((seg, i) => {
@@ -343,14 +344,23 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
       const y1 = cy + r * Math.sin(startRad);
       const x2 = cx + r * Math.cos(endRad);
       const y2 = cy + r * Math.sin(endRad);
-      const tx = cx + r * 0.65 * Math.cos(midRad);
-      const ty = cy + r * 0.65 * Math.sin(midRad);
+      const tx = cx + r * 0.49 * Math.cos(midRad);
+      const ty = cy + r * 0.49 * Math.sin(midRad);
+      const iconLeftPct = 50 + 34.5 * Math.cos(midRad);
+      const iconTopPct = 50 + 34.5 * Math.sin(midRad);
+      const studX = cx + 141 * Math.cos(startRad);
+      const studY = cy + 141 * Math.sin(startRad);
       return {
         seg,
         d: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2} Z`,
         tx,
         ty,
+        iconLeftPct,
+        iconTopPct,
+        studX,
+        studY,
         midDeg: midDeg + 90,
+        isGold: i % 2 === 0,
         color: WHEEL_COLORS[i % WHEEL_COLORS.length],
       };
     });
@@ -364,7 +374,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
       className={
         embedded
           ? 'space-y-4 sm:space-y-5'
-          : 'max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6'
+          : 'max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6 overflow-y-auto overscroll-y-contain'
       }
     >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -690,72 +700,146 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
           <section className="royal-glass rounded-3xl p-5 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
             <div className="lg:col-span-6 flex flex-col items-center gap-4">
               <div className="relative w-72 h-72 sm:w-80 sm:h-80 flex items-center justify-center">
+                {/* Sculpted 3D Metallic Pointer with Ruby Jewel */}
                 <div
-                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[20px] border-l-transparent border-r-transparent border-t-[#FCE9A6] drop-shadow-[0_0_12px_rgba(243,211,122,0.9)]"
+                  className="absolute -top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none drop-shadow-[0_6px_12px_rgba(0,0,0,0.85)]"
                   aria-hidden="true"
-                />
-
-                <div
-                  className="w-full h-full rounded-full border-4 border-[#D4AF37] shadow-[0_0_45px_rgba(212,175,55,0.38)] overflow-hidden"
-                  style={{
-                    transform: `rotate(${refRotation}deg)`,
-                    transition: refSpinning
-                      ? 'transform 4.2s cubic-bezier(0.14, 0.85, 0.22, 1)'
-                      : 'none',
-                  }}
                 >
-                  <svg viewBox="0 0 300 300" className="w-full h-full">
-                    {wheelPaths.map((p) => (
-                      <g key={p.seg.id}>
-                        <path
-                          d={p.d}
-                          fill={p.color}
-                          stroke="#D4AF37"
-                          strokeWidth="1.3"
-                          strokeOpacity="0.55"
-                        />
-                        <g transform={`translate(${p.tx}, ${p.ty}) rotate(${p.midDeg})`}>
-                          <text
-                            x="0"
-                            y="-7"
-                            textAnchor="middle"
-                            fontSize="17"
-                            fill="#FCE9A6"
-                          >
-                            {p.seg.glyph}
-                          </text>
-                          <text
-                            x="0"
-                            y="9"
-                            textAnchor="middle"
-                            fontSize="9"
-                            fontWeight="700"
-                            fill="#F8FAFC"
-                          >
-                            {p.seg.shortLabel}
-                          </text>
-                        </g>
-                      </g>
-                    ))}
-                    <circle
-                      cx="150"
-                      cy="150"
-                      r="25"
-                      fill="#070913"
-                      stroke="#F3D37A"
-                      strokeWidth="3"
+                  <svg viewBox="0 0 44 50" className="w-10 h-11">
+                    <defs>
+                      <linearGradient id="refPtrGold" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#FFFBEB" />
+                        <stop offset="45%" stopColor="#FACC15" />
+                        <stop offset="100%" stopColor="#92400E" />
+                      </linearGradient>
+                      <radialGradient id="refPtrGem" cx="35%" cy="35%" r="65%">
+                        <stop offset="0%" stopColor="#FECDD3" />
+                        <stop offset="45%" stopColor="#E11D48" />
+                        <stop offset="100%" stopColor="#881337" />
+                      </radialGradient>
+                    </defs>
+                    <path
+                      d="M22 48 L6 16 C4 9, 11 2, 22 2 C33 2, 40 9, 38 16 Z"
+                      fill="url(#refPtrGold)"
+                      stroke="#FEF9C3"
+                      strokeWidth="2"
                     />
-                    <text
-                      x="150"
-                      y="155"
-                      textAnchor="middle"
-                      fontSize="12"
-                      fontWeight="800"
-                      fill="#FCE9A6"
-                    >
-                      صَدَى
-                    </text>
+                    <circle cx="22" cy="14" r="6" fill="url(#refPtrGem)" stroke="#FEF08A" strokeWidth="1.5" />
                   </svg>
+                </div>
+
+                {/* Brushed Gold Metallic 3D Wheel Rim */}
+                <div className="w-full h-full rounded-full p-2.5 bg-gradient-to-br from-[#FFF7CC] via-[#D4AF37] to-[#6D4C0B] shadow-[0_22px_50px_rgba(0,0,0,0.85),0_0_45px_rgba(212,175,55,0.45),inset_0_3px_6px_rgba(255,255,255,0.65)]">
+                  <div className="w-full h-full rounded-full p-1 bg-gradient-to-b from-[#1E293B] via-[#0F172A] to-[#020617] shadow-[inset_0_4px_12px_rgba(0,0,0,0.9)]">
+                    <div
+                      className="relative w-full h-full rounded-full overflow-hidden bg-[#070913]"
+                      style={{
+                        transform: `rotate(${refRotation}deg)`,
+                        transition: refSpinning
+                          ? 'transform 4.2s cubic-bezier(0.14, 0.85, 0.22, 1)'
+                          : 'none',
+                      }}
+                    >
+                      <svg viewBox="0 0 300 300" className="w-full h-full">
+                        <defs>
+                          <linearGradient id="refGoldSlice" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stopColor="#FEF08A" />
+                            <stop offset="48%" stopColor="#D4AF37" />
+                            <stop offset="100%" stopColor="#854D0E" />
+                          </linearGradient>
+                          <linearGradient id="refSilverSlice" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stopColor="#F8FAFC" />
+                            <stop offset="50%" stopColor="#CBD5E1" />
+                            <stop offset="100%" stopColor="#475569" />
+                          </linearGradient>
+                          <radialGradient id="refHubGrad" cx="35%" cy="30%" r="70%">
+                            <stop offset="0%" stopColor="#FFFBEB" />
+                            <stop offset="45%" stopColor="#D4AF37" />
+                            <stop offset="100%" stopColor="#451A03" />
+                          </radialGradient>
+                        </defs>
+                        {wheelPaths.map((p) => (
+                          <g key={p.seg.id}>
+                            <path
+                              d={p.d}
+                              fill={p.isGold ? 'url(#refGoldSlice)' : 'url(#refSilverSlice)'}
+                              stroke="#1E1B18"
+                              strokeWidth="1.6"
+                              strokeOpacity="0.65"
+                            />
+                            <g transform={`translate(${p.tx}, ${p.ty}) rotate(${p.midDeg})`}>
+                              <text
+                                x="0"
+                                y="4"
+                                textAnchor="middle"
+                                fontSize="9.5"
+                                fontWeight="900"
+                                fill="#0B0F20"
+                              >
+                                {p.seg.shortLabel}
+                              </text>
+                            </g>
+                            <circle
+                              cx={p.studX}
+                              cy={p.studY}
+                              r="3.2"
+                              fill="#FFFBEB"
+                              stroke="#78350F"
+                              strokeWidth="1"
+                            />
+                          </g>
+                        ))}
+                        <circle
+                          cx="150"
+                          cy="150"
+                          r="29"
+                          fill="url(#refHubGrad)"
+                          stroke="#FFFBEB"
+                          strokeWidth="2.5"
+                        />
+                        <circle
+                          cx="150"
+                          cy="150"
+                          r="22"
+                          fill="#070913"
+                          stroke="#FDE047"
+                          strokeWidth="1.8"
+                        />
+                        <text
+                          x="150"
+                          y="155"
+                          textAnchor="middle"
+                          fontSize="12"
+                          fontWeight="900"
+                          fill="#FCE9A6"
+                        >
+                          صَدَى
+                        </text>
+                      </svg>
+
+                      {/* 3D Fluent Assets overlaid on each slice */}
+                      {wheelPaths.map((p) => (
+                        <div
+                          key={`icon_${p.seg.id}`}
+                          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+                          style={{
+                            left: `${p.iconLeftPct}%`,
+                            top: `${p.iconTopPct}%`,
+                            transform: `translate(-50%, -50%) rotate(${p.midDeg}deg)`,
+                          }}
+                        >
+                          <Fluent3DAsset
+                            glyph={p.seg.glyph}
+                            alt={p.seg.shortLabel}
+                            priority
+                            sizeClass="w-7 h-7 sm:w-8 sm:h-8"
+                            fallbackTextClass="text-base"
+                            className="drop-shadow-[0_3px_5px_rgba(0,0,0,0.65)]"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -781,9 +865,16 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                     initial={{ opacity: 0, scale: 0.94 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0 }}
-                    className="w-full rounded-2xl border border-[#FCE9A6]/70 bg-[#D4AF37]/15 px-4 py-3 text-center text-sm font-extrabold text-[#FCE9A6]"
+                    className="w-full rounded-2xl border border-[#FCE9A6]/70 bg-[#D4AF37]/15 px-4 py-3 flex items-center justify-center gap-2 text-sm font-extrabold text-[#FCE9A6]"
                   >
-                    {refWinBanner.glyph} {refWinBanner.label}
+                    <Fluent3DAsset
+                      glyph={refWinBanner.glyph}
+                      alt={refWinBanner.label}
+                      priority
+                      sizeClass="w-7 h-7"
+                      fallbackTextClass="text-xl"
+                    />
+                    <span>{refWinBanner.label}</span>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -803,9 +894,14 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                 {refSegments.map((seg) => (
                   <div
                     key={seg.id}
-                    className="rounded-2xl border border-[#D4AF37]/30 bg-[#070913]/75 text-white p-3 flex items-center gap-2 text-xs"
+                    className="rounded-2xl border border-[#D4AF37]/30 bg-[#070913]/75 text-white p-3 flex items-center gap-2.5 text-xs"
                   >
-                    <span className="text-xl">{seg.glyph}</span>
+                    <Fluent3DAsset
+                      glyph={seg.glyph}
+                      alt={seg.shortLabel}
+                      sizeClass="w-7 h-7"
+                      fallbackTextClass="text-xl"
+                    />
                     <span className="font-bold truncate">{seg.shortLabel}</span>
                   </div>
                 ))}
@@ -843,6 +939,8 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                       <img
                         src={resolveAsset(comp.bannerImage)}
                         alt={comp.title}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"
                       />

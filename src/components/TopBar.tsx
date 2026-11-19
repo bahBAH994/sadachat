@@ -39,6 +39,8 @@ export const TopBar: React.FC = () => {
             <img
               src={resolveAsset('emblem')}
               alt="شعار صَدَى"
+              loading="lazy"
+              decoding="async"
               referrerPolicy="no-referrer"
               className="w-8 h-8 rounded-xl object-cover border border-amber-300 shadow-sm"
             />

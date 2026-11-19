@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Check,
@@ -42,7 +42,7 @@ import {
 import { supabase } from '../lib/supabase';
 import type { PrivateConversation, Room, RoomExtrasConfig, User } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
-import { FemaleVerifiedBadge, FemaleVoiceVerificationCard } from '../components/FemaleVoiceVerificationCard';
+import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 
 type FilterChip = 'جديدة' | 'أكثر شعبية' | 'لايف' | 'محادثة';
 
@@ -63,6 +63,103 @@ const COUNTRY_FILTERS = [
   { code: 'SY', label: 'سوريا', flag: '🇸🇾' },
   { code: 'IQ', label: 'العراق', flag: '🇮🇶' },
 ];
+
+interface LobbyRoomCardProps {
+  room: Room;
+  members: PresenceUser[];
+  liveCount: number;
+  hostCountryCode?: string;
+  onEnter: (room: Room) => void;
+  onOpenMiniProfile: (userId: string, preview?: Partial<User>) => void;
+}
+
+const LobbyRoomCard = memo<LobbyRoomCardProps>(
+  ({ room, members, liveCount, hostCountryCode, onEnter, onOpenMiniProfile }) => {
+    const flag =
+      ARAB_COUNTRIES.find((c) => c.code === hostCountryCode)?.flag || '🎙️';
+
+    return (
+      <article
+        onClick={() => onEnter(room)}
+        className="light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer"
+      >
+        <div className="relative w-24 h-24 rounded-2xl overflow-hidden shrink-0 border border-slate-200 bg-slate-900">
+          <img
+            src={resolveAsset(room.coverImage || room.hostAvatar)}
+            alt={room.title}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute top-1.5 right-1.5 rounded-md bg-slate-950/75 px-1.5 py-0.5 text-[10px] font-bold text-[#FCE9A6]">
+            {room.category}
+          </div>
+          {room.hasPassword && (
+            <div className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-slate-950/80 flex items-center justify-center text-amber-300">
+              <Lock className="w-3 h-3" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">{flag}</span>
+            <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
+              {room.title}
+            </h3>
+          </div>
+
+          <p className="text-xs text-slate-500 truncate">{room.description}</p>
+
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <div className="flex items-center -space-x-1.5 space-x-reverse">
+              {members.slice(0, 4).map((m) => (
+                <button
+                  key={m.userId}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenMiniProfile(m.userId, {
+                      displayName: m.displayName,
+                      avatarUrl: m.avatarUrl,
+                      frameId: m.frameId,
+                      level: m.level,
+                    });
+                  }}
+                  title={m.displayName}
+                  className="w-7 h-7 rounded-full overflow-hidden ring-2 ring-white hover:scale-110 transition cursor-pointer bg-slate-200"
+                >
+                  <img
+                    src={resolveAsset(m.avatarUrl)}
+                    alt={m.displayName}
+                    loading="lazy"
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                </button>
+              ))}
+              {members.length === 0 && (
+                <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                  <Mic className="w-3 h-3 text-emerald-500" />
+                  <span>متاحة للدخول</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-500 text-white px-2.5 py-0.5 text-[11px] font-extrabold font-mono-num shadow-sm">
+                <Headphones className="w-3 h-3" />
+                <span>{liveCount}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </article>
+    );
+  }
+);
 
 export const LobbyPage: React.FC = () => {
   const { user, onlineUserIds } = useAuth();
@@ -436,15 +533,18 @@ export const LobbyPage: React.FC = () => {
     setShowCreate(true);
   };
 
-  const enterRoom = (room: Room) => {
-    if (room.hasPassword) {
-      setPasswordPromptRoom(room);
-      setRoomPasswordInput('');
-      setRoomPasswordError(null);
-      return;
-    }
-    navigate(`/room/${room.id}`);
-  };
+  const enterRoom = useCallback(
+    (room: Room) => {
+      if (room.hasPassword) {
+        setPasswordPromptRoom(room);
+        setRoomPasswordInput('');
+        setRoomPasswordError(null);
+        return;
+      }
+      navigate(`/room/${room.id}`);
+    },
+    [navigate]
+  );
 
   const handleVerifyPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -486,9 +586,9 @@ export const LobbyPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28">
+    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
       {/* Top App Header matching screenshot */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100">
+      <header className="sticky top-0 z-30 bg-white/95 border-b border-slate-100">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
           {/* Right Brand + Tabs (حفلة / الخاص بي) */}
           <div className="flex items-center gap-3.5 sm:gap-5">
@@ -724,8 +824,6 @@ export const LobbyPage: React.FC = () => {
       </header>
 
       <div className="max-w-3xl mx-auto px-3.5 sm:px-4 pt-3 space-y-4">
-        <FemaleVoiceVerificationCard />
-
         {mainTab === 'party' && (
           <>
         {/* 4 Highlight Agency & Event Cards */}
@@ -739,11 +837,15 @@ export const LobbyPage: React.FC = () => {
               <img
                 src={resolveAsset('host_female')}
                 alt="مضيفة"
+                loading="lazy"
+                decoding="async"
                 className="w-7 h-7 rounded-full object-cover ring-2 ring-white"
               />
               <img
                 src={resolveAsset('host_male')}
                 alt="مضيف"
+                loading="lazy"
+                decoding="async"
                 className="w-7 h-7 rounded-full object-cover ring-2 ring-white"
               />
             </div>
@@ -949,88 +1051,15 @@ export const LobbyPage: React.FC = () => {
             filteredRooms.map((room) => {
               const { members, liveCount } = getRoomLiveInfo(room);
               return (
-                <article
+                <LobbyRoomCard
                   key={room.id}
-                  onClick={() => enterRoom(room)}
-                  className="light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer"
-                >
-                  {/* Agency Cover Image */}
-                  <div className="relative w-24 h-24 rounded-2xl overflow-hidden shrink-0 border border-slate-200 bg-slate-900">
-                    <img
-                      src={resolveAsset(room.coverImage || room.hostAvatar)}
-                      alt={room.title}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute top-1.5 right-1.5 rounded-md bg-slate-950/75 px-1.5 py-0.5 text-[10px] font-bold text-[#FCE9A6]">
-                      {room.category}
-                    </div>
-                    {room.hasPassword && (
-                      <div className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-slate-950/80 flex items-center justify-center text-amber-300">
-                        <Lock className="w-3 h-3" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Middle Info */}
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm">
-                        {ARAB_COUNTRIES.find((c) => c.code === userMeta[room.hostId]?.country)
-                          ?.flag || '🎙️'}
-                      </span>
-                      <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
-                        {room.title}
-                      </h3>
-                    </div>
-
-                    <p className="text-xs text-slate-500 truncate">{room.description}</p>
-
-                    <div className="flex items-center justify-between gap-2 pt-1">
-                      {/* Clickable Live Avatars inside Agency */}
-                      <div className="flex items-center -space-x-1.5 space-x-reverse">
-                        {members.slice(0, 4).map((m) => (
-                          <button
-                            key={m.userId}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openMiniProfile(m.userId, {
-                                displayName: m.displayName,
-                                avatarUrl: m.avatarUrl,
-                                frameId: m.frameId,
-                                level: m.level,
-                              });
-                            }}
-                            title={m.displayName}
-                            className="w-7 h-7 rounded-full overflow-hidden ring-2 ring-white hover:scale-110 transition cursor-pointer bg-slate-200"
-                          >
-                            <img
-                              src={resolveAsset(m.avatarUrl)}
-                              alt={m.displayName}
-                              referrerPolicy="no-referrer"
-                              className="w-full h-full object-cover"
-                            />
-                          </button>
-                        ))}
-                        {members.length === 0 && (
-                          <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                            <Mic className="w-3 h-3 text-emerald-500" />
-                            <span>متاحة للدخول</span>
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Real Live Online Count Badge */}
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-sky-500 text-white px-2.5 py-0.5 text-[11px] font-extrabold font-mono-num shadow-sm">
-                          <Headphones className="w-3 h-3" />
-                          <span>{liveCount}</span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </article>
+                  room={room}
+                  members={members}
+                  liveCount={liveCount}
+                  hostCountryCode={userMeta[room.hostId]?.country}
+                  onEnter={enterRoom}
+                  onOpenMiniProfile={openMiniProfile}
+                />
               );
             })
           )}
@@ -1084,6 +1113,8 @@ export const LobbyPage: React.FC = () => {
                       <img
                         src={resolveAsset(room.coverImage || room.hostAvatar)}
                         alt={room.title}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         className="w-20 h-20 rounded-2xl object-cover shrink-0 border border-emerald-200 bg-slate-900"
                       />
@@ -1134,6 +1165,8 @@ export const LobbyPage: React.FC = () => {
                       <img
                         src={resolveAsset(room.coverImage || room.hostAvatar)}
                         alt={room.title}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         className="w-20 h-20 rounded-2xl object-cover shrink-0 border border-slate-200 bg-slate-900"
                       />

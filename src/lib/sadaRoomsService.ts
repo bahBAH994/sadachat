@@ -14,9 +14,11 @@ import type {
 } from '../types';
 import {
   computeLevelFromXp,
+  findGiftById,
   genId,
+  getCachedGiftCatalog,
+  getUserVipTierInfo,
   getVipTierLabel,
-  GIFT_CATALOG,
   isFemaleVoiceLocked,
   makeEmptySeats,
   rollLuckyGiftMultiplier,
@@ -27,11 +29,15 @@ import {
   getPlatformState,
   purgeExpiredRewardsOnUser,
   recordTransaction,
+  ROOM_COLUMNS,
+  ROOM_MESSAGE_COLUMNS,
   rowToRoom,
   rowToRoomMessage,
   rowToUser,
   savePlatformState,
+  USER_COLUMNS,
 } from './sadaMappers';
+import { enrichUserWithVipTotals, invalidateUserVipCache } from './sadaVipService';
 import { supabase } from './supabase';
 
 export function createEmptyRoomExtras(): RoomExtrasConfig {
@@ -178,14 +184,15 @@ export async function listActiveRooms(): Promise<Room[]> {
   const [{ data: roomRows, error }, { data: msgRows }] = await Promise.all([
     supabase
       .from('sada_rooms')
-      .select('*')
+      .select(ROOM_COLUMNS)
       .eq('is_active', true)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(30),
     supabase
       .from('sada_room_messages')
-      .select('*')
-      .order('timestamp', { ascending: true })
-      .limit(200),
+      .select(ROOM_MESSAGE_COLUMNS)
+      .order('timestamp', { ascending: false })
+      .limit(50),
   ]);
 
   if (error) {
@@ -193,7 +200,7 @@ export async function listActiveRooms(): Promise<Room[]> {
   }
 
   const msgsByRoom = new Map<string, RoomMessage[]>();
-  for (const m of msgRows || []) {
+  for (const m of (msgRows || []).slice().reverse()) {
     const rid = String(m.room_id);
     const list = msgsByRoom.get(rid) || [];
     list.push(rowToRoomMessage(m));
@@ -203,7 +210,7 @@ export async function listActiveRooms(): Promise<Room[]> {
   return (roomRows || []).map((r) => {
     const { password: _pwd, ...sanitized } = rowToRoom(
       r,
-      (msgsByRoom.get(String(r.id)) || []).slice(-80)
+      (msgsByRoom.get(String(r.id)) || []).slice(-50)
     );
     return sanitized;
   });
@@ -320,13 +327,13 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
   extras: RoomExtrasConfig;
 }> {
   const [{ data: roomRow, error }, { data: msgRows }, state] = await Promise.all([
-    supabase.from('sada_rooms').select('*').eq('id', roomId).maybeSingle(),
+    supabase.from('sada_rooms').select(ROOM_COLUMNS).eq('id', roomId).maybeSingle(),
     supabase
       .from('sada_room_messages')
-      .select('*')
+      .select(ROOM_MESSAGE_COLUMNS)
       .eq('room_id', roomId)
-      .order('timestamp', { ascending: true })
-      .limit(80),
+      .order('timestamp', { ascending: false })
+      .limit(50),
     getPlatformState(),
   ]);
 
@@ -334,7 +341,7 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
     throw new Error('الغرفة الصوتية غير متاحة أو تم إغلاقها.');
   }
 
-  const messages = (msgRows || []).map(rowToRoomMessage);
+  const messages = (msgRows || []).slice().reverse().map(rowToRoomMessage);
   const { password: _pwd, ...sanitized } = rowToRoom(roomRow, messages);
   const rawExtras = state.settings.roomConfigs?.[roomId];
   const extras: RoomExtrasConfig = {
@@ -358,7 +365,7 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
 
   return {
     room: sanitized,
-    gifts: GIFT_CATALOG,
+    gifts: getCachedGiftCatalog(),
     wheelSegments: state.settings.roomWheelSegments,
     wheelCost: state.settings.roomWheelCost,
     extras,
@@ -372,7 +379,7 @@ export async function joinRoomInSupabase(
   await purgeExpiredRewardsOnUser(user);
 
   const [{ data: roomRow }, extras] = await Promise.all([
-    supabase.from('sada_rooms').select('*').eq('id', roomId).maybeSingle(),
+    supabase.from('sada_rooms').select('id, is_active, host_id, listeners_count').eq('id', roomId).maybeSingle(),
     getRoomExtrasFromSupabase(roomId),
   ]);
 
@@ -393,67 +400,133 @@ export async function joinRoomInSupabase(
     .eq('id', roomId);
 
   const nowJoinIso = new Date().toISOString();
-  const joinNoticeMsg: RoomMessage = {
-    id: genId('msg'),
-    userId: user.id,
-    displayName: user.displayName,
-    level: user.level,
-    isAdmin: user.is_admin,
-    vipTier: getVipTierLabel(user.level, user.is_admin),
-    hostBadge: user.hostBadge || null,
-    femaleVerifiedBadge: user.femaleVerifiedBadge || null,
-    text: `دخل الغرفة ${user.displayName}`,
-    type: 'system',
-    timestamp: nowJoinIso,
-  };
-  await supabase.from('sada_room_messages').insert({
-    id: joinNoticeMsg.id,
-    room_id: roomId,
-    user_id: joinNoticeMsg.userId,
-    display_name: joinNoticeMsg.displayName,
-    level: joinNoticeMsg.level,
-    is_admin: joinNoticeMsg.isAdmin,
-    vip_tier: joinNoticeMsg.vipTier || null,
-    host_badge: joinNoticeMsg.hostBadge || null,
-    female_verified_badge: joinNoticeMsg.femaleVerifiedBadge || null,
-    text: joinNoticeMsg.text,
-    type: joinNoticeMsg.type,
-    timestamp: joinNoticeMsg.timestamp,
-  });
+  const vipUser = await enrichUserWithVipTotals(user).catch(() => user);
+  const vipInfo = getUserVipTierInfo(vipUser);
+  const resolvedVipTag =
+    vipInfo.key !== 'none'
+      ? vipInfo.key
+      : getVipTierLabel(vipUser.level, vipUser.is_admin);
+
+  const hasValidStoreEntry = Boolean(
+    vipUser.activeEntryId &&
+      vipUser.tempEntryExpiresAt &&
+      Date.now() < new Date(vipUser.tempEntryExpiresAt).getTime()
+  );
+
+  // If user is VIP1/2/3/SVIP, emit styled VIP entry bar in chat; otherwise keep standard join notice
+  if (vipInfo.key === 'none') {
+    const joinNoticeMsg: RoomMessage = {
+      id: genId('msg'),
+      userId: vipUser.id,
+      displayName: vipUser.displayName,
+      level: vipUser.level,
+      isAdmin: vipUser.is_admin,
+      vipTier: resolvedVipTag,
+      hostBadge: vipUser.hostBadge || null,
+      femaleVerifiedBadge: vipUser.femaleVerifiedBadge || null,
+      text: `دخل الغرفة ${vipUser.displayName}`,
+      type: 'system',
+      timestamp: nowJoinIso,
+    };
+    await supabase.from('sada_room_messages').insert({
+      id: joinNoticeMsg.id,
+      room_id: roomId,
+      user_id: joinNoticeMsg.userId,
+      display_name: joinNoticeMsg.displayName,
+      level: joinNoticeMsg.level,
+      is_admin: joinNoticeMsg.isAdmin,
+      vip_tier: joinNoticeMsg.vipTier || null,
+      host_badge: joinNoticeMsg.hostBadge || null,
+      female_verified_badge: joinNoticeMsg.femaleVerifiedBadge || null,
+      text: joinNoticeMsg.text,
+      type: joinNoticeMsg.type,
+      timestamp: joinNoticeMsg.timestamp,
+    });
+  } else {
+    const vipChatText =
+      vipInfo.key === 'svip'
+        ? `👑 تشرف الغرفة بحضور الإمبراطور ${vipUser.displayName}!`
+        : vipInfo.key === 'vip3'
+        ? `👑✨ انضم الملك VIP 3 ${vipUser.displayName} بهالة ذهبية متوهجة إلى الغرفة!`
+        : vipInfo.key === 'vip2'
+        ? `🥈✨ دخل النجم الفضي VIP 2 ${vipUser.displayName} وسط ترحيب النجوم!`
+        : `🥉✨ انضم VIP 1 ${vipUser.displayName} إلى الغرفة`;
+
+    const vipEntryMsg: RoomMessage = {
+      id: genId('msg'),
+      userId: vipUser.id,
+      displayName: vipUser.displayName,
+      level: vipUser.level,
+      isAdmin: vipUser.is_admin,
+      vipTier: vipInfo.key,
+      hostBadge: vipUser.hostBadge || null,
+      femaleVerifiedBadge: vipUser.femaleVerifiedBadge || null,
+      text: vipChatText,
+      type: 'entry',
+      timestamp: nowJoinIso,
+    };
+    await supabase.from('sada_room_messages').insert({
+      id: vipEntryMsg.id,
+      room_id: roomId,
+      user_id: vipEntryMsg.userId,
+      display_name: vipEntryMsg.displayName,
+      level: vipEntryMsg.level,
+      is_admin: vipEntryMsg.isAdmin,
+      vip_tier: vipEntryMsg.vipTier || null,
+      host_badge: vipEntryMsg.hostBadge || null,
+      female_verified_badge: vipEntryMsg.femaleVerifiedBadge || null,
+      text: vipEntryMsg.text,
+      type: vipEntryMsg.type,
+      timestamp: vipEntryMsg.timestamp,
+    });
+  }
 
   let entryEvent: RoomEntryEvent | null = null;
-  if (
-    user.activeEntryId &&
-    user.tempEntryExpiresAt &&
-    Date.now() < new Date(user.tempEntryExpiresAt).getTime()
-  ) {
-    const nowIso = new Date().toISOString();
+  if (vipInfo.key === 'svip' || vipInfo.key === 'vip3' || vipInfo.key === 'vip2') {
     entryEvent = {
-      userId: user.id,
-      displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
-      frameId: user.frameId,
-      level: user.level,
-      entryId: user.activeEntryId,
-      entryName: user.activeEntryName || 'دخولية ملكية',
-      timestamp: nowIso,
+      userId: vipUser.id,
+      displayName: vipUser.displayName,
+      avatarUrl: vipUser.avatarUrl,
+      frameId: vipUser.frameId,
+      level: vipUser.level,
+      vipLevel: vipInfo.key,
+      entryId: hasValidStoreEntry ? vipUser.activeEntryId : null,
+      entryName:
+        vipInfo.key === 'svip'
+          ? `👑 تشرف الغرفة بحضور الإمبراطور ${vipUser.displayName}!`
+          : vipInfo.key === 'vip3'
+          ? `دخولية VIP 3 الذهبية الملكية`
+          : `دخولية VIP 2 الفضية السماوية`,
+      timestamp: nowJoinIso,
+    };
+  } else if (hasValidStoreEntry && vipUser.activeEntryId) {
+    entryEvent = {
+      userId: vipUser.id,
+      displayName: vipUser.displayName,
+      avatarUrl: vipUser.avatarUrl,
+      frameId: vipUser.frameId,
+      level: vipUser.level,
+      vipLevel: vipInfo.key,
+      entryId: vipUser.activeEntryId,
+      entryName: vipUser.activeEntryName || 'دخولية ملكية',
+      timestamp: nowJoinIso,
     };
 
     const entryChatMsg: RoomMessage = {
       id: genId('msg'),
-      userId: user.id,
-      displayName: user.displayName,
-      level: user.level,
-      isAdmin: user.is_admin,
-      vipTier: getVipTierLabel(user.level, user.is_admin),
-      hostBadge: user.hostBadge || null,
-      femaleVerifiedBadge: user.femaleVerifiedBadge || null,
+      userId: vipUser.id,
+      displayName: vipUser.displayName,
+      level: vipUser.level,
+      isAdmin: vipUser.is_admin,
+      vipTier: resolvedVipTag,
+      hostBadge: vipUser.hostBadge || null,
+      femaleVerifiedBadge: vipUser.femaleVerifiedBadge || null,
       text:
-        user.activeEntryId === 'entry_legendary_30d'
-          ? `🐉👑 الدخولية الأسطورية الملكية: شرّف ${user.displayName} الوكالة بحضوره الإمبراطوري!`
-          : `🚘✨ موكب السيارة الذهبية: وصل ${user.displayName} إلى الوكالة!`,
+        vipUser.activeEntryId === 'entry_legendary_30d'
+          ? `🐉👑 الدخولية الأسطورية الملكية: شرّف ${vipUser.displayName} الوكالة بحضوره الإمبراطوري!`
+          : `🚘✨ موكب السيارة الذهبية: وصل ${vipUser.displayName} إلى الوكالة!`,
       type: 'entry',
-      timestamp: nowIso,
+      timestamp: nowJoinIso,
     };
 
     await supabase.from('sada_room_messages').insert({
@@ -535,6 +608,7 @@ export async function updateRoomSeatInSupabase(
   if (action.type === 'take') {
     const target = nextSeats.find((s) => s.seatIndex === action.seatIndex);
     if (!target || target.isLocked || target.userId) return nextSeats;
+    const vipKey = getUserVipTierInfo(user).key;
     nextSeats = nextSeats.map((s) =>
       s.userId === user.id
         ? {
@@ -544,6 +618,7 @@ export async function updateRoomSeatInSupabase(
             avatarUrl: null,
             frameId: null,
             level: null,
+            vipLevel: null,
             isSpeaking: false,
             isMuted: false,
             femaleVerifiedBadge: null,
@@ -556,6 +631,7 @@ export async function updateRoomSeatInSupabase(
             avatarUrl: user.avatarUrl,
             frameId: user.frameId,
             level: user.level,
+            vipLevel: vipKey,
             isMuted: false,
             isSpeaking: false,
             femaleVerifiedBadge: user.femaleVerifiedBadge || null,
@@ -648,13 +724,20 @@ export async function sendRoomChatInSupabase(
   const cleanText = text.trim().slice(0, 300);
   if (!cleanText) throw new Error('الرسالة فارغة.');
 
+  const vipInfo = getUserVipTierInfo(user);
+  const resolvedVipTag =
+    vipInfo.key !== 'none' ? vipInfo.key : getVipTierLabel(user.level, user.is_admin);
+
   const chatMsg: RoomMessage = {
     id: genId('msg'),
     userId: user.id,
     displayName: user.displayName,
     level: user.level,
     isAdmin: user.is_admin,
-    vipTier: getVipTierLabel(user.level, user.is_admin),
+    vipTier: resolvedVipTag,
+    vipLevel: vipInfo.key,
+    avatarUrl: user.avatarUrl,
+    frameId: user.frameId,
     hostBadge: user.hostBadge || null,
     femaleVerifiedBadge: user.femaleVerifiedBadge || null,
     text: cleanText,
@@ -696,12 +779,12 @@ export async function sendRoomGiftInSupabase(
   luckyMultiplier: number | null;
   luckyBonusCoins: number;
 }> {
-  const gift = GIFT_CATALOG.find((g) => g.id === giftId);
+  const gift = findGiftById(giftId);
   if (!gift) throw new Error('الهدية غير متوفرة.');
 
   const { data: senderFreshRow } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', sender.id)
     .maybeSingle();
   const freshSender = senderFreshRow ? rowToUser(senderFreshRow) : { ...sender };
@@ -712,7 +795,7 @@ export async function sendRoomGiftInSupabase(
 
   const { data: roomRow } = await supabase
     .from('sada_rooms')
-    .select('*')
+    .select(ROOM_COLUMNS)
     .eq('id', roomId)
     .maybeSingle();
   if (!roomRow) throw new Error('الغرفة غير موجودة.');
@@ -720,7 +803,7 @@ export async function sendRoomGiftInSupabase(
   const recipientLookupId = targetUserId || String(roomRow.host_id);
   const { data: recRow } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', recipientLookupId)
     .maybeSingle();
   if (!recRow) throw new Error('المستلم غير موجود.');
@@ -879,9 +962,12 @@ export async function sendRoomGiftInSupabase(
     freshSender.diamonds = recipient.diamonds;
   }
 
+  invalidateUserVipCache(freshSender.id);
+  const enrichedSender = await enrichUserWithVipTotals(freshSender, true).catch(() => freshSender);
+
   const updated = await getRoomDetailsFromSupabase(roomId);
   return {
-    user: freshSender,
+    user: enrichedSender,
     room: updated.room,
     gift,
     luckyMultiplier,
@@ -907,14 +993,14 @@ export async function sendRoomGiftBatchInSupabase(
   luckyMultiplier: number | null;
   luckyBonusCoins: number;
 }> {
-  const gift = GIFT_CATALOG.find((g) => g.id === giftId);
+  const gift = findGiftById(giftId);
   if (!gift) throw new Error('الهدية غير متوفرة.');
 
   const safeQty = Math.max(1, Math.min(100, Math.round(quantity)));
 
   const [{ data: senderFreshRow }, { data: roomRow }, state] = await Promise.all([
-    supabase.from('sada_users').select('*').eq('id', sender.id).maybeSingle(),
-    supabase.from('sada_rooms').select('*').eq('id', roomId).maybeSingle(),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', sender.id).maybeSingle(),
+    supabase.from('sada_rooms').select(ROOM_COLUMNS).eq('id', roomId).maybeSingle(),
     getPlatformState(),
   ]);
 
@@ -936,7 +1022,7 @@ export async function sendRoomGiftBatchInSupabase(
 
   const { data: recRows } = await supabase
     .from('sada_users')
-    .select('*')
+    .select(USER_COLUMNS)
     .in('id', uniqueTargets);
 
   const recipients = (recRows || []).map(rowToUser);
@@ -1114,9 +1200,12 @@ export async function sendRoomGiftBatchInSupabase(
     }
   );
 
+  invalidateUserVipCache(freshSender.id);
+  const enrichedSender = await enrichUserWithVipTotals(freshSender, true).catch(() => freshSender);
+
   const updated = await getRoomDetailsFromSupabase(roomId);
   return {
-    user: freshSender,
+    user: enrichedSender,
     room: updated.room,
     extras: updated.extras,
     gift,
@@ -1133,8 +1222,8 @@ export async function spinRoomLuckyWheelInSupabase(
   user: User
 ): Promise<LuckyWheelResult> {
   const [{ data: senderRow }, { data: roomRow }, state] = await Promise.all([
-    supabase.from('sada_users').select('*').eq('id', user.id).maybeSingle(),
-    supabase.from('sada_rooms').select('*').eq('id', roomId).maybeSingle(),
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
+    supabase.from('sada_rooms').select(ROOM_COLUMNS).eq('id', roomId).maybeSingle(),
     getPlatformState(),
   ]);
 
@@ -1204,7 +1293,7 @@ export async function spinRoomLuckyWheelInSupabase(
     displayName: freshUser.displayName,
     level: freshUser.level,
     isAdmin: freshUser.is_admin,
-    text: `🎰 فاز ${freshUser.displayName} في دولاب الحظ بـ ${segment.glyph} ${segment.label}!`,
+    text: `🎉 مبروك لـ ${freshUser.displayName} الفوز بـ ${segment.label} من عجلة الحظ!`,
     type: 'wheel',
     timestamp: now,
   };
@@ -1260,7 +1349,7 @@ export async function updateRoomSettingsInSupabase(
   }
 ): Promise<Room> {
   const [{ data: roomRow }, extras] = await Promise.all([
-    supabase.from('sada_rooms').select('*').eq('id', roomId).maybeSingle(),
+    supabase.from('sada_rooms').select(ROOM_COLUMNS).eq('id', roomId).maybeSingle(),
     getRoomExtrasFromSupabase(roomId),
   ]);
   if (!roomRow) throw new Error('الغرفة غير موجودة.');
@@ -1353,7 +1442,7 @@ export async function adminControlRoomInSupabase(
     | { type: 'toggle_moderator'; targetUserId: string; targetName?: string }
 ): Promise<{ seats: Room['seats']; extras: RoomExtrasConfig }> {
   const [{ data: roomRow }, currentExtras] = await Promise.all([
-    supabase.from('sada_rooms').select('*').eq('id', roomId).maybeSingle(),
+    supabase.from('sada_rooms').select(ROOM_COLUMNS).eq('id', roomId).maybeSingle(),
     getRoomExtrasFromSupabase(roomId),
   ]);
   if (!roomRow) throw new Error('الغرفة غير موجودة.');

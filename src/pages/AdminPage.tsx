@@ -601,21 +601,22 @@ export const AdminPage: React.FC = () => {
     ) || [];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-[#FCE9A6]">
-            <ShieldCheck className="w-6 h-6 text-[#D4AF37]" />
-            <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
-              لوحة الإدارة العليا — صَدَى
-            </h1>
+    <div className="min-h-screen overflow-y-auto overscroll-y-contain pb-28">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-[#FCE9A6]">
+              <ShieldCheck className="w-6 h-6 text-[#D4AF37]" />
+              <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
+                لوحة الإدارة العليا — صَدَى
+              </h1>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-300 mt-1">
+              الإدارة الشاملة للـ USDT، الوكالات والمضيفين، بنك الأسئلة CSV/Excel، المخزون، واقتصاد المنصة
+            </p>
           </div>
-          <p className="text-xs sm:text-sm text-slate-300 mt-1">
-            الإدارة الشاملة للـ USDT، الوكالات والمضيفين، بنك الأسئلة CSV/Excel، المخزون، واقتصاد المنصة
-          </p>
-        </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          <div className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain touch-pan-x no-scrollbar pb-1 w-full lg:w-auto">
           {[
             { id: 'overview', label: 'النظرة والمخزون' },
             {
@@ -943,6 +944,8 @@ export const AdminPage: React.FC = () => {
                               <img
                                 src={dep.proofImage}
                                 alt="إثبات الحوالة"
+                                loading="lazy"
+                                decoding="async"
                                 className="w-14 h-14 object-cover"
                               />
                             </button>
@@ -1136,7 +1139,7 @@ export const AdminPage: React.FC = () => {
                     لا توجد وكالات مسجلة حالياً.
                   </p>
                 ) : (
-                  <div className="divide-y divide-[#D4AF37]/15">
+                  <div className="divide-y divide-[#D4AF37]/15 overflow-x-auto overscroll-x-contain">
                     {data.agencies.map((ag) => {
                       const status = ag.status || 'approved';
                       const pctDraft = agencyRateDrafts[ag.id] ?? String(Math.round((ag.commissionRate || 0) * 100));
@@ -2125,7 +2128,7 @@ export const AdminPage: React.FC = () => {
                 />
               </div>
 
-              <div className="divide-y divide-[#D4AF37]/15">
+              <div className="divide-y divide-[#D4AF37]/15 overflow-x-auto overscroll-x-contain">
                 {filteredUsers.map((u) => (
                   <div
                     key={u.id}
@@ -2385,6 +2388,8 @@ export const AdminPage: React.FC = () => {
             <img
               src={previewProof}
               alt="إثبات التحويل"
+              loading="lazy"
+              decoding="async"
               className="w-full max-h-[70vh] object-contain rounded-2xl bg-[#070913]"
             />
             <button
@@ -2397,6 +2402,7 @@ export const AdminPage: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

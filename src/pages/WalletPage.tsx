@@ -35,7 +35,6 @@ import type {
   UsdtWithdrawalRequest,
 } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
-import { FemaleVoiceVerificationCard } from '../components/FemaleVoiceVerificationCard';
 
 interface RewardTierInfo {
   id: string;
@@ -323,7 +322,7 @@ export const WalletPage: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6 overflow-y-auto overscroll-y-contain">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
@@ -334,7 +333,7 @@ export const WalletPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25 overflow-x-auto overscroll-x-contain touch-pan-x no-scrollbar">
           {[
             { id: 'deposit', label: 'إيداع USDT (TRC20)' },
             { id: 'withdraw', label: 'سحب الأرباح USDT' },
@@ -367,8 +366,6 @@ export const WalletPage: React.FC = () => {
           {feedback.text}
         </div>
       )}
-
-      <FemaleVoiceVerificationCard />
 
       {/* Active Temporary Visual Rewards Countdown */}
       {(activeFrameCountdown || activeEntryCountdown) && (
@@ -720,6 +717,8 @@ export const WalletPage: React.FC = () => {
                         <img
                           src={proofImage}
                           alt="صورة إثبات التحويل"
+                          loading="lazy"
+                          decoding="async"
                           className="w-16 h-16 rounded-xl object-cover border border-white/15 shrink-0"
                         />
                         <div className="min-w-0">

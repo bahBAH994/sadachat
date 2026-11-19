@@ -155,7 +155,7 @@ export const StorePage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28">
+    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
       <div className="max-w-4xl mx-auto px-4 pt-4 space-y-5">
         {/* Hero Store Header with Real Coins Balance */}
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#1B2542] to-[#0E3A2F] p-5 sm:p-6 text-white shadow-xl space-y-4">

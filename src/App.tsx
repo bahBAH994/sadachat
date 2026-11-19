@@ -236,7 +236,13 @@ const AuthenticatedAppShell: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col">
       {!isFullScreenRoom && <TopBar />}
-      <main className={isFullScreenRoom ? 'hidden' : 'flex-1'}>
+      <main
+        className={
+          isFullScreenRoom
+            ? 'hidden'
+            : 'flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain'
+        }
+      >
         <Routes>
           <Route path="/" element={<LobbyPage />} />
           <Route path="/meet" element={<MeetPage />} />
