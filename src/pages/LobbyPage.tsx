@@ -283,38 +283,41 @@ export const LobbyPage: React.FC = () => {
     }
   }, []);
 
-  const loadDirectory = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const [dir, platState, agenciesRes] = await Promise.all([
-        getDiscoveryDirectoryFromSupabase(user.id),
-        getPlatformState().catch(() => null),
-        supabase.from('sada_agencies').select('id, owner_id'),
-      ]);
-      setDirectoryUsers(dir.users);
-      setUserFollows(dir.userFollows);
-      setUserMeta(dir.userMeta || {});
-      setSeatedUserIds(dir.seatedUserIds);
-      if (platState?.settings?.userFollowedAgencies?.[user.id]) {
-        setFollowedAgencyRoomIds(platState.settings.userFollowedAgencies[user.id]);
-      } else {
-        setFollowedAgencyRoomIds([]);
+  const loadDirectory = useCallback(
+    async (forceRefresh = false) => {
+      if (!user?.id) return;
+      try {
+        const [dir, platState, agenciesRes] = await Promise.all([
+          getDiscoveryDirectoryFromSupabase(user.id),
+          getPlatformState({ forceRefresh }).catch(() => null),
+          supabase.from('sada_agencies').select('id, owner_id'),
+        ]);
+        setDirectoryUsers(dir.users);
+        setUserFollows(dir.userFollows);
+        setUserMeta(dir.userMeta || {});
+        setSeatedUserIds(dir.seatedUserIds);
+        if (platState?.settings?.userFollowedAgencies?.[user.id]) {
+          setFollowedAgencyRoomIds(platState.settings.userFollowedAgencies[user.id]);
+        } else {
+          setFollowedAgencyRoomIds([]);
+        }
+        setRoomConfigs(platState?.settings?.roomConfigs || {});
+        setPinnedRoomIds(
+          Array.isArray(platState?.settings?.pinnedRoomIds)
+            ? platState.settings.pinnedRoomIds
+            : []
+        );
+        const ownerLookup: Record<string, string> = {};
+        for (const ag of agenciesRes.data || []) {
+          ownerLookup[String(ag.id)] = String(ag.owner_id);
+        }
+        setAgencyOwnerMap(ownerLookup);
+      } catch {
+        // ignore transient error
       }
-      setRoomConfigs(platState?.settings?.roomConfigs || {});
-      setPinnedRoomIds(
-        Array.isArray(platState?.settings?.pinnedRoomIds)
-          ? platState.settings.pinnedRoomIds
-          : []
-      );
-      const ownerLookup: Record<string, string> = {};
-      for (const ag of agenciesRes.data || []) {
-        ownerLookup[String(ag.id)] = String(ag.owner_id);
-      }
-      setAgencyOwnerMap(ownerLookup);
-    } catch {
-      // ignore transient error
-    }
-  }, [user?.id]);
+    },
+    [user?.id]
+  );
 
   const loadPrivateConversations = useCallback(async () => {
     if (!user) return;
@@ -346,7 +349,7 @@ export const LobbyPage: React.FC = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sada_platform_state' },
         () => {
-          void loadDirectory();
+          void loadDirectory(true);
         }
       )
       .on(
