@@ -23,6 +23,7 @@ import {
   type CulturalQuestionItem,
   type QuizSessionRecord,
 } from './sadaCatalog';
+import { safeGetItem, safeSetItem } from './safeStorage';
 import { supabase } from './supabase';
 
 export const USER_COLUMNS =
@@ -469,44 +470,40 @@ function persistPlatformStateCache(doc: PlatformStateDoc) {
   cachedPlatformState = doc;
   cachedPlatformStateAt = Date.now();
   syncSettingsSideCaches(doc.settings);
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      window.localStorage.setItem(
-        PLATFORM_STATE_CACHE_KEY,
-        JSON.stringify({
-          appPrizePoolCoins: doc.appPrizePoolCoins,
-          settings: doc.settings,
-          cachedAt: cachedPlatformStateAt,
-        })
-      );
-    } catch {
-      // Ignore storage errors
-    }
+  try {
+    safeSetItem(
+      PLATFORM_STATE_CACHE_KEY,
+      JSON.stringify({
+        appPrizePoolCoins: doc.appPrizePoolCoins,
+        settings: doc.settings,
+        cachedAt: cachedPlatformStateAt,
+      })
+    );
+  } catch {
+    // Ignore storage errors
   }
 }
 
 export function getCachedPlatformSettingsSync(): PlatformSettings {
   if (cachedPlatformState?.settings) return cachedPlatformState.settings;
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      const raw = window.localStorage.getItem(PLATFORM_STATE_CACHE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { settings?: Partial<PlatformSettings> };
-        if (parsed?.settings) {
-          const normalized = normalizePlatformState(
-            INITIAL_APP_PRIZE_POOL_COINS,
-            parsed.settings,
-            {},
-            {},
-            {}
-          ).settings;
-          syncSettingsSideCaches(normalized);
-          return normalized;
-        }
+  try {
+    const raw = safeGetItem(PLATFORM_STATE_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { settings?: Partial<PlatformSettings> };
+      if (parsed?.settings) {
+        const normalized = normalizePlatformState(
+          INITIAL_APP_PRIZE_POOL_COINS,
+          parsed.settings,
+          {},
+          {},
+          {}
+        ).settings;
+        syncSettingsSideCaches(normalized);
+        return normalized;
       }
-    } catch {
-      // Ignore parse errors
     }
+  } catch {
+    // Ignore parse errors
   }
   return createDefaultPlatformSettings();
 }

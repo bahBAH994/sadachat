@@ -12,6 +12,7 @@ import type {
   User,
   VipTierKey,
 } from '../types';
+import { safeGetItem, safeSetItem } from './safeStorage';
 
 export const SUPER_ADMIN_EMAIL = 'bahaa.f36@gmail.com';
 
@@ -611,18 +612,16 @@ export const GIFT_CATALOG: GiftItem[] = [
 function hydrateCustomGiftsFromStorage(): GiftItem[] {
   if (customGiftsLoadedFromStorage) return customGiftsCatalog;
   customGiftsLoadedFromStorage = true;
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      const raw = window.localStorage.getItem(CUSTOM_GIFTS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as GiftItem[];
-        if (Array.isArray(parsed)) {
-          customGiftsCatalog = parsed;
-        }
+  try {
+    const raw = safeGetItem(CUSTOM_GIFTS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as GiftItem[];
+      if (Array.isArray(parsed)) {
+        customGiftsCatalog = parsed;
       }
-    } catch {
-      // ignore storage errors
     }
+  } catch {
+    // ignore storage errors
   }
   return customGiftsCatalog;
 }
@@ -633,12 +632,10 @@ export function setCustomGiftsCatalog(gifts: GiftItem[] | undefined | null): voi
   customGiftsLoadedFromStorage = true;
   cachedGiftCatalog = null;
   cachedGiftMap = null;
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      window.localStorage.setItem(CUSTOM_GIFTS_STORAGE_KEY, JSON.stringify(safe));
-    } catch {
-      // ignore storage quota errors
-    }
+  try {
+    safeSetItem(CUSTOM_GIFTS_STORAGE_KEY, JSON.stringify(safe));
+  } catch {
+    // ignore storage quota errors
   }
 }
 
@@ -646,9 +643,9 @@ export function getCachedGiftCatalog(): GiftItem[] {
   if (cachedGiftCatalog) return cachedGiftCatalog;
 
   const customList = hydrateCustomGiftsFromStorage();
-  if (customList.length === 0 && typeof window !== 'undefined' && window.localStorage) {
+  if (customList.length === 0) {
     try {
-      window.localStorage.setItem(GIFT_CATALOG_STORAGE_KEY, JSON.stringify(GIFT_CATALOG));
+      safeSetItem(GIFT_CATALOG_STORAGE_KEY, JSON.stringify(GIFT_CATALOG));
     } catch {
       // Ignore storage quota / privacy mode errors
     }

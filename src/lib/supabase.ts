@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { safeAuthStorage } from './safeStorage';
 
 const FALLBACK_URL = 'https://jqtkfkxaxbqrzvjesurl.supabase.co';
 const FALLBACK_KEY = 'sb_publishable_DFJDqTCtS-kZVm-BX-eTrg_gxKsdx9o';
@@ -19,6 +20,7 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY,
     autoRefreshToken: true,
     detectSessionInUrl: true,
     storageKey: 'sada_supabase_auth_v1',
+    storage: safeAuthStorage,
   },
   realtime: {
     params: {

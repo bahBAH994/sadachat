@@ -131,6 +131,8 @@ export const AdminPage: React.FC = () => {
   const [voiceFilter, setVoiceFilter] = useState<'pending' | 'all'>('pending');
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [previewProof, setPreviewProof] = useState<string | null>(null);
+  const adminScrollRef = useRef<HTMLDivElement | null>(null);
+  const navScrollRef = useRef<HTMLElement | null>(null);
 
   // Prize pool editor
   const [poolInput, setPoolInput] = useState('100000');
@@ -740,8 +742,57 @@ export const AdminPage: React.FC = () => {
     { id: 'devices', label: 'حماية UUID' },
   ];
 
+  const handleAdminKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    const tag = target?.tagName?.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) {
+      return;
+    }
+
+    const stepY = 120;
+    const stepX = 120;
+    const scroller = adminScrollRef.current;
+
+    if (e.key === 'ArrowDown' || e.key === 'PageDown') {
+      const amount = e.key === 'PageDown' ? 380 : stepY;
+      if (scroller && scroller.scrollHeight > scroller.clientHeight) {
+        scroller.scrollBy({ top: amount, behavior: 'smooth' });
+      }
+      window.scrollBy({ top: amount, behavior: 'smooth' });
+      e.preventDefault();
+    } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+      const amount = e.key === 'PageUp' ? -380 : -stepY;
+      if (scroller && scroller.scrollHeight > scroller.clientHeight) {
+        scroller.scrollBy({ top: amount, behavior: 'smooth' });
+      }
+      window.scrollBy({ top: amount, behavior: 'smooth' });
+      e.preventDefault();
+    } else if (e.key === 'ArrowRight') {
+      if (scroller && scroller.scrollWidth > scroller.clientWidth) {
+        scroller.scrollBy({ left: stepX, behavior: 'smooth' });
+      } else if (navScrollRef.current) {
+        navScrollRef.current.scrollBy({ left: stepX, behavior: 'smooth' });
+      }
+      window.scrollBy({ left: stepX, behavior: 'smooth' });
+      e.preventDefault();
+    } else if (e.key === 'ArrowLeft') {
+      if (scroller && scroller.scrollWidth > scroller.clientWidth) {
+        scroller.scrollBy({ left: -stepX, behavior: 'smooth' });
+      } else if (navScrollRef.current) {
+        navScrollRef.current.scrollBy({ left: -stepX, behavior: 'smooth' });
+      }
+      window.scrollBy({ left: -stepX, behavior: 'smooth' });
+      e.preventDefault();
+    }
+  };
+
   return (
-    <div className="min-h-screen overflow-y-auto overscroll-y-contain pb-24">
+    <div
+      ref={adminScrollRef}
+      tabIndex={0}
+      onKeyDown={handleAdminKeyDown}
+      className="w-full min-h-screen overflow-y-auto overflow-x-auto overscroll-contain scroll-smooth pb-32 focus:outline-none"
+    >
       {/* Top Sticky Responsive Header & Organized Tabs */}
       <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-[#070913]/92 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 space-y-3">
@@ -769,10 +820,12 @@ export const AdminPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Horizontal Touch-Scrollable Top Tabs */}
+          {/* Horizontal Touch & Keyboard Scrollable Top Tabs */}
           <nav
+            ref={navScrollRef}
+            tabIndex={0}
             aria-label="أقسام لوحة الإدارة"
-            className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain touch-pan-x no-scrollbar pb-0.5"
+            className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain touch-pan-x scroll-smooth pb-1 focus:outline-none"
           >
             {tabs.map((t) => {
               const active = tab === t.id;

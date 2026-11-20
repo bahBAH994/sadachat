@@ -1,12 +1,11 @@
 import confetti from 'canvas-confetti';
+import { safeGetItem, safeSetItem } from './safeStorage';
 
 const EFFECTS_MUTED_STORAGE_KEY = 'sada_effects_muted';
 
 let sharedAudioCtx: AudioContext | null = null;
 let audioMuted = false;
-let effectsMuted =
-  typeof window !== 'undefined' &&
-  window.localStorage?.getItem(EFFECTS_MUTED_STORAGE_KEY) === '1';
+let effectsMuted = safeGetItem(EFFECTS_MUTED_STORAGE_KEY) === '1';
 
 export function isAudioMuted(): boolean {
   return audioMuted;
@@ -26,13 +25,7 @@ export function getEffectsMutedSetting(): boolean {
 
 export function setEffectsMuted(muted: boolean): void {
   effectsMuted = muted;
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      window.localStorage.setItem(EFFECTS_MUTED_STORAGE_KEY, muted ? '1' : '0');
-    } catch {
-      // ignore storage failure
-    }
-  }
+  safeSetItem(EFFECTS_MUTED_STORAGE_KEY, muted ? '1' : '0');
 }
 
 function getAudioContext(): AudioContext | null {

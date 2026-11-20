@@ -16,6 +16,7 @@ import {
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ActiveRoomProvider, useActiveRoom } from './context/ActiveRoomContext';
 import { MiniProfileProvider } from './context/MiniProfileContext';
+import { safeClearKeysMatching, safeClearSessionStorage } from './lib/safeStorage';
 import { isSuperAdminUser } from './lib/sadaCatalog';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
@@ -73,28 +74,15 @@ class AppErrorBoundary extends Component<
             <button
               type="button"
               onClick={() => {
-                try {
-                  const keysToRemove: string[] = [];
-                  for (let i = 0; i < window.localStorage.length; i += 1) {
-                    const key = window.localStorage.key(i);
-                    if (
-                      key &&
-                      (key.toLowerCase().includes('room') ||
-                        key.toLowerCase().includes('sada_active') ||
-                        key.toLowerCase().includes('agency'))
-                    ) {
-                      keysToRemove.push(key);
-                    }
-                  }
-                  keysToRemove.forEach((k) => window.localStorage.removeItem(k));
-                } catch {
-                  // ignore storage cleanup errors
-                }
-                try {
-                  window.sessionStorage.clear();
-                } catch {
-                  // ignore sessionStorage cleanup errors
-                }
+                safeClearKeysMatching((key) => {
+                  const lower = key.toLowerCase();
+                  return (
+                    lower.includes('room') ||
+                    lower.includes('sada_active') ||
+                    lower.includes('agency')
+                  );
+                });
+                safeClearSessionStorage();
                 try {
                   if ('serviceWorker' in navigator) {
                     void navigator.serviceWorker
@@ -235,13 +223,14 @@ const AuthenticatedAppShell: React.FC = () => {
   const shouldKeepRoomMounted = Boolean(activeRoomId || room || roomLoading);
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="w-full min-h-screen flex flex-col overflow-x-auto">
       {!isFullScreenRoom && <TopBar />}
       <main
+        tabIndex={0}
         className={
           isFullScreenRoom
             ? 'hidden'
-            : 'flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain'
+            : 'flex-1 min-h-0 w-full overflow-y-auto overflow-x-auto overscroll-contain scroll-smooth focus:outline-none'
         }
       >
         <Routes>

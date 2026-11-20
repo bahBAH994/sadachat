@@ -97,6 +97,11 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      target: ['es2015', 'chrome64', 'safari12'],
+      cssTarget: ['chrome64', 'safari12'],
+      sourcemap: false,
+    },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
