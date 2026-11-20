@@ -500,12 +500,6 @@ export const InRoomSlot5x3Player: React.FC<InRoomSlot5x3PlayerProps> = ({
                   background: 'linear-gradient(to top, rgba(0,0,0,0.72), transparent)',
                 }}
               />
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-3.5 z-10"
-              style={{
-                background: 'linear-gradient(to top, rgba(0,0,0,0.72), transparent)',
-              }}
-            />
 
             <div className="grid grid-cols-5 gap-1">
               {[0, 1, 2, 3, 4].map((cIdx) => {

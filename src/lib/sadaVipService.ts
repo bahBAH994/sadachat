@@ -166,7 +166,10 @@ export async function enrichUserWithVipTotals(
   user: User,
   forceRefresh = false
 ): Promise<User> {
-  const totals = await fetchUserVipTotals(user.id, forceRefresh);
+  const [totals] = await Promise.all([
+    fetchUserVipTotals(user.id, forceRefresh),
+    import('./sadaMappers').then((m) => m.getPlatformState().catch(() => null)),
+  ]);
   const merged: User = {
     ...user,
     totalRecharged: Math.max(user.totalRecharged || 0, totals.totalRechargedCoins),

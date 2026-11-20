@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
-import { formatShortNumericId } from '../lib/sadaCatalog';
+import { formatShortNumericId, getUserVipTierInfo } from '../lib/sadaCatalog';
 import {
   applyAsAgencyInSupabase,
   getAgencyOverviewFromSupabase,
@@ -38,7 +38,7 @@ import type {
   Transaction,
   User,
 } from '../types';
-import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import { AvatarWithFrame, VipTierBadge } from '../components/AvatarWithFrame';
 
 interface AgencyOverviewResponse {
   user: User;
@@ -450,6 +450,7 @@ export const AgencyPage: React.FC = () => {
                           src={app.avatarUrl}
                           alt={app.displayName}
                           frameId={app.frameId}
+                          vipTier={getUserVipTierInfo(app as Partial<User>).key}
                           size="sm"
                         />
                         <div className="min-w-0">
@@ -500,6 +501,7 @@ export const AgencyPage: React.FC = () => {
                             src={host.avatarUrl}
                             alt={host.displayName}
                             frameId={host.frameId}
+                            vipTier={getUserVipTierInfo(host as Partial<User>).key}
                             size="sm"
                             onClick={() => openMiniProfile(host.id, host)}
                           />
@@ -512,6 +514,7 @@ export const AgencyPage: React.FC = () => {
                               >
                                 {host.displayName}
                               </button>
+                              <VipTierBadge vipTier={getUserVipTierInfo(host as Partial<User>).key} compact />
                               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
                                 <BadgeCheck className="w-3 h-3" />
                                 {host.hostBadge}

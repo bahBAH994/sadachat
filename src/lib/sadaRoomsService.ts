@@ -844,13 +844,20 @@ export async function sendRoomGiftInSupabase(
   );
   const nextTotalGifts = Number(roomRow.total_gifts_coins || 0) + gift.coinsCost;
 
+  const senderVipInfo = getUserVipTierInfo(freshSender);
+  const senderVipTag =
+    senderVipInfo.key !== 'none'
+      ? senderVipInfo.key
+      : getVipTierLabel(freshSender.level, freshSender.is_admin);
+
   const giftMessage: RoomMessage = {
     id: genId('msg'),
     userId: freshSender.id,
     displayName: freshSender.displayName,
     level: freshSender.level,
     isAdmin: freshSender.is_admin,
-    vipTier: getVipTierLabel(freshSender.level, freshSender.is_admin),
+    vipTier: senderVipTag,
+    vipLevel: senderVipInfo.key,
     femaleVerifiedBadge: freshSender.femaleVerifiedBadge || null,
     text:
       gift.category === 'lucky' && luckyMultiplier
@@ -941,6 +948,7 @@ export async function sendRoomGiftInSupabase(
           displayName: freshSender.displayName,
           avatarUrl: freshSender.avatarUrl,
           frameId: freshSender.frameId,
+          vipLevel: senderVipInfo.key,
           totalCoins: (prevGifter?.totalCoins || 0) + gift.coinsCost,
         },
       };
@@ -1070,13 +1078,20 @@ export async function sendRoomGiftBatchInSupabase(
   const qtyBadge = safeQty > 1 ? ` ×${safeQty}` : '';
   const comboBadge = comboCount > 1 ? ` 🔥 Combo x${comboCount}` : '';
 
+  const batchSenderVipInfo = getUserVipTierInfo(freshSender);
+  const batchSenderVipTag =
+    batchSenderVipInfo.key !== 'none'
+      ? batchSenderVipInfo.key
+      : getVipTierLabel(freshSender.level, freshSender.is_admin);
+
   const giftMessage: RoomMessage = {
     id: genId('msg'),
     userId: freshSender.id,
     displayName: freshSender.displayName,
     level: freshSender.level,
     isAdmin: freshSender.is_admin,
-    vipTier: getVipTierLabel(freshSender.level, freshSender.is_admin),
+    vipTier: batchSenderVipTag,
+    vipLevel: batchSenderVipInfo.key,
     femaleVerifiedBadge: freshSender.femaleVerifiedBadge || null,
     text:
       gift.category === 'lucky' && luckyMultiplier
@@ -1183,6 +1198,7 @@ export async function sendRoomGiftBatchInSupabase(
           displayName: freshSender.displayName,
           avatarUrl: freshSender.avatarUrl,
           frameId: freshSender.frameId,
+          vipLevel: batchSenderVipInfo.key,
           totalCoins: (prevGifter?.totalCoins || 0) + totalCost,
         },
       };

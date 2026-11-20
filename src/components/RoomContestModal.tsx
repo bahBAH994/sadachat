@@ -360,6 +360,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                           src={entry.avatarUrl}
                           alt={entry.displayName}
                           frameId={entry.frameId}
+                          vipTier={entry.vipLevel || 'none'}
                           size="sm"
                         />
                         <div className="min-w-0">

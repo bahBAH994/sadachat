@@ -20,6 +20,7 @@ import { isSuperAdminUser } from './lib/sadaCatalog';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
 import { FloatingMinimizedRoom } from './components/FloatingMinimizedRoom';
+import { GlobalRoyalGiftTicker } from './components/GlobalRoyalGiftTicker';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { UserMiniProfileModal } from './components/UserMiniProfileModal';
 import { LoginPage } from './pages/LoginPage';
@@ -275,6 +276,7 @@ const AuthenticatedAppShell: React.FC = () => {
           <RoomPage />
         </div>
       )}
+      <GlobalRoyalGiftTicker />
       <FloatingMinimizedRoom />
       <UserMiniProfileModal />
     </div>

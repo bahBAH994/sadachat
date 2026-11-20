@@ -996,22 +996,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   <p className="text-xs sm:text-sm text-slate-300">
                     ماكينات السلوت الثلاثية الأبعاد + طاولة النرد 3D + الروليت الملكية وصناديق الحظ
                   </p>
-                    </div>
-                    <SlotMarqueePerimeter
-                      spinning={isSpinning}
-                      winning={Boolean(lastResult && !isSpinning && lastResult.payout > 0)}
-                      count={compactRoomMode ? 12 : 18}
-                    />
-                  </div>
                 </div>
-
-                {/* Interactive Pullable 3D Slot Lever */}
-                <SlotMachine3DLever
-                  compact={compactRoomMode}
-                  spinning={isSpinning}
-                  disabled={user.coins < bet || user.coins <= 0}
-                  onPull={() => void handleSpin()}
-                />
               </div>
             </div>
 
@@ -1371,7 +1356,22 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                       </div>
                     );
                   })}
+                    </div>
+                    <SlotMarqueePerimeter
+                      spinning={isSpinning}
+                      winning={Boolean(lastResult && !isSpinning && lastResult.payout > 0)}
+                      count={compactRoomMode ? 12 : 18}
+                    />
+                  </div>
                 </div>
+
+                {/* Interactive Pullable 3D Slot Lever */}
+                <SlotMachine3DLever
+                  compact={compactRoomMode}
+                  spinning={isSpinning}
+                  disabled={user.coins < bet || user.coins <= 0}
+                  onPull={() => void handleSpin()}
+                />
               </div>
 
               {lastResult && !isSpinning && (

@@ -985,12 +985,16 @@ export const ProfilePage: React.FC = () => {
                         src={person.avatarUrl}
                         alt={person.displayName}
                         frameId={person.frameId}
+                        vipTier={getUserVipTierInfo(person).key}
                         size="sm"
                       />
                       <div className="min-w-0">
-                        <p className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
-                          {person.displayName}
-                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
+                            <VipUserName name={person.displayName} vipTier={getUserVipTierInfo(person).key} />
+                          </p>
+                          <VipTierBadge vipTier={getUserVipTierInfo(person).key} compact />
+                        </div>
                         <p className="text-[10px] text-slate-500 font-mono-num">
                           ID: {formatShortNumericId(person.id)} · Lv.{person.level}
                         </p>

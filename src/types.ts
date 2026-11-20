@@ -65,6 +65,28 @@ export interface RoomEntryEvent {
   timestamp: string;
 }
 
+export interface GlobalRoyalGiftAnnouncement {
+  id: string;
+  senderId: string;
+  senderName: string;
+  giftName: string;
+  giftGlyph: string;
+  giftImageUrl?: string;
+  recipientName: string;
+  roomId: string;
+  roomTitle: string;
+  totalCoins: number;
+  timestamp: string;
+}
+
+export interface GlobalAdminAnnouncement {
+  id: string;
+  title?: string;
+  message: string;
+  senderName: string;
+  timestamp: string;
+}
+
 export interface RoomSeat {
   seatIndex: number;
   userId: string | null;
@@ -131,6 +153,7 @@ export interface RoomGifterEntry {
   displayName: string;
   avatarUrl: string;
   frameId?: string;
+  vipLevel?: VipTierKey;
   totalCoins: number;
 }
 
@@ -169,6 +192,7 @@ export interface RoomContestEntry {
   displayName: string;
   avatarUrl: string;
   frameId?: string;
+  vipLevel?: VipTierKey;
   votes: number;
   note?: string;
   joinedAt: string;
@@ -289,6 +313,7 @@ export interface GiftItem {
   tier: 'classic' | 'royal' | 'imperial';
   category?: 'fixed' | 'lucky' | 'royal';
   glyph: string;
+  imageUrl?: string;
 }
 
 export interface PrivateMessage {
@@ -314,6 +339,10 @@ export interface PrivateConversationPeer {
   avatarUrl: string;
   frameId: string;
   level: number;
+  vipLevel?: VipTierKey;
+  coins?: number;
+  totalRecharged?: number;
+  totalSpentCoins?: number;
   gender?: 'female' | 'male';
   age?: number;
   country?: string;
@@ -447,6 +476,10 @@ export interface PlatformSettings {
   userHostTasks?: Record<string, HostTaskProgress>;
   userGiftStats?: Record<string, UserGiftStats>;
   hostJoinApplications?: HostJoinApplication[];
+  pinnedRoomIds?: string[];
+  customGifts?: GiftItem[];
+  userVipOverrides?: Record<string, VipTierKey>;
+  latestAdminAnnouncement?: GlobalAdminAnnouncement | null;
   globalZeroResetV1Applied?: boolean;
 }
 

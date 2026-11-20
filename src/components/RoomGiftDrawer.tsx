@@ -97,10 +97,11 @@ const GiftGridItem = memo<GiftGridItemProps>(({ gift, active, onSelect }) => {
         >
           <Fluent3DAsset
             glyph={gift.glyph}
+            imageUrl={gift.imageUrl}
             alt={gift.name}
             sizeClass="w-12 h-12"
             fallbackTextClass="text-3xl"
-            priority={isFeatured}
+            priority={isFeatured || Boolean(gift.imageUrl)}
           />
         </div>
       </div>
@@ -594,6 +595,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
                 {canAfford && !sending && (
                   <Fluent3DAsset
                     glyph={selectedGift.glyph}
+                    imageUrl={selectedGift.imageUrl}
                     alt={selectedGift.name}
                     sizeClass="w-5 h-5"
                     priority

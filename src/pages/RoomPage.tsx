@@ -230,6 +230,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
                   />
                   <Fluent3DAsset
                     glyph={seatGiftReaction.gift.glyph}
+                    imageUrl={seatGiftReaction.gift.imageUrl}
                     alt={seatGiftReaction.gift.name}
                     priority
                     sizeClass="w-10 h-10 sm:w-11 sm:h-11"
@@ -1092,6 +1093,9 @@ export const RoomPage: React.FC = () => {
                     ? 'bg-slate-200 text-slate-900'
                     : 'bg-amber-700 text-amber-100';
 
+                const gifterVip = gifter
+                  ? userProfileLookup.get(gifter.userId)?.vipLevel || gifter.vipLevel || 'none'
+                  : 'none';
                 return (
                   <button
                     key={rankIdx}
@@ -1102,6 +1106,7 @@ export const RoomPage: React.FC = () => {
                           displayName: gifter.displayName,
                           avatarUrl: gifter.avatarUrl,
                           frameId: gifter.frameId,
+                          vipLevel: gifterVip,
                         });
                       } else {
                         setLeaderboardModalTab('leaderboard');
@@ -1117,28 +1122,27 @@ export const RoomPage: React.FC = () => {
                   >
                     {/* Explicit Rank Number 1, 2, 3 */}
                     <span
-                      className={`absolute -top-1 -right-1 z-10 w-3.5 h-3.5 rounded-full text-[8px] font-mono-num font-black flex items-center justify-center shadow ${badgeBg}`}
+                      className={`absolute -top-1 -right-1 z-20 w-3.5 h-3.5 rounded-full text-[8px] font-mono-num font-black flex items-center justify-center shadow ${badgeBg}`}
                     >
                       {rankIdx + 1}
                     </span>
-                    <div
-                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden border-2 bg-black/50 flex items-center justify-center ${rankBorder}`}
-                    >
-                      {gifter ? (
-                        <img
-                          src={resolveAsset(gifter.avatarUrl)}
-                          alt={gifter.displayName}
-                          loading="lazy"
-                          decoding="async"
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
+                    {gifter ? (
+                      <AvatarWithFrame
+                        src={gifter.avatarUrl}
+                        alt={gifter.displayName}
+                        frameId={gifter.frameId}
+                        vipTier={gifterVip}
+                        size="xs"
+                      />
+                    ) : (
+                      <div
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden border-2 bg-black/50 flex items-center justify-center ${rankBorder}`}
+                      >
                         <Crown className="w-3.5 h-3.5 text-[#D4AF37]/60" />
-                      )}
-                    </div>
+                      </div>
+                    )}
                     <span
-                      className={`-mt-1.5 px-1 rounded-full text-[8px] font-mono-num font-extrabold leading-tight shadow ${badgeBg}`}
+                      className={`-mt-1.5 relative z-10 px-1 rounded-full text-[8px] font-mono-num font-extrabold leading-tight shadow ${badgeBg}`}
                     >
                       {gifter ? formatCompactMetric(gifter.totalCoins, true) : '0'}
                     </span>
@@ -1370,6 +1374,7 @@ export const RoomPage: React.FC = () => {
               <div className="flex items-center gap-2.5 min-w-0">
                 <Fluent3DAsset
                   glyph={giftBanner.gift.glyph}
+                  imageUrl={giftBanner.gift.imageUrl}
                   alt={giftBanner.gift.name}
                   priority
                   sizeClass="w-8 h-8"
@@ -1879,23 +1884,38 @@ export const RoomPage: React.FC = () => {
               className="royal-glass w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <AvatarWithFrame
-                    src={seatActionTarget.avatarUrl}
-                    alt={seatActionTarget.displayName || 'متحدث'}
-                    frameId={seatActionTarget.frameId}
-                    size="md"
-                  />
-                  <div>
-                    <h4 className="text-sm font-extrabold text-white">
-                      {seatActionTarget.displayName}
-                    </h4>
-                    <p className="text-[11px] text-[#FCE9A6] font-mono-num">
-                      مايك {seatActionTarget.seatIndex + 1} · 💎{' '}
-                      {(seatActionTarget.receivedDiamonds || 0).toLocaleString('en-US')}
-                    </p>
-                  </div>
-                </div>
+                {(() => {
+                  const targetVip =
+                    seatActionTarget.vipLevel ||
+                    userProfileLookup.get(seatActionTarget.userId!)?.vipLevel ||
+                    'none';
+                  return (
+                    <div className="flex items-center gap-3">
+                      <AvatarWithFrame
+                        src={seatActionTarget.avatarUrl}
+                        alt={seatActionTarget.displayName || 'متحدث'}
+                        frameId={seatActionTarget.frameId}
+                        vipTier={targetVip}
+                        size="md"
+                      />
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="text-sm font-extrabold text-white">
+                            <VipUserName
+                              name={seatActionTarget.displayName || 'متحدث'}
+                              vipTier={targetVip}
+                            />
+                          </h4>
+                          <VipTierBadge vipTier={targetVip} compact />
+                        </div>
+                        <p className="text-[11px] text-[#FCE9A6] font-mono-num">
+                          مايك {seatActionTarget.seatIndex + 1} · 💎{' '}
+                          {(seatActionTarget.receivedDiamonds || 0).toLocaleString('en-US')}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <button
                   type="button"
                   onClick={() => setSeatActionTarget(null)}
@@ -2288,7 +2308,7 @@ export const RoomPage: React.FC = () => {
                   ) : (
                     supportAndPlayLeaderboard.map((entry, idx) => {
                       const entryInfo = userProfileLookup.get(entry.userId);
-                      const entryVip = entryInfo?.vipLevel || 'none';
+                      const entryVip = entryInfo?.vipLevel || entry.vipLevel || 'none';
                       return (
                         <div
                           key={entry.userId}

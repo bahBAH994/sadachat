@@ -381,10 +381,48 @@ export function getVipTierFromScore(score: number): VipTierInfo {
   };
 }
 
+let cachedUserVipOverrides: Record<string, VipTierKey> = {};
+
+export function setUserVipOverridesCache(map: Record<string, VipTierKey> | undefined | null): void {
+  cachedUserVipOverrides = map && typeof map === 'object' ? { ...map } : {};
+}
+
+export function getUserVipOverridesCache(): Record<string, VipTierKey> {
+  return cachedUserVipOverrides;
+}
+
 export function getUserVipTierInfo(
-  user?: Partial<Pick<User, 'coins' | 'totalRecharged' | 'totalSpentCoins' | 'vipLevel'>> | null
+  user?: Partial<Pick<User, 'id' | 'coins' | 'totalRecharged' | 'totalSpentCoins' | 'vipLevel'>> | null
 ): VipTierInfo {
   if (!user) return getVipTierFromScore(0);
+
+  if (user.id && Object.prototype.hasOwnProperty.call(cachedUserVipOverrides, user.id)) {
+    const overrideKey = cachedUserVipOverrides[user.id];
+    if (overrideKey === 'none') {
+      const nextTier = VIP_TIER_CONFIGS[1];
+      return {
+        ...VIP_TIER_CONFIGS[0],
+        score: getUserVipScore(user),
+        nextTier,
+        progressPct: 0,
+        coinsToNext: nextTier.minScore,
+      };
+    }
+    const overrideCfg = getVipTierConfig(overrideKey);
+    const nextTier =
+      overrideCfg.rank < VIP_TIER_CONFIGS.length - 1
+        ? VIP_TIER_CONFIGS[overrideCfg.rank + 1]
+        : null;
+    const score = Math.max(getUserVipScore(user), overrideCfg.minScore);
+    return {
+      ...overrideCfg,
+      score,
+      nextTier,
+      progressPct: overrideKey === 'svip' ? 100 : 50,
+      coinsToNext: nextTier ? Math.max(0, nextTier.minScore - score) : 0,
+    };
+  }
+
   const fromScore = getVipTierFromScore(getUserVipScore(user));
   if (user.vipLevel && user.vipLevel !== 'none') {
     const explicitCfg = getVipTierConfig(user.vipLevel);
@@ -549,6 +587,9 @@ export function rollLuckyGiftMultiplier(
 }
 
 const GIFT_CATALOG_STORAGE_KEY = 'sada_gift_catalog_v3';
+const CUSTOM_GIFTS_STORAGE_KEY = 'sada_custom_gifts_v1';
+let customGiftsCatalog: GiftItem[] = [];
+let customGiftsLoadedFromStorage = false;
 let cachedGiftCatalog: GiftItem[] | null = null;
 let cachedGiftMap: Map<string, GiftItem> | null = null;
 
@@ -567,26 +608,54 @@ export const GIFT_CATALOG: GiftItem[] = [
   })),
 ];
 
+function hydrateCustomGiftsFromStorage(): GiftItem[] {
+  if (customGiftsLoadedFromStorage) return customGiftsCatalog;
+  customGiftsLoadedFromStorage = true;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = window.localStorage.getItem(CUSTOM_GIFTS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as GiftItem[];
+        if (Array.isArray(parsed)) {
+          customGiftsCatalog = parsed;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+  return customGiftsCatalog;
+}
+
+export function setCustomGiftsCatalog(gifts: GiftItem[] | undefined | null): void {
+  const safe = Array.isArray(gifts) ? gifts.filter((g) => Boolean(g?.id && g?.name)) : [];
+  customGiftsCatalog = safe;
+  customGiftsLoadedFromStorage = true;
+  cachedGiftCatalog = null;
+  cachedGiftMap = null;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.setItem(CUSTOM_GIFTS_STORAGE_KEY, JSON.stringify(safe));
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+}
+
 export function getCachedGiftCatalog(): GiftItem[] {
   if (cachedGiftCatalog) return cachedGiftCatalog;
 
-  if (typeof window !== 'undefined' && window.localStorage) {
+  const customList = hydrateCustomGiftsFromStorage();
+  if (customList.length === 0 && typeof window !== 'undefined' && window.localStorage) {
     try {
-      const raw = window.localStorage.getItem(GIFT_CATALOG_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as GiftItem[];
-        if (Array.isArray(parsed) && parsed.length === GIFT_CATALOG.length) {
-          cachedGiftCatalog = parsed;
-          return cachedGiftCatalog;
-        }
-      }
       window.localStorage.setItem(GIFT_CATALOG_STORAGE_KEY, JSON.stringify(GIFT_CATALOG));
     } catch {
       // Ignore storage quota / privacy mode errors
     }
   }
 
-  cachedGiftCatalog = GIFT_CATALOG;
+  const customIds = new Set(customList.map((g) => g.id));
+  cachedGiftCatalog = [...customList, ...GIFT_CATALOG.filter((g) => !customIds.has(g.id))];
   return cachedGiftCatalog;
 }
 

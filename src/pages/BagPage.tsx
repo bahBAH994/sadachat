@@ -11,7 +11,12 @@ import {
   Store,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { STORE_3D_ITEMS, STORE_COIN_ITEMS, STORE_LUXURY_BACKGROUNDS } from '../lib/sadaCatalog';
+import {
+  getUserVipTierInfo,
+  STORE_3D_ITEMS,
+  STORE_COIN_ITEMS,
+  STORE_LUXURY_BACKGROUNDS,
+} from '../lib/sadaCatalog';
 import {
   applyRoomBackgroundToMyRoomInSupabase,
   equipStoreOrBagItemInSupabase,
@@ -196,6 +201,7 @@ export const BagPage: React.FC = () => {
                       src={user.avatarUrl}
                       alt={frame.name}
                       frameId={frame.id}
+                      vipTier={getUserVipTierInfo(user).key}
                       size="md"
                     />
                     <div className="flex-1 min-w-0 space-y-1">

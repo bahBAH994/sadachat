@@ -26,7 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { useActiveRoom } from '../context/ActiveRoomContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { resolveAsset } from '../lib/assets';
-import { ARAB_COUNTRIES, formatShortNumericId } from '../lib/sadaCatalog';
+import { ARAB_COUNTRIES, formatShortNumericId, getUserVipTierInfo } from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
 import {
   createRoomInSupabase,
@@ -40,8 +40,8 @@ import {
   toggleFollowUserInSupabase,
 } from '../lib/sadaSocialService';
 import { supabase } from '../lib/supabase';
-import type { PrivateConversation, Room, RoomExtrasConfig, User } from '../types';
-import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import type { PrivateConversation, Room, RoomExtrasConfig, User, VipTierKey } from '../types';
+import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 
 type FilterChip = 'جديدة' | 'أكثر شعبية' | 'لايف' | 'محادثة';
@@ -53,6 +53,7 @@ interface PresenceUser {
   avatarUrl: string;
   frameId?: string;
   level?: number;
+  vipLevel?: VipTierKey;
 }
 
 const COUNTRY_FILTERS = [
@@ -69,19 +70,22 @@ interface LobbyRoomCardProps {
   members: PresenceUser[];
   liveCount: number;
   hostCountryCode?: string;
+  isPinned?: boolean;
   onEnter: (room: Room) => void;
   onOpenMiniProfile: (userId: string, preview?: Partial<User>) => void;
 }
 
 const LobbyRoomCard = memo<LobbyRoomCardProps>(
-  ({ room, members, liveCount, hostCountryCode, onEnter, onOpenMiniProfile }) => {
+  ({ room, members, liveCount, hostCountryCode, isPinned, onEnter, onOpenMiniProfile }) => {
     const flag =
       ARAB_COUNTRIES.find((c) => c.code === hostCountryCode)?.flag || '🎙️';
 
     return (
       <article
         onClick={() => onEnter(room)}
-        className="light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer"
+        className={`light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer ${
+          isPinned ? 'border-amber-300 bg-gradient-to-r from-amber-50/60 via-white to-white shadow-md' : ''
+        }`}
       >
         <div className="relative w-24 h-24 rounded-2xl overflow-hidden shrink-0 border border-slate-200 bg-slate-900">
           <img
@@ -95,6 +99,11 @@ const LobbyRoomCard = memo<LobbyRoomCardProps>(
           <div className="absolute top-1.5 right-1.5 rounded-md bg-slate-950/75 px-1.5 py-0.5 text-[10px] font-bold text-[#FCE9A6]">
             {room.category}
           </div>
+          {isPinned && (
+            <div className="absolute bottom-1.5 right-1.5 rounded-md bg-gradient-to-r from-[#FDE047] to-[#D4AF37] px-1.5 py-0.5 text-[9px] font-black text-[#070913] shadow">
+              مثبتة 📌
+            </div>
+          )}
           {room.hasPassword && (
             <div className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-slate-950/80 flex items-center justify-center text-amber-300">
               <Lock className="w-3 h-3" />
@@ -125,18 +134,18 @@ const LobbyRoomCard = memo<LobbyRoomCardProps>(
                       avatarUrl: m.avatarUrl,
                       frameId: m.frameId,
                       level: m.level,
+                      vipLevel: m.vipLevel,
                     });
                   }}
                   title={m.displayName}
-                  className="w-7 h-7 rounded-full overflow-hidden ring-2 ring-white hover:scale-110 transition cursor-pointer bg-slate-200"
+                  className="hover:scale-110 transition cursor-pointer"
                 >
-                  <img
-                    src={resolveAsset(m.avatarUrl)}
+                  <AvatarWithFrame
+                    src={m.avatarUrl}
                     alt={m.displayName}
-                    loading="lazy"
-                    decoding="async"
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
+                    frameId={m.frameId}
+                    vipTier={m.vipLevel || 'none'}
+                    size="xs"
                   />
                 </button>
               ))}
@@ -230,6 +239,7 @@ export const LobbyPage: React.FC = () => {
   const [followedAgencyRoomIds, setFollowedAgencyRoomIds] = useState<string[]>([]);
   const [agencyOwnerMap, setAgencyOwnerMap] = useState<Record<string, string>>({});
   const [roomConfigs, setRoomConfigs] = useState<Record<string, RoomExtrasConfig>>({});
+  const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
   const [pmConversations, setPmConversations] = useState<PrivateConversation[]>([]);
   const [loadingPm, setLoadingPm] = useState(false);
   const [seatedUserIds, setSeatedUserIds] = useState<string[]>([]);
@@ -291,6 +301,11 @@ export const LobbyPage: React.FC = () => {
         setFollowedAgencyRoomIds([]);
       }
       setRoomConfigs(platState?.settings?.roomConfigs || {});
+      setPinnedRoomIds(
+        Array.isArray(platState?.settings?.pinnedRoomIds)
+          ? platState.settings.pinnedRoomIds
+          : []
+      );
       const ownerLookup: Record<string, string> = {};
       for (const ag of agenciesRes.data || []) {
         ownerLookup[String(ag.id)] = String(ag.owner_id);
@@ -482,6 +497,11 @@ export const LobbyPage: React.FC = () => {
       return true;
     });
 
+    const pinRank = (roomId: string) => {
+      const idx = pinnedRoomIds.indexOf(roomId);
+      return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+    };
+
     if (activeChip === 'أكثر شعبية') {
       const engagementScore = (r: Room) => {
         const live = getRoomLiveInfo(r).liveCount;
@@ -492,15 +512,19 @@ export const LobbyPage: React.FC = () => {
         return live * 1_000_000 + support + (r.listenersCount || 0) * 10;
       };
       return [...list].sort((a, b) => {
+        const pDiff = pinRank(a.id) - pinRank(b.id);
+        if (pDiff !== 0) return pDiff;
         const diff = engagementScore(b) - engagementScore(a);
         if (diff !== 0) return diff;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
     }
-    return [...list].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  }, [rooms, activeChip, search, selectedCountry, getRoomLiveInfo, roomConfigs]);
+    return [...list].sort((a, b) => {
+      const pDiff = pinRank(a.id) - pinRank(b.id);
+      if (pDiff !== 0) return pDiff;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [rooms, activeChip, search, selectedCountry, getRoomLiveInfo, roomConfigs, pinnedRoomIds]);
 
   const filteredPmConversations = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -748,17 +772,19 @@ export const LobbyPage: React.FC = () => {
                               src={u.avatarUrl}
                               alt={u.displayName}
                               frameId={u.frameId}
+                              vipTier={getUserVipTierInfo(u).key}
                               size="sm"
                             />
                             {live && (
-                              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+                              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white z-20" />
                             )}
                           </div>
                           <div className="min-w-0">
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 flex-wrap">
                               <span className="text-xs font-extrabold text-slate-900 truncate">
-                                {u.displayName}
+                                <VipUserName name={u.displayName} vipTier={getUserVipTierInfo(u).key} />
                               </span>
+                              <VipTierBadge vipTier={getUserVipTierInfo(u).key} compact />
                               {u.femaleVerifiedBadge && (
                                 <FemaleVerifiedBadge badge={u.femaleVerifiedBadge} />
                               )}
@@ -993,19 +1019,21 @@ export const LobbyPage: React.FC = () => {
                         src={conv.peer.avatarUrl}
                         alt={conv.peer.displayName}
                         frameId={conv.peer.frameId}
+                        vipTier={getUserVipTierInfo(conv.peer).key}
                         size="md"
                       />
                       {isOnline && (
-                        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
+                        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white z-20" />
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                           <h3 className="text-sm font-extrabold text-slate-900 truncate">
-                            {conv.peer.displayName}
+                            <VipUserName name={conv.peer.displayName} vipTier={getUserVipTierInfo(conv.peer).key} />
                           </h3>
+                          <VipTierBadge vipTier={getUserVipTierInfo(conv.peer).key} compact />
                           {conv.peer.femaleVerifiedBadge && (
                             <FemaleVerifiedBadge badge={conv.peer.femaleVerifiedBadge} />
                           )}
@@ -1057,6 +1085,7 @@ export const LobbyPage: React.FC = () => {
                   members={members}
                   liveCount={liveCount}
                   hostCountryCode={userMeta[room.hostId]?.country}
+                  isPinned={pinnedRoomIds.includes(room.id)}
                   onEnter={enterRoom}
                   onOpenMiniProfile={openMiniProfile}
                 />

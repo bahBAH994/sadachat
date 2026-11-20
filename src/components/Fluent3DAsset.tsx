@@ -3,6 +3,7 @@ import { getFluent3DUrl } from '../lib/fluent3d';
 
 interface Fluent3DAssetProps {
   glyph: string;
+  imageUrl?: string;
   alt?: string;
   sizeClass?: string;
   className?: string;
@@ -12,25 +13,30 @@ interface Fluent3DAssetProps {
 
 /**
  * Renders a high-resolution transparent-background 3D Microsoft Fluent PNG asset
- * with an elegant metallic/glass medallion fallback while loading or if CDN fails.
+ * (or custom 3D gift imageUrl) with an elegant metallic/glass medallion fallback.
  */
 export const Fluent3DAsset: React.FC<Fluent3DAssetProps> = memo(
   ({
     glyph,
+    imageUrl,
     alt,
     sizeClass = 'w-10 h-10',
     className = '',
     fallbackTextClass = 'text-2xl',
     priority = false,
   }) => {
-    const src = getFluent3DUrl(glyph);
+    const cleanImageUrl = imageUrl?.trim() || '';
+    const fluentSrc = getFluent3DUrl(glyph);
+    const [customFailed, setCustomFailed] = useState(false);
+    const src = !customFailed && cleanImageUrl ? cleanImageUrl : fluentSrc;
     const [loaded, setLoaded] = useState(false);
     const [failed, setFailed] = useState(false);
 
     useEffect(() => {
+      setCustomFailed(false);
       setLoaded(false);
       setFailed(false);
-    }, [src]);
+    }, [cleanImageUrl, fluentSrc]);
 
     if (!src || failed) {
       return (
@@ -62,7 +68,14 @@ export const Fluent3DAsset: React.FC<Fluent3DAssetProps> = memo(
           decoding="async"
           referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
+          onError={() => {
+            if (!customFailed && cleanImageUrl && fluentSrc) {
+              setCustomFailed(true);
+              setLoaded(false);
+            } else {
+              setFailed(true);
+            }
+          }}
           className={`w-full h-full object-contain pointer-events-none transition-opacity duration-200 ${
             loaded ? 'opacity-100' : 'opacity-0'
           }`}

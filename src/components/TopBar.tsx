@@ -3,7 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Coins, Crown, Gem, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { resolveAsset } from '../lib/assets';
-import { isSuperAdminUser } from '../lib/sadaCatalog';
+import { getUserVipTierInfo, isSuperAdminUser } from '../lib/sadaCatalog';
+import { AvatarWithFrame, VipTierBadge } from './AvatarWithFrame';
 import { PWAInstallButton } from './PWAInstallButton';
 
 export const TopBar: React.FC = () => {
@@ -69,9 +70,16 @@ export const TopBar: React.FC = () => {
 
           <Link
             to="/profile"
-            className="flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-xs font-extrabold text-emerald-700 whitespace-nowrap shrink-0"
+            className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 pl-2.5 pr-1 py-0.5 text-xs font-extrabold text-emerald-700 whitespace-nowrap shrink-0"
           >
-            <Crown className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <AvatarWithFrame
+              src={user.avatarUrl}
+              alt={user.displayName}
+              frameId={user.frameId}
+              vipTier={getUserVipTierInfo(user).key}
+              size="xs"
+            />
+            <VipTierBadge vipTier={getUserVipTierInfo(user).key} compact />
             <span className="font-mono-num">Lv.{user.level}</span>
           </Link>
 

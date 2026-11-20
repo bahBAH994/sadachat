@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
+import { getUserVipTierInfo } from '../lib/sadaCatalog';
 import {
   convertDiamondsToCoinsInSupabase,
   getWalletOverviewFromSupabase,
@@ -375,6 +376,7 @@ export const WalletPage: React.FC = () => {
               src={user.avatarUrl}
               alt={user.displayName}
               frameId={user.frameId}
+              vipTier={getUserVipTierInfo(user).key}
               size="lg"
             />
             <div className="space-y-1">
@@ -1031,6 +1033,7 @@ export const WalletPage: React.FC = () => {
                         src={user.avatarUrl}
                         alt={user.displayName}
                         frameId={frame.id}
+                        vipTier={getUserVipTierInfo(user).key}
                         size="lg"
                       />
                       <div>

@@ -772,3 +772,29 @@ export function fireSvipEntranceConfetti(): () => void {
     timers.forEach((id) => window.clearTimeout(id));
   };
 }
+
+/** Gentle Royal Herald Chime for 5,000+ Coins Cross-Room Global Announcement Ticker */
+export function playGlobalRoyalAnnouncementChime(): void {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    const notes = [880, 1174.66, 1760];
+    notes.forEach((freq, idx) => {
+      const start = now + idx * 0.085;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.linearRampToValueAtTime(0.075, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.36);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.38);
+    });
+  } catch {
+    // ignore
+  }
+}

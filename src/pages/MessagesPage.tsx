@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
-import { formatShortNumericId, getCachedGiftCatalog } from '../lib/sadaCatalog';
+import { formatShortNumericId, getCachedGiftCatalog, getUserVipTierInfo } from '../lib/sadaCatalog';
 import {
   getFollowStatus,
   getPmOverviewFromSupabase,
@@ -39,7 +39,7 @@ import type {
   PrivateMessage,
   User,
 } from '../types';
-import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { Fluent3DAsset } from '../components/Fluent3DAsset';
 
@@ -131,6 +131,7 @@ const PmGiftItem = memo<{
       />
       <Fluent3DAsset
         glyph={g.glyph}
+        imageUrl={g.imageUrl}
         alt={g.name}
         sizeClass="w-10 h-10"
         fallbackTextClass="text-2xl"
@@ -696,11 +697,12 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                             src={rec.avatarUrl}
                             alt={rec.displayName}
                             frameId={rec.frameId}
+                            vipTier={getUserVipTierInfo(rec).key}
                             size="md"
                             onClick={() => openMiniProfile(rec.id, rec)}
                           />
                           {live && (
-                            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
+                            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white z-20" />
                           )}
                         </div>
                         <button
@@ -767,16 +769,18 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                         src={conv.peer.avatarUrl}
                         alt={conv.peer.displayName}
                         frameId={conv.peer.frameId}
+                        vipTier={getUserVipTierInfo(conv.peer).key}
                         size="md"
                         onClick={() => openMiniProfile(conv.peer.id, conv.peer)}
                       />
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                             <span className="text-sm font-extrabold text-slate-900 truncate">
-                              {conv.peer.displayName}
+                              <VipUserName name={conv.peer.displayName} vipTier={getUserVipTierInfo(conv.peer).key} />
                             </span>
+                            <VipTierBadge vipTier={getUserVipTierInfo(conv.peer).key} compact />
                             <FemaleVerifiedBadge badge={conv.peer.femaleVerifiedBadge} />
                             <span className="rounded-full bg-violet-100 text-violet-700 px-1.5 py-0.5 text-[10px] font-bold font-mono-num">
                               Lv.{conv.peer.level}
@@ -821,6 +825,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                       src={activePeer.avatarUrl}
                       alt={activePeer.displayName}
                       frameId={activePeer.frameId}
+                      vipTier={getUserVipTierInfo(activePeer).key}
                       size="sm"
                       onClick={() => openMiniProfile(activePeer.id, activePeer)}
                     />
@@ -830,8 +835,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                     >
                       <div className="flex flex-wrap items-center gap-1.5">
                         <h2 className="text-sm font-extrabold text-slate-900 truncate">
-                          {activePeer.displayName}
+                          <VipUserName name={activePeer.displayName} vipTier={getUserVipTierInfo(activePeer).key} />
                         </h2>
+                        <VipTierBadge vipTier={getUserVipTierInfo(activePeer).key} compact />
                         <FemaleVerifiedBadge badge={activePeer.femaleVerifiedBadge} />
                         <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
                           <Crown className="w-3 h-3" />
@@ -1059,6 +1065,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                               {canAffordGift && !sending && (
                                 <Fluent3DAsset
                                   glyph={selectedGift.glyph}
+                                  imageUrl={selectedGift.imageUrl}
                                   alt={selectedGift.name}
                                   sizeClass="w-5 h-5"
                                   priority
@@ -1186,6 +1193,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                         <div className="relative flex flex-col items-center justify-center text-center leading-none">
                           <Fluent3DAsset
                             glyph={comboSession.gift.glyph}
+                            imageUrl={comboSession.gift.imageUrl}
                             alt={comboSession.gift.name}
                             sizeClass="w-6 h-6"
                             priority
@@ -1281,14 +1289,16 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                             src={u.avatarUrl}
                             alt={u.displayName}
                             frameId={u.frameId}
+                            vipTier={getUserVipTierInfo(u).key}
                             size="sm"
                             onClick={() => openMiniProfile(u.id, u)}
                           />
                           <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
-                                {u.displayName}
+                                <VipUserName name={u.displayName} vipTier={getUserVipTierInfo(u).key} />
                               </span>
+                              <VipTierBadge vipTier={getUserVipTierInfo(u).key} compact />
                               <FemaleVerifiedBadge badge={u.femaleVerifiedBadge} />
                             </div>
                             <p className="text-[10px] font-mono-num text-slate-500">

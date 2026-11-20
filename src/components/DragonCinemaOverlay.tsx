@@ -261,6 +261,7 @@ export const DragonCinemaOverlay: React.FC<DragonCinemaOverlayProps> = ({
 
               <Fluent3DAsset
                 glyph={event.gift.glyph}
+                imageUrl={event.gift.imageUrl}
                 alt={event.gift.name}
                 priority
                 sizeClass="w-36 h-36 sm:w-48 sm:h-48"

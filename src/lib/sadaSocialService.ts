@@ -642,17 +642,27 @@ export async function searchUsersForFriendInSupabase(
   ]);
 
   const userMeta = state.settings.userMeta || {};
-  const list = (usersRows || [])
+  const rawList = (usersRows || [])
     .map(rowToUser)
-    .filter((u) => u.id !== currentUserId)
-    .map((u) => {
-      const meta = userMeta[u.id];
-      return {
-        ...u,
-        age: meta?.age,
-        country: meta?.country,
-      };
-    });
+    .filter((u) => u.id !== currentUserId);
+
+  const vipBatch = await fetchUsersVipTotalsBatch(rawList.map((u) => u.id)).catch(
+    (): Record<string, { totalRechargedCoins: number; totalSpentCoins: number }> => ({})
+  );
+
+  const list = rawList.map((u) => {
+    const meta = userMeta[u.id];
+    const totals = vipBatch[u.id];
+    const enriched: User = {
+      ...u,
+      age: meta?.age,
+      country: meta?.country,
+      totalRecharged: totals?.totalRechargedCoins || 0,
+      totalSpentCoins: totals?.totalSpentCoins || 0,
+    };
+    enriched.vipLevel = getUserVipTierInfo(enriched).key;
+    return enriched;
+  });
 
   if (!clean) return list.slice(0, 20);
 
@@ -698,11 +708,22 @@ export async function getPmOverviewFromSupabase(user: User) {
   const userMeta = state.settings.userMeta || {};
   const userFollows = state.settings.userFollows || {};
 
-  const usersList = (allUsers || []).map(rowToUser).map((u) => ({
-    ...u,
-    age: userMeta[u.id]?.age,
-    country: userMeta[u.id]?.country,
-  }));
+  const rawUsersList = (allUsers || []).map(rowToUser);
+  const pmVipBatch = await fetchUsersVipTotalsBatch(rawUsersList.map((u) => u.id)).catch(
+    (): Record<string, { totalRechargedCoins: number; totalSpentCoins: number }> => ({})
+  );
+  const usersList = rawUsersList.map((u) => {
+    const totals = pmVipBatch[u.id];
+    const enriched: User = {
+      ...u,
+      age: userMeta[u.id]?.age,
+      country: userMeta[u.id]?.country,
+      totalRecharged: totals?.totalRechargedCoins || 0,
+      totalSpentCoins: totals?.totalSpentCoins || 0,
+    };
+    enriched.vipLevel = getUserVipTierInfo(enriched).key;
+    return enriched;
+  });
   const usersMap = new Map(usersList.map((u) => [u.id, u]));
 
   const convMap = new Map<string, PrivateMessage[]>();
@@ -730,6 +751,10 @@ export async function getPmOverviewFromSupabase(user: User) {
           avatarUrl: peerUser.avatarUrl,
           frameId: peerUser.frameId,
           level: peerUser.level,
+          vipLevel: peerUser.vipLevel,
+          coins: peerUser.coins,
+          totalRecharged: peerUser.totalRecharged,
+          totalSpentCoins: peerUser.totalSpentCoins,
           gender: peerUser.gender || 'male',
           age: peerUser.age,
           country: peerUser.country,
@@ -767,6 +792,10 @@ export async function getPmOverviewFromSupabase(user: User) {
       avatarUrl: u.avatarUrl,
       frameId: u.frameId,
       level: u.level,
+      vipLevel: u.vipLevel,
+      coins: u.coins,
+      totalRecharged: u.totalRecharged,
+      totalSpentCoins: u.totalSpentCoins,
       gender: u.gender || 'male',
       age: u.age,
       country: u.country,

@@ -44,6 +44,8 @@ import {
 import { supabase } from '../lib/supabase';
 import type {
   GiftItem,
+  GlobalAdminAnnouncement,
+  GlobalRoyalGiftAnnouncement,
   LuckyWheelSegment,
   Room,
   RoomEntryEvent,
@@ -118,6 +120,7 @@ export interface RoomPlaySupportEntry {
   displayName: string;
   avatarUrl: string;
   frameId?: string;
+  vipLevel?: VipTierKey;
   supportCoins: number;
   playCoins: number;
   totalCoins: number;
@@ -163,6 +166,11 @@ interface ActiveRoomContextValue {
   tier1SideNotices: Tier1SideNotice[];
   mediumCelebrationGift: RoomFlyingGiftEvent | null;
   fullscreenGift: RoomFlyingGiftEvent | null;
+  globalRoyalGift: GlobalRoyalGiftAnnouncement | null;
+  dismissGlobalRoyalGift: () => void;
+  adminAnnouncement: GlobalAdminAnnouncement | null;
+  dismissAdminAnnouncement: () => void;
+  broadcastAdminAnnouncement: (announcement: GlobalAdminAnnouncement) => void;
   seatGiftReactions: Record<string, SeatGiftReactionEvent>;
   seatHaloEffects: Record<string, string>;
   seatEmojis: Record<string, RoomSeatEmojiEvent>;
@@ -263,6 +271,10 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [mediumCelebrationGift, setMediumCelebrationGift] =
     useState<RoomFlyingGiftEvent | null>(null);
   const [fullscreenGift, setFullscreenGift] = useState<RoomFlyingGiftEvent | null>(null);
+  const [globalRoyalGift, setGlobalRoyalGift] =
+    useState<GlobalRoyalGiftAnnouncement | null>(null);
+  const [adminAnnouncement, setAdminAnnouncement] =
+    useState<GlobalAdminAnnouncement | null>(null);
   const [seatGiftReactions, setSeatGiftReactions] = useState<
     Record<string, SeatGiftReactionEvent>
   >({});
@@ -281,7 +293,143 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   } | null>(null);
 
   const processedGiftIdsRef = useRef<Set<string>>(new Set());
+  const processedGlobalGiftIdsRef = useRef<Set<string>>(new Set());
+  const processedAdminAnnIdsRef = useRef<Set<string>>(new Set());
+  const globalAnnouncementTimerRef = useRef<number | null>(null);
+  const adminAnnouncementTimerRef = useRef<number | null>(null);
+  const globalChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const entryTimerRef = useRef<number | null>(null);
+
+  const dismissGlobalRoyalGift = useCallback(() => {
+    if (globalAnnouncementTimerRef.current) {
+      window.clearTimeout(globalAnnouncementTimerRef.current);
+      globalAnnouncementTimerRef.current = null;
+    }
+    setGlobalRoyalGift(null);
+  }, []);
+
+  const dismissAdminAnnouncement = useCallback(() => {
+    if (adminAnnouncementTimerRef.current) {
+      window.clearTimeout(adminAnnouncementTimerRef.current);
+      adminAnnouncementTimerRef.current = null;
+    }
+    setAdminAnnouncement(null);
+  }, []);
+
+  const showAdminAnnouncement = useCallback((announcement: GlobalAdminAnnouncement) => {
+    if (!announcement?.id || !announcement?.message) return;
+    if (processedAdminAnnIdsRef.current.has(announcement.id)) return;
+    processedAdminAnnIdsRef.current.add(announcement.id);
+    if (processedAdminAnnIdsRef.current.size > 60) {
+      const oldest = processedAdminAnnIdsRef.current.values().next().value;
+      if (oldest) processedAdminAnnIdsRef.current.delete(oldest);
+    }
+
+    if (adminAnnouncementTimerRef.current) {
+      window.clearTimeout(adminAnnouncementTimerRef.current);
+      adminAnnouncementTimerRef.current = null;
+    }
+    setAdminAnnouncement(announcement);
+    adminAnnouncementTimerRef.current = window.setTimeout(() => {
+      setAdminAnnouncement((prev) => (prev?.id === announcement.id ? null : prev));
+      adminAnnouncementTimerRef.current = null;
+    }, 15000);
+  }, []);
+
+  const broadcastAdminAnnouncement = useCallback(
+    (announcement: GlobalAdminAnnouncement) => {
+      showAdminAnnouncement(announcement);
+      void globalChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'global:admin-announcement',
+        payload: announcement,
+      });
+    },
+    [showAdminAnnouncement]
+  );
+
+  const showGlobalRoyalGift = useCallback((announcement: GlobalRoyalGiftAnnouncement) => {
+    if (!announcement?.id || !announcement.roomId) return;
+    if (processedGlobalGiftIdsRef.current.has(announcement.id)) return;
+    processedGlobalGiftIdsRef.current.add(announcement.id);
+    if (processedGlobalGiftIdsRef.current.size > 80) {
+      const oldest = processedGlobalGiftIdsRef.current.values().next().value;
+      if (oldest) processedGlobalGiftIdsRef.current.delete(oldest);
+    }
+
+    if (globalAnnouncementTimerRef.current) {
+      window.clearTimeout(globalAnnouncementTimerRef.current);
+      globalAnnouncementTimerRef.current = null;
+    }
+    setGlobalRoyalGift(announcement);
+    globalAnnouncementTimerRef.current = window.setTimeout(() => {
+      setGlobalRoyalGift((prev) => (prev?.id === announcement.id ? null : prev));
+      globalAnnouncementTimerRef.current = null;
+    }, 8500);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      if (globalChannelRef.current) {
+        void supabase.removeChannel(globalChannelRef.current);
+        globalChannelRef.current = null;
+      }
+      return;
+    }
+
+    const channel = supabase
+      .channel('sada-global-announcements', {
+        config: { broadcast: { self: true } },
+      })
+      .on('broadcast', { event: 'global:royal-gift' }, ({ payload }) => {
+        if (payload) {
+          showGlobalRoyalGift(payload as GlobalRoyalGiftAnnouncement);
+        }
+      })
+      .on('broadcast', { event: 'global:admin-announcement' }, ({ payload }) => {
+        if (payload) {
+          showAdminAnnouncement(payload as GlobalAdminAnnouncement);
+        }
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sada_platform_state',
+          filter: 'id=eq.global',
+        },
+        (payload) => {
+          const settings = (payload.new as Record<string, unknown> | undefined)?.settings as
+            | { latestAdminAnnouncement?: GlobalAdminAnnouncement | null }
+            | undefined;
+          const latest = settings?.latestAdminAnnouncement;
+          if (latest?.id && latest?.timestamp) {
+            const ageMs = Date.now() - new Date(latest.timestamp).getTime();
+            if (Number.isFinite(ageMs) && ageMs <= 120_000) {
+              showAdminAnnouncement(latest);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    globalChannelRef.current = channel;
+    return () => {
+      if (globalAnnouncementTimerRef.current) {
+        window.clearTimeout(globalAnnouncementTimerRef.current);
+        globalAnnouncementTimerRef.current = null;
+      }
+      if (adminAnnouncementTimerRef.current) {
+        window.clearTimeout(adminAnnouncementTimerRef.current);
+        adminAnnouncementTimerRef.current = null;
+      }
+      if (globalChannelRef.current === channel) {
+        globalChannelRef.current = null;
+      }
+      void supabase.removeChannel(channel);
+    };
+  }, [showAdminAnnouncement, showGlobalRoyalGift, user?.id]);
 
   const showTimedEntryBanner = useCallback((ev: RoomEntryEvent) => {
     if (entryTimerRef.current) {
@@ -1133,10 +1281,32 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         payload: flyEvent,
       });
 
+      if (data.gift.coinsCost >= 5000) {
+        const globalPayload: GlobalRoyalGiftAnnouncement = {
+          id: `groyal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          senderId: data.user.id,
+          senderName: data.user.displayName,
+          giftName: data.gift.name,
+          giftGlyph: data.gift.glyph,
+          giftImageUrl: data.gift.imageUrl,
+          recipientName: targetName,
+          roomId: data.room.id,
+          roomTitle: data.room.title,
+          totalCoins: data.gift.coinsCost,
+          timestamp: new Date().toISOString(),
+        };
+        showGlobalRoyalGift(globalPayload);
+        void globalChannelRef.current?.send({
+          type: 'broadcast',
+          event: 'global:royal-gift',
+          payload: globalPayload,
+        });
+      }
+
       const refreshed = await getRoomDetailsFromSupabase(room.id);
       setExtras(refreshed.extras);
     },
-    [dispatchTieredGiftEffects, room, updateLocalUser, user]
+    [dispatchTieredGiftEffects, room, showGlobalRoyalGift, updateLocalUser, user]
   );
 
   const sendGiftBatch = useCallback(
@@ -1184,8 +1354,36 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         event: 'room:gift-fly',
         payload: flyEvent,
       });
+
+      const totalBatchCoins =
+        data.gift.coinsCost * data.quantity * Math.max(1, data.recipientIds.length);
+      if (Math.max(data.gift.coinsCost, totalBatchCoins) >= 5000) {
+        const recipientLabel =
+          data.recipientNames.length > 1
+            ? `الجميع على المايك (${data.recipientNames.length})`
+            : data.recipientNames[0] || data.room.hostName;
+        const globalPayload: GlobalRoyalGiftAnnouncement = {
+          id: `groyal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          senderId: data.user.id,
+          senderName: data.user.displayName,
+          giftName: data.quantity > 1 ? `${data.gift.name} ×${data.quantity}` : data.gift.name,
+          giftGlyph: data.gift.glyph,
+          giftImageUrl: data.gift.imageUrl,
+          recipientName: recipientLabel,
+          roomId: data.room.id,
+          roomTitle: data.room.title,
+          totalCoins: totalBatchCoins,
+          timestamp: new Date().toISOString(),
+        };
+        showGlobalRoyalGift(globalPayload);
+        void globalChannelRef.current?.send({
+          type: 'broadcast',
+          event: 'global:royal-gift',
+          payload: globalPayload,
+        });
+      }
     },
-    [dispatchTieredGiftEffects, room, updateLocalUser, user]
+    [dispatchTieredGiftEffects, room, showGlobalRoyalGift, updateLocalUser, user]
   );
 
   const sendSeatEmoji = useCallback(
@@ -1421,6 +1619,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         displayName: g.displayName,
         avatarUrl: g.avatarUrl,
         frameId: g.frameId,
+        vipLevel: g.vipLevel,
         supportCoins: g.totalCoins || 0,
         playCoins: 0,
         totalCoins: g.totalCoins || 0,
@@ -1484,6 +1683,11 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         tier1SideNotices,
         mediumCelebrationGift,
         fullscreenGift,
+        globalRoyalGift,
+        dismissGlobalRoyalGift,
+        adminAnnouncement,
+        dismissAdminAnnouncement,
+        broadcastAdminAnnouncement,
         seatGiftReactions,
         seatHaloEffects,
         seatEmojis,

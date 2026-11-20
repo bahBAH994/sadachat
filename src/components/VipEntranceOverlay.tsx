@@ -108,6 +108,19 @@ export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry })
               transition={{ duration: 1.9, repeat: Infinity, ease: 'linear' }}
               className="absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-amber-200/25 to-transparent -skew-x-12"
             />
+            {[10, 32, 68, 88].map((leftPct, idx) => (
+              <motion.span
+                key={leftPct}
+                aria-hidden="true"
+                initial={{ opacity: 0.2, scale: 0.6, y: 4 }}
+                animate={{ opacity: [0.25, 1, 0.25], scale: [0.6, 1.25, 0.6], y: [4, -6, 4] }}
+                transition={{ duration: 1.3 + idx * 0.25, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ left: `${leftPct}%`, top: idx % 2 === 0 ? '14%' : '72%' }}
+                className="absolute text-[10px] text-[#FEF08A] pointer-events-none select-none drop-shadow-[0_0_6px_rgba(253,224,71,0.9)]"
+              >
+                ✦
+              </motion.span>
+            ))}
             <AvatarWithFrame
               src={entry.avatarUrl}
               alt={entry.displayName}
@@ -115,7 +128,7 @@ export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry })
               vipTier="vip3"
               size="md"
             />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 relative z-10">
               <div className="flex items-center gap-1.5 mb-0.5">
                 <VipTierBadge vipTier="vip3" compact />
                 <span className="text-[10px] font-bold text-amber-200">✨ شرارات التتويج الملكي</span>

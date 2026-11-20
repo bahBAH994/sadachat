@@ -4,6 +4,8 @@ import type {
   CulturalQuestionAdminItem,
   DeviceLock,
   FemaleVoiceVerificationRequest,
+  GiftItem,
+  GlobalAdminAnnouncement,
   HostJoinApplication,
   PlatformSettings,
   Room,
@@ -11,10 +13,13 @@ import type {
   UsdtDepositRequest,
   UsdtWithdrawalRequest,
   User,
+  VipTierKey,
 } from '../types';
 import {
   genId,
+  getGiftEffectTier,
   getRechargeRewardTier,
+  getUserVipTierInfo,
   STORE_3D_ITEMS,
   SUPER_ADMIN_EMAIL,
   TEMP_ONLY_FRAME_IDS,
@@ -44,6 +49,7 @@ import {
   USER_COLUMNS,
   WITHDRAWAL_COLUMNS,
 } from './sadaMappers';
+import { fetchUsersVipTotalsBatch, invalidateUserVipCache } from './sadaVipService';
 import { supabase } from './supabase';
 
 export interface AdminOverviewPayload {
@@ -100,7 +106,20 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
     getPlatformState(),
   ]);
 
-  const users = (usersRes.data || []).map(rowToUser);
+  const rawUsers = (usersRes.data || []).map(rowToUser);
+  const vipTotals = await fetchUsersVipTotalsBatch(rawUsers.map((u) => u.id)).catch(
+    (): Record<string, { totalRechargedCoins: number; totalSpentCoins: number }> => ({})
+  );
+  const users = rawUsers.map((u) => {
+    const t = vipTotals[u.id];
+    const enriched: User = {
+      ...u,
+      totalRecharged: t?.totalRechargedCoins || 0,
+      totalSpentCoins: t?.totalSpentCoins || 0,
+    };
+    enriched.vipLevel = getUserVipTierInfo(enriched).key;
+    return enriched;
+  });
   const deviceLocks = (locksRes.data || []).map(rowToDeviceLock);
   const securityLogs = (logsRes.data || []).map(rowToSecurityLog);
   const rooms = (roomsRes.data || []).map((r) => rowToRoom(r, []));
@@ -151,7 +170,12 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
 
 export async function updateAdminUserInSupabase(
   targetId: string,
-  payload: { coinsDelta?: number; is_banned?: boolean; is_admin?: boolean }
+  payload: {
+    coinsDelta?: number;
+    is_banned?: boolean;
+    is_admin?: boolean;
+    vipLevel?: VipTierKey;
+  }
 ): Promise<User> {
   const { data: row, error } = await supabase
     .from('sada_users')
@@ -172,7 +196,10 @@ export async function updateAdminUserInSupabase(
       type: 'admin_grant',
       amount: Math.floor(payload.coinsDelta),
       currency: 'coins',
-      description: 'تعديل رصيد إداري من لوحة الإدارة العليا',
+      description:
+        payload.coinsDelta > 0
+          ? 'شحن رصيد إداري من لوحة الإدارة العليا'
+          : 'خصم رصيد إداري من لوحة الإدارة العليا',
     });
   }
 
@@ -197,14 +224,45 @@ export async function updateAdminUserInSupabase(
     updatePatch.is_admin = isSuper ? true : payload.is_admin;
   }
 
-  const { data: updated, error: upErr } = await supabase
-    .from('sada_users')
-    .update(updatePatch)
-    .eq('id', targetId)
-    .select(USER_COLUMNS)
-    .single();
-  if (upErr || !updated) throw new Error('تعذّر تحديث بيانات العضو.');
-  return rowToUser(updated);
+  if (payload.vipLevel !== undefined) {
+    const state = await getPlatformState({ forceRefresh: true });
+    const nextOverrides: Record<string, VipTierKey> = {
+      ...(state.settings.userVipOverrides || {}),
+      [targetId]: payload.vipLevel,
+    };
+    await savePlatformState({
+      settings: {
+        ...state.settings,
+        userVipOverrides: nextOverrides,
+      },
+    });
+    invalidateUserVipCache(targetId);
+  }
+
+  let finalUser = target;
+  if (Object.keys(updatePatch).length > 0) {
+    const { data: updated, error: upErr } = await supabase
+      .from('sada_users')
+      .update(updatePatch)
+      .eq('id', targetId)
+      .select(USER_COLUMNS)
+      .single();
+    if (upErr || !updated) throw new Error('تعذّر تحديث بيانات العضو.');
+    finalUser = rowToUser(updated);
+  }
+
+  finalUser.vipLevel = getUserVipTierInfo(finalUser).key;
+
+  if (payload.vipLevel !== undefined) {
+    try {
+      const { syncUserOnActiveRoomSeats } = await import('./sadaAuth');
+      await syncUserOnActiveRoomSeats(finalUser);
+    } catch {
+      // ignore non-critical active room seat sync error
+    }
+  }
+
+  return finalUser;
 }
 
 export async function unlockDeviceInSupabase(uuid: string): Promise<void> {
@@ -264,6 +322,126 @@ export async function closeRoomInSupabase(roomId: string): Promise<void> {
     .update({ is_active: false })
     .eq('id', roomId);
   if (error) throw new Error('تعذّر إغلاق الغرفة.');
+  try {
+    const state = await getPlatformState({ forceRefresh: true });
+    if ((state.settings.pinnedRoomIds || []).includes(roomId)) {
+      await savePlatformState({
+        settings: {
+          ...state.settings,
+          pinnedRoomIds: (state.settings.pinnedRoomIds || []).filter((id) => id !== roomId),
+        },
+      });
+    }
+  } catch {
+    // ignore cleanup error
+  }
+}
+
+export async function togglePinRoomInSupabase(roomId: string): Promise<string[]> {
+  const state = await getPlatformState({ forceRefresh: true });
+  const current = Array.isArray(state.settings.pinnedRoomIds)
+    ? state.settings.pinnedRoomIds
+    : [];
+  const isPinned = current.includes(roomId);
+  const nextPinned = isPinned
+    ? current.filter((id) => id !== roomId)
+    : [roomId, ...current];
+  await savePlatformState({
+    settings: {
+      ...state.settings,
+      pinnedRoomIds: nextPinned,
+    },
+  });
+  return nextPinned;
+}
+
+export async function createCustomGiftInSupabase(payload: {
+  name: string;
+  coinsCost: number;
+  glyph?: string;
+  imageUrl?: string;
+  category?: 'fixed' | 'lucky';
+}): Promise<GiftItem[]> {
+  const cleanName = payload.name.trim();
+  if (cleanName.length < 2) {
+    throw new Error('يرجى إدخال اسم واضح للهدية (حرفان على الأقل).');
+  }
+  const cleanCost = Math.max(1, Math.floor(Number(payload.coinsCost) || 0));
+  const cleanImage = (payload.imageUrl || '').trim();
+  const cleanGlyph = (payload.glyph || '').trim() || '🎁';
+  if (!cleanImage && !cleanGlyph) {
+    throw new Error('يرجى إدخال رابط صورة 3D أو رفع صورة للهدية.');
+  }
+
+  const tier: GiftItem['tier'] =
+    cleanCost >= 50000 || getGiftEffectTier(cleanCost) === 3 && cleanCost >= 10000
+      ? 'imperial'
+      : cleanCost >= 1000
+      ? 'royal'
+      : 'classic';
+
+  const state = await getPlatformState({ forceRefresh: true });
+  const ratio = state.settings.giftDiamondsRatio || 0.75;
+  const newGift: GiftItem = {
+    id: genId('cgift'),
+    name: cleanName.slice(0, 40),
+    coinsCost: cleanCost,
+    diamondsValue: Math.max(1, Math.round(cleanCost * ratio)),
+    xpGain: Math.max(5, Math.round(cleanCost * 0.45)),
+    tier,
+    category: payload.category === 'lucky' ? 'lucky' : 'fixed',
+    glyph: cleanGlyph,
+    ...(cleanImage ? { imageUrl: cleanImage } : {}),
+  };
+
+  const nextCustomGifts = [newGift, ...(state.settings.customGifts || [])];
+  const saved = await savePlatformState({
+    settings: {
+      ...state.settings,
+      customGifts: nextCustomGifts,
+    },
+  });
+  return saved.settings.customGifts || nextCustomGifts;
+}
+
+export async function deleteCustomGiftInSupabase(giftId: string): Promise<GiftItem[]> {
+  const state = await getPlatformState({ forceRefresh: true });
+  const nextCustomGifts = (state.settings.customGifts || []).filter((g) => g.id !== giftId);
+  const saved = await savePlatformState({
+    settings: {
+      ...state.settings,
+      customGifts: nextCustomGifts,
+    },
+  });
+  return saved.settings.customGifts || nextCustomGifts;
+}
+
+export async function sendGlobalAdminAnnouncementInSupabase(payload: {
+  title?: string;
+  message: string;
+  senderName: string;
+}): Promise<GlobalAdminAnnouncement> {
+  const cleanMessage = payload.message.trim();
+  if (cleanMessage.length < 2) {
+    throw new Error('يرجى كتابة نص رسالة الإعلان العام.');
+  }
+  const announcement: GlobalAdminAnnouncement = {
+    id: genId('ann'),
+    title: (payload.title || 'إعلان إداري هام').trim().slice(0, 48),
+    message: cleanMessage.slice(0, 260),
+    senderName: payload.senderName || 'الإدارة العليا',
+    timestamp: new Date().toISOString(),
+  };
+
+  const state = await getPlatformState({ forceRefresh: true });
+  await savePlatformState({
+    settings: {
+      ...state.settings,
+      latestAdminAnnouncement: announcement,
+    },
+  });
+
+  return announcement;
 }
 
 export async function createCompetitionInSupabase(payload: {

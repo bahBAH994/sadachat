@@ -16,6 +16,8 @@ import type {
 import {
   createDefaultPlatformSettings,
   INITIAL_APP_PRIZE_POOL_COINS,
+  setCustomGiftsCatalog,
+  setUserVipOverridesCache,
   SUPER_ADMIN_EMAIL,
   TEMP_ONLY_FRAME_IDS,
   type CulturalQuestionItem,
@@ -173,13 +175,20 @@ export function userToRow(u: User, passwordHash?: string) {
 }
 
 export function rowToRoomMessage(m: Record<string, unknown>): RoomMessage {
+  const rawVipTier = (m.vip_tier as string | undefined) || undefined;
+  const cleanVip = rawVipTier?.trim().toLowerCase();
+  const parsedVipLevel =
+    cleanVip === 'svip' || cleanVip === 'vip3' || cleanVip === 'vip2' || cleanVip === 'vip1'
+      ? cleanVip
+      : undefined;
   return {
     id: String(m.id),
     userId: String(m.user_id),
     displayName: String(m.display_name),
     level: Number(m.level || 1),
     isAdmin: Boolean(m.is_admin),
-    vipTier: (m.vip_tier as string | undefined) || undefined,
+    vipTier: rawVipTier,
+    vipLevel: parsedVipLevel,
     hostBadge: (m.host_badge as string | null) || null,
     femaleVerifiedBadge: (m.female_verified_badge as string | null) || null,
     text: String(m.text),
@@ -434,6 +443,15 @@ function normalizePlatformState(
       hostJoinApplications: Array.isArray(rawSettings.hostJoinApplications)
         ? rawSettings.hostJoinApplications
         : [],
+      pinnedRoomIds: Array.isArray(rawSettings.pinnedRoomIds)
+        ? rawSettings.pinnedRoomIds
+        : [],
+      customGifts: Array.isArray(rawSettings.customGifts) ? rawSettings.customGifts : [],
+      userVipOverrides:
+        rawSettings.userVipOverrides && typeof rawSettings.userVipOverrides === 'object'
+          ? rawSettings.userVipOverrides
+          : {},
+      latestAdminAnnouncement: rawSettings.latestAdminAnnouncement ?? null,
       globalZeroResetV1Applied: Boolean(rawSettings.globalZeroResetV1Applied),
     },
     quizSessions: (quizSessionsInput as Record<string, QuizSessionRecord>) || {},
@@ -442,9 +460,15 @@ function normalizePlatformState(
   };
 }
 
+function syncSettingsSideCaches(settings: PlatformSettings) {
+  setCustomGiftsCatalog(settings.customGifts || []);
+  setUserVipOverridesCache(settings.userVipOverrides || {});
+}
+
 function persistPlatformStateCache(doc: PlatformStateDoc) {
   cachedPlatformState = doc;
   cachedPlatformStateAt = Date.now();
+  syncSettingsSideCaches(doc.settings);
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       window.localStorage.setItem(
@@ -469,13 +493,15 @@ export function getCachedPlatformSettingsSync(): PlatformSettings {
       if (raw) {
         const parsed = JSON.parse(raw) as { settings?: Partial<PlatformSettings> };
         if (parsed?.settings) {
-          return normalizePlatformState(
+          const normalized = normalizePlatformState(
             INITIAL_APP_PRIZE_POOL_COINS,
             parsed.settings,
             {},
             {},
             {}
           ).settings;
+          syncSettingsSideCaches(normalized);
+          return normalized;
         }
       }
     } catch {

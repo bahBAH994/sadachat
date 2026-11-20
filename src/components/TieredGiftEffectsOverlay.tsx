@@ -52,6 +52,7 @@ export const TieredGiftEffectsOverlay: React.FC<TieredGiftEffectsOverlayProps> =
                 />
                 <Fluent3DAsset
                   glyph={notice.gift.glyph}
+                  imageUrl={notice.gift.imageUrl}
                   alt={notice.gift.name}
                   priority
                   sizeClass="w-9 h-9"
@@ -160,6 +161,7 @@ export const TieredGiftEffectsOverlay: React.FC<TieredGiftEffectsOverlayProps> =
                     >
                       <Fluent3DAsset
                         glyph={mediumCelebrationGift.gift.glyph}
+                        imageUrl={mediumCelebrationGift.gift.imageUrl}
                         alt={mediumCelebrationGift.gift.name}
                         priority
                         sizeClass="w-24 h-24"
