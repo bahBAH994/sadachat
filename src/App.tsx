@@ -128,6 +128,15 @@ const RoomRouteBridge: React.FC = () => {
   const { activeRoomId, room, isMinimized, loading, enterRoom, restoreRoom } = useActiveRoom();
   const handledRouteKeyRef = useRef<string | null>(null);
   const hasEnteredRef = useRef(false);
+  const activeRoomIdRef = useRef(activeRoomId);
+  const roomRef = useRef(room);
+  const enterRoomRef = useRef(enterRoom);
+  const restoreRoomRef = useRef(restoreRoom);
+
+  activeRoomIdRef.current = activeRoomId;
+  roomRef.current = room;
+  enterRoomRef.current = enterRoom;
+  restoreRoomRef.current = restoreRoom;
 
   useEffect(() => {
     if (!id || !user?.id) return;
@@ -136,12 +145,12 @@ const RoomRouteBridge: React.FC = () => {
     handledRouteKeyRef.current = routeKey;
     hasEnteredRef.current = true;
 
-    if (activeRoomId === id && room) {
-      restoreRoom();
+    if (activeRoomIdRef.current === id && roomRef.current) {
+      restoreRoomRef.current();
     } else {
-      void enterRoom(id);
+      void enterRoomRef.current(id);
     }
-  }, [activeRoomId, enterRoom, id, restoreRoom, room, user?.id]);
+  }, [id, user?.id]);
 
   if (isMinimized) {
     return <LobbyPage />;
@@ -156,6 +165,9 @@ const RoomRouteBridge: React.FC = () => {
 
 const LoginRoute: React.FC = () => {
   const { user, loading } = useAuth();
+  if (user) {
+    return <Navigate to={isSuperAdminUser(user) ? '/admin' : '/'} replace />;
+  }
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F5F6FA] flex items-center justify-center">
@@ -164,9 +176,6 @@ const LoginRoute: React.FC = () => {
         </div>
       </div>
     );
-  }
-  if (user) {
-    return <Navigate to={isSuperAdminUser(user) ? '/admin' : '/'} replace />;
   }
   return <LoginPage />;
 };
@@ -183,15 +192,22 @@ const AuthenticatedAppShell: React.FC = () => {
     leaveActiveRoom,
   } = useActiveRoom();
   const location = useLocation();
+  const minimizeRoomRef = useRef(minimizeRoom);
+  const leaveActiveRoomRef = useRef(leaveActiveRoom);
+  const setExitModalOpenRef = useRef(setExitModalOpen);
+
+  minimizeRoomRef.current = minimizeRoom;
+  leaveActiveRoomRef.current = leaveActiveRoom;
+  setExitModalOpenRef.current = setExitModalOpen;
 
   useEffect(() => {
     const handleMinimizeEvent = () => {
-      setExitModalOpen(false);
-      minimizeRoom();
+      setExitModalOpenRef.current(false);
+      minimizeRoomRef.current();
     };
     const handleLeaveEvent = () => {
-      setExitModalOpen(false);
-      void leaveActiveRoom();
+      setExitModalOpenRef.current(false);
+      void leaveActiveRoomRef.current();
     };
     window.addEventListener('sada:minimize', handleMinimizeEvent);
     window.addEventListener('sada:leave', handleLeaveEvent);
@@ -199,9 +215,9 @@ const AuthenticatedAppShell: React.FC = () => {
       window.removeEventListener('sada:minimize', handleMinimizeEvent);
       window.removeEventListener('sada:leave', handleLeaveEvent);
     };
-  }, [leaveActiveRoom, minimizeRoom, setExitModalOpen]);
+  }, []);
 
-  if (loading) {
+  if (loading && !user) {
     return (
       <div className="min-h-screen bg-[#F5F6FA] flex items-center justify-center">
         <div className="light-card rounded-2xl px-6 py-4 text-sm font-extrabold text-emerald-700">

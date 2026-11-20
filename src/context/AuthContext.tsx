@@ -1,12 +1,24 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { getOrCreateDeviceUuid } from '../lib/device';
 import {
   fetchCurrentUserFromSupabaseSession,
   loginOrRegisterWithSupabase,
   logoutFromSupabase,
 } from '../lib/sadaAuth';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../lib/safeStorage';
 import { supabase } from '../lib/supabase';
 import type { User } from '../types';
+
+const CACHED_USER_STORAGE_KEY = 'sada_cached_user_v1';
+const BOOT_SAFETY_TIMEOUT_MS = 2500;
 
 interface AuthPayload {
   email: string;
@@ -32,54 +44,183 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function readCachedUser(): User | null {
+  try {
+    const raw = safeGetItem(CACHED_USER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as User;
+    return parsed?.id && parsed?.email ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistCachedUser(user: User | null): void {
+  try {
+    if (!user) {
+      safeRemoveItem(CACHED_USER_STORAGE_KEY);
+    } else {
+      safeSetItem(CACHED_USER_STORAGE_KEY, JSON.stringify(user));
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function areUsersEqualMeaningfully(a: User | null, b: User | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.id === b.id &&
+    a.email === b.email &&
+    a.displayName === b.displayName &&
+    a.bio === b.bio &&
+    a.avatarUrl === b.avatarUrl &&
+    a.gender === b.gender &&
+    a.femaleVoiceStatus === b.femaleVoiceStatus &&
+    a.femaleVerified === b.femaleVerified &&
+    a.femaleVerifiedBadge === b.femaleVerifiedBadge &&
+    a.isHost === b.isHost &&
+    a.isAgent === b.isAgent &&
+    a.agencyId === b.agencyId &&
+    a.hostBadge === b.hostBadge &&
+    a.coins === b.coins &&
+    a.diamonds === b.diamonds &&
+    a.level === b.level &&
+    a.xp === b.xp &&
+    a.role === b.role &&
+    a.is_admin === b.is_admin &&
+    a.is_banned === b.is_banned &&
+    a.frameId === b.frameId &&
+    a.tempFrameId === b.tempFrameId &&
+    a.tempFrameExpiresAt === b.tempFrameExpiresAt &&
+    a.activeEntryId === b.activeEntryId &&
+    a.tempEntryExpiresAt === b.tempEntryExpiresAt &&
+    a.vipLevel === b.vipLevel &&
+    (a.unlockedFrames?.length || 0) === (b.unlockedFrames?.length || 0)
+  );
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const initialCachedUser = useMemo(() => readCachedUser(), []);
+  const [user, setUser] = useState<User | null>(initialCachedUser);
+  // If we already have a cached user, enter immediately and verify silently in background
+  const [loading, setLoading] = useState(!initialCachedUser);
   const [deviceUuid] = useState(() => getOrCreateDeviceUuid());
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
 
-  const refreshUser = useCallback(async () => {
-    try {
-      const profile = await fetchCurrentUserFromSupabaseSession(deviceUuid);
-      setUser(profile);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [deviceUuid]);
+  const userRef = useRef<User | null>(user);
+  userRef.current = user;
+
+  const inFlightRefreshRef = useRef<Promise<void> | null>(null);
+  const lastRefreshAtRef = useRef<number>(0);
+  const skipNextAuthEventRef = useRef<boolean>(false);
+
+  const commitUserSilently = useCallback((next: User | null) => {
+    persistCachedUser(next);
+    setUser((prev) => (areUsersEqualMeaningfully(prev, next) ? prev : next));
+  }, []);
+
+  const refreshUser = useCallback(
+    async (options?: { force?: boolean }) => {
+      const now = Date.now();
+      if (!options?.force && inFlightRefreshRef.current) {
+        return inFlightRefreshRef.current;
+      }
+      if (!options?.force && now - lastRefreshAtRef.current < 1000 && userRef.current) {
+        return;
+      }
+
+      const task = (async () => {
+        try {
+          lastRefreshAtRef.current = Date.now();
+          const profile = await fetchCurrentUserFromSupabaseSession(deviceUuid);
+          commitUserSilently(profile);
+        } catch {
+          // Keep current user if cached & only clear if no active session and no error recovery
+          if (!userRef.current) {
+            commitUserSilently(null);
+          }
+        } finally {
+          setLoading(false);
+          inFlightRefreshRef.current = null;
+        }
+      })();
+
+      inFlightRefreshRef.current = task;
+      return task;
+    },
+    [commitUserSilently, deviceUuid]
+  );
 
   useEffect(() => {
-    void refreshUser();
+    let active = true;
+
+    // Mandatory 2.5s safety timeout so splash/loading screen never freezes on slow phones
+    const bootTimer = window.setTimeout(() => {
+      if (active) {
+        setLoading(false);
+      }
+    }, BOOT_SAFETY_TIMEOUT_MS);
+
+    void refreshUser({ force: true }).finally(() => {
+      if (active) {
+        window.clearTimeout(bootTimer);
+        setLoading(false);
+      }
+    });
 
     const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
-        setUser(null);
+        commitUserSilently(null);
         setLoading(false);
-      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+      } else if (
+        event === 'SIGNED_IN' ||
+        event === 'TOKEN_REFRESHED' ||
+        event === 'USER_UPDATED'
+      ) {
+        if (event === 'SIGNED_IN' && skipNextAuthEventRef.current) {
+          skipNextAuthEventRef.current = false;
+          return;
+        }
+        // Background silent sync — never sets loading=true
         void refreshUser();
       }
     });
 
     return () => {
+      active = false;
+      window.clearTimeout(bootTimer);
       authSub.subscription.unsubscribe();
     };
-  }, [refreshUser]);
+  }, [commitUserSilently, refreshUser]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    const uid = user?.id;
+    if (!uid) return;
 
     const sbChannel = supabase
-      .channel(`sada-user-${user.id}`)
+      .channel(`sada-user-${uid}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'sada_users',
-          filter: `id=eq.${user.id}`,
+          filter: `id=eq.${uid}`,
         },
-        () => {
+        (payload) => {
+          // Ignore heartbeat-only last_seen updates to prevent infinite/cascading re-renders
+          const newRow = payload.new as Record<string, unknown> | undefined;
+          const oldRow = payload.old as Record<string, unknown> | undefined;
+          if (newRow && oldRow && Object.keys(oldRow).length > 0) {
+            const changedKeys = Object.keys(newRow).filter(
+              (k) => JSON.stringify(newRow[k]) !== JSON.stringify(oldRow[k])
+            );
+            if (changedKeys.length === 0 || (changedKeys.length === 1 && changedKeys[0] === 'last_seen')) {
+              return;
+            }
+          }
           void refreshUser();
         }
       )
@@ -92,7 +233,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Global Supabase Realtime Online Presence + last_seen heartbeat
   useEffect(() => {
-    if (!user?.id) {
+    const uid = user?.id;
+    const gender = user?.gender || 'male';
+    if (!uid) {
       setOnlineUserIds([]);
       return;
     }
@@ -103,7 +246,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       onlineChannelRef.current = supabase.channel('sada-global-online', {
-        config: { presence: { key: user.id } },
+        config: { presence: { key: uid } },
       });
     } catch {
       onlineChannelRef.current = null;
@@ -120,7 +263,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (entry?.userId) ids.add(String(entry.userId));
           });
         });
-        setOnlineUserIds(Array.from(ids));
+        const nextIds = Array.from(ids).sort();
+        setOnlineUserIds((prev) => {
+          if (prev.length === nextIds.length && prev.every((v, idx) => v === nextIds[idx])) {
+            return prev;
+          }
+          return nextIds;
+        });
       } catch {
         // ignore transient presence errors
       }
@@ -136,8 +285,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (status === 'SUBSCRIBED' && onlineChannelRef.current) {
               try {
                 void onlineChannelRef.current.track({
-                  userId: user.id,
-                  gender: user.gender || 'male',
+                  userId: uid,
+                  gender,
                   onlineAt: Date.now(),
                 });
               } catch {
@@ -154,7 +303,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       void supabase
         .from('sada_users')
         .update({ last_seen: new Date().toISOString() })
-        .eq('id', user.id);
+        .eq('id', uid);
     };
     updateHeartbeat();
     const hbInterval = window.setInterval(updateHeartbeat, 60_000);
@@ -180,14 +329,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginOrRegister = useCallback(
     async (payload: AuthPayload) => {
-      const result = await loginOrRegisterWithSupabase({
-        ...payload,
-        deviceUuid,
-      });
-      setUser(result.user);
-      return result;
+      skipNextAuthEventRef.current = true;
+      try {
+        const result = await loginOrRegisterWithSupabase({
+          ...payload,
+          deviceUuid,
+        });
+        commitUserSilently(result.user);
+        setLoading(false);
+        return result;
+      } catch (err) {
+        skipNextAuthEventRef.current = false;
+        throw err;
+      }
     },
-    [deviceUuid]
+    [commitUserSilently, deviceUuid]
   );
 
   const logout = useCallback(async () => {
@@ -196,30 +352,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       // ignore
     }
-    setUser(null);
+    commitUserSilently(null);
     setOnlineUserIds([]);
-  }, []);
+    setLoading(false);
+  }, [commitUserSilently]);
 
-  const updateLocalUser = useCallback((next: User) => {
-    setUser(next);
-  }, []);
-
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        deviceUuid,
-        onlineUserIds,
-        loginOrRegister,
-        refreshUser,
-        updateLocalUser,
-        logout,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const updateLocalUser = useCallback(
+    (next: User) => {
+      commitUserSilently(next);
+    },
+    [commitUserSilently]
   );
+
+  const refreshUserPublic = useCallback(async () => {
+    await refreshUser({ force: true });
+  }, [refreshUser]);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      loading,
+      deviceUuid,
+      onlineUserIds,
+      loginOrRegister,
+      refreshUser: refreshUserPublic,
+      updateLocalUser,
+      logout,
+    }),
+    [
+      user,
+      loading,
+      deviceUuid,
+      onlineUserIds,
+      loginOrRegister,
+      refreshUserPublic,
+      updateLocalUser,
+      logout,
+    ]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export function useAuth(): AuthContextValue {

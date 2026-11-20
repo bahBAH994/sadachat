@@ -430,7 +430,7 @@ export async function fetchCurrentUserFromSupabaseSession(
   const cleanEmail = authUser.email.toLowerCase();
   const isSuperAdmin = cleanEmail === SUPER_ADMIN_EMAIL;
 
-  await ensureGlobalZeroResetInSupabase();
+  void ensureGlobalZeroResetInSupabase();
 
   const { data: row } = await supabase
     .from('sada_users')
@@ -472,14 +472,17 @@ export async function fetchCurrentUserFromSupabaseSession(
       .eq('id', profile.id);
   }
 
-  await purgeExpiredRewardsOnUser(profile);
+  await purgeExpiredRewardsOnUser(profile).catch(() => false);
   const metaState = await getPlatformState().catch(() => null);
   const meta = metaState?.settings?.userMeta?.[profile.id];
   if (meta) {
     profile.age = meta.age;
     profile.country = meta.country;
   }
-  return enrichUserWithVipTotals(profile).catch(() => profile);
+  return Promise.race([
+    enrichUserWithVipTotals(profile).catch(() => profile),
+    new Promise<User>((resolve) => setTimeout(() => resolve(profile), 1500)),
+  ]);
 }
 
 export async function logoutFromSupabase(): Promise<void> {

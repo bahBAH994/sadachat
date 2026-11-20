@@ -205,11 +205,16 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   } | null>(null);
 
   const endRef = useRef<HTMLDivElement | null>(null);
+  const userRef = useRef(user);
+  userRef.current = user;
+  const queryTarget = !embedded ? searchParams.get('to') : null;
+  const wantGift = !embedded && searchParams.get('gift') === '1';
 
   const loadOverview = useCallback(async () => {
-    if (!user) return;
+    const currentUser = userRef.current;
+    if (!currentUser?.id) return;
     try {
-      const data = await getPmOverviewFromSupabase(user);
+      const data = await getPmOverviewFromSupabase(currentUser);
       setConversations(data.conversations);
       setRecipients(data.recipients);
       setGifts(data.gifts);
@@ -219,9 +224,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       setUserFollows(data.userFollows || {});
 
       if (!embedded) {
-        const queryTarget = searchParams.get('to');
-        const wantGift = searchParams.get('gift') === '1';
-        if (queryTarget && queryTarget !== user.id) {
+        if (queryTarget && queryTarget !== currentUser.id) {
           setSelectedPeerId(queryTarget);
           setMobileChatOpen(true);
           if (wantGift) {
@@ -234,7 +237,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             return data.recipients[0]?.id || '';
           });
         }
-      } else if (initialPeerId && initialPeerId !== user.id) {
+      } else if (initialPeerId && initialPeerId !== currentUser.id) {
         setSelectedPeerId(initialPeerId);
         setMobileChatOpen(true);
       } else {
@@ -249,7 +252,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [embedded, initialPeerId, searchParams, user]);
+  }, [embedded, initialPeerId, queryTarget, user?.id, wantGift]);
 
   useEffect(() => {
     void loadOverview();

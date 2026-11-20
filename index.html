@@ -55,33 +55,33 @@
         text-align: center;
       }
       #sada-boot-emblem {
-        width: 84px;
-        height: 84px;
-        border-radius: 24px;
+        width: 60px;
+        height: 60px;
+        border-radius: 18px;
         border: 2px solid rgba(243, 211, 122, 0.75);
         background: linear-gradient(145deg, #1b2842 0%, #0b1120 100%);
-        box-shadow: 0 0 32px rgba(212, 175, 55, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        box-shadow: 0 0 24px rgba(212, 175, 55, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 34px;
+        font-size: 24px;
         font-weight: 800;
         color: #FCE9A6;
-        margin-bottom: 16px;
-        animation: sadaBootPulse 1.8s ease-in-out infinite;
+        margin-bottom: 12px;
+        animation: sadaBootPulse 1.6s ease-in-out infinite;
       }
       #sada-boot-spinner {
-        width: 28px;
-        height: 28px;
+        width: 24px;
+        height: 24px;
         border-radius: 9999px;
         border: 3px solid rgba(243, 211, 122, 0.2);
         border-top-color: #D4AF37;
-        margin-top: 16px;
+        margin-top: 14px;
         animation: sadaBootSpin 0.85s linear infinite;
       }
       #sada-boot-error {
         display: none;
-        margin-top: 18px;
+        margin-top: 16px;
         max-width: 360px;
         width: 100%;
         padding: 14px;
@@ -127,6 +127,20 @@
             showBootError((reason && reason.message) || String(reason || 'تعذّر إكمال التحميل.'));
           }
         });
+        // Mandatory 2.5s safety timeout so splash loader never freezes on slow phones/networks
+        window.setTimeout(function () {
+          var loader = document.getElementById('sada-boot-loader');
+          if (loader) {
+            loader.style.opacity = '0';
+            loader.style.transition = 'opacity 200ms ease';
+            window.setTimeout(function () {
+              var errBox = document.getElementById('sada-boot-error');
+              if (loader && loader.parentNode && (!errBox || errBox.style.display !== 'block')) {
+                loader.style.display = 'none';
+              }
+            }, 220);
+          }
+        }, 2500);
       })();
     </script>
   </head>
@@ -134,11 +148,11 @@
     <div id="root">
       <div id="sada-boot-loader" role="status" aria-live="polite">
         <div id="sada-boot-emblem">صَدَى</div>
-        <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">
+        <div style="font-size: 18px; font-weight: 800; letter-spacing: -0.01em;">
           صَدَى - SADA
         </div>
-        <div style="font-size: 13px; color: #cbd5e1; margin-top: 6px;">
-          جارٍ تشغيل المنصة الصوتية الملكية...
+        <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;">
+          جارٍ التحميل...
         </div>
         <div id="sada-boot-spinner" aria-hidden="true"></div>
         <div id="sada-boot-error">

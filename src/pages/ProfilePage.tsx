@@ -115,6 +115,8 @@ export const ProfilePage: React.FC = () => {
   const [savingPendingAvatar, setSavingPendingAvatar] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const showEditModalRef = useRef(false);
+  showEditModalRef.current = showEditModal;
   const [copiedId, setCopiedId] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
@@ -155,7 +157,7 @@ export const ProfilePage: React.FC = () => {
         setBio(freshUser.bio);
         setGender(freshUser.gender || 'male');
         setIsHost(Boolean(freshUser.isHost));
-        if (!showEditModal) {
+        if (!showEditModalRef.current) {
           setAvatarUrl(freshUser.avatarUrl);
         }
       }
@@ -176,7 +178,7 @@ export const ProfilePage: React.FC = () => {
     } catch {
       // ignore transient error
     }
-  }, [user?.id, updateLocalUser, showEditModal]);
+  }, [user?.id, updateLocalUser]);
 
   useEffect(() => {
     void loadProfileSocialAndUser();
@@ -193,7 +195,20 @@ export const ProfilePage: React.FC = () => {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'sada_users', filter: `id=eq.${user.id}` },
-        () => {
+        (payload) => {
+          const newRow = payload.new as Record<string, unknown> | undefined;
+          const oldRow = payload.old as Record<string, unknown> | undefined;
+          if (newRow && oldRow && Object.keys(oldRow).length > 0) {
+            const changedKeys = Object.keys(newRow).filter(
+              (k) => JSON.stringify(newRow[k]) !== JSON.stringify(oldRow[k])
+            );
+            if (
+              changedKeys.length === 0 ||
+              (changedKeys.length === 1 && changedKeys[0] === 'last_seen')
+            ) {
+              return;
+            }
+          }
           void loadProfileSocialAndUser();
         }
       )

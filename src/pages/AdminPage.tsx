@@ -133,6 +133,8 @@ export const AdminPage: React.FC = () => {
   const [previewProof, setPreviewProof] = useState<string | null>(null);
   const adminScrollRef = useRef<HTMLDivElement | null>(null);
   const navScrollRef = useRef<HTMLElement | null>(null);
+  const loadingOverviewRef = useRef(false);
+  const pendingSilentReloadRef = useRef(false);
 
   // Prize pool editor
   const [poolInput, setPoolInput] = useState('100000');
@@ -161,12 +163,23 @@ export const AdminPage: React.FC = () => {
   const isSuperAdmin = isSuperAdminUser(user);
 
   const loadOverview = useCallback(
-    async (silent = false) => {
+    async (mode: boolean | 'silent' = false) => {
       if (!isSuperAdmin) {
         setLoading(false);
         return;
       }
-      if (silent) setRefreshing(true);
+      if (loadingOverviewRef.current) {
+        if (mode === 'silent') {
+          pendingSilentReloadRef.current = true;
+        }
+        return;
+      }
+
+      loadingOverviewRef.current = true;
+      const showRefreshing = mode === true;
+      const isSilentBackground = mode === 'silent';
+      if (showRefreshing) setRefreshing(true);
+
       try {
         const res = await getAdminOverviewFromSupabase();
         setData(res);
@@ -190,20 +203,27 @@ export const AdminPage: React.FC = () => {
         }
         setHostAgencyDrafts(userAgencies);
       } catch (err) {
-        setNotice({
-          type: 'err',
-          text: err instanceof Error ? err.message : 'تعذّر تحميل بيانات لوحة الإدارة.',
-        });
+        if (!isSilentBackground) {
+          setNotice({
+            type: 'err',
+            text: err instanceof Error ? err.message : 'تعذّر تحميل بيانات لوحة الإدارة.',
+          });
+        }
       } finally {
+        loadingOverviewRef.current = false;
         setLoading(false);
-        setRefreshing(false);
+        if (showRefreshing) setRefreshing(false);
+        if (pendingSilentReloadRef.current) {
+          pendingSilentReloadRef.current = false;
+          void loadOverview('silent');
+        }
       }
     },
     [isSuperAdmin]
   );
 
   useEffect(() => {
-    void loadOverview();
+    void loadOverview(false);
   }, [loadOverview]);
 
   const showOk = (text: string) => setNotice({ type: 'ok', text });
@@ -216,13 +236,28 @@ export const AdminPage: React.FC = () => {
   // --- USERS & DEVICES ---
   const handleCoinsAdjust = async (targetId: string, delta: number) => {
     try {
-      await updateAdminUserInSupabase(targetId, { coinsDelta: delta });
+      const updatedUser = await updateAdminUserInSupabase(targetId, { coinsDelta: delta });
+      setData((prev) => {
+        if (!prev) return prev;
+        const nextUsers = prev.users.map((u) => (u.id === targetId ? updatedUser : u));
+        return {
+          ...prev,
+          users: nextUsers,
+          stats: {
+            ...prev.stats,
+            totalCoins: nextUsers.reduce((sum, u) => sum + (u.coins || 0), 0),
+          },
+        };
+      });
       showOk(
         delta > 0
           ? `تم شحن +${delta.toLocaleString('en-US')} كوينز للعضو وحفظه في قاعدة البيانات.`
           : `تم خصم ${Math.abs(delta).toLocaleString('en-US')} كوينز من العضو وحفظه في قاعدة البيانات.`
       );
-      await Promise.all([loadOverview(true), refreshUser()]);
+      if (targetId === user?.id) {
+        void refreshUser();
+      }
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تعديل رصيد الكوينز.');
     }
@@ -230,15 +265,37 @@ export const AdminPage: React.FC = () => {
 
   const handleRoleChange = async (target: User, roleChoice: AdminUserRoleChoice) => {
     try {
-      if (roleChoice === 'admin') {
-        await updateAdminUserInSupabase(target.id, { is_admin: true });
-      } else if (roleChoice === 'user') {
-        await updateAdminUserInSupabase(target.id, { is_admin: false, vipLevel: 'none' });
-      } else {
-        await updateAdminUserInSupabase(target.id, { is_admin: false, vipLevel: roleChoice });
-      }
+      const updatedUser =
+        roleChoice === 'admin'
+          ? await updateAdminUserInSupabase(target.id, { is_admin: true })
+          : roleChoice === 'user'
+            ? await updateAdminUserInSupabase(target.id, { is_admin: false, vipLevel: 'none' })
+            : await updateAdminUserInSupabase(target.id, {
+                is_admin: false,
+                vipLevel: roleChoice,
+              });
+
+      setData((prev) => {
+        if (!prev) return prev;
+        const nextUsers = prev.users.map((u) => (u.id === target.id ? updatedUser : u));
+        const nextOverrides = { ...(prev.settings.userVipOverrides || {}) };
+        if (roleChoice !== 'admin') {
+          nextOverrides[target.id] = roleChoice === 'user' ? 'none' : roleChoice;
+        }
+        return {
+          ...prev,
+          users: nextUsers,
+          settings: {
+            ...prev.settings,
+            userVipOverrides: nextOverrides,
+          },
+        };
+      });
       showOk(`تم تحديث رتبة "${target.displayName}" وحفظها فوراً في قاعدة البيانات.`);
-      await Promise.all([loadOverview(true), refreshUser()]);
+      if (target.id === user?.id) {
+        void refreshUser();
+      }
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تغيير رتبة العضو.');
     }
@@ -246,13 +303,22 @@ export const AdminPage: React.FC = () => {
 
   const handleToggleBan = async (target: User) => {
     try {
-      await updateAdminUserInSupabase(target.id, { is_banned: !target.is_banned });
+      const updatedUser = await updateAdminUserInSupabase(target.id, {
+        is_banned: !target.is_banned,
+      });
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          users: prev.users.map((u) => (u.id === target.id ? updatedUser : u)),
+        };
+      });
       showOk(
         target.is_banned
           ? `تم تفعيل حساب "${target.displayName}" ورفع الحظر بنجاح.`
           : `تم حظر حساب "${target.displayName}" وحفظ التغيير فوراً.`
       );
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تحديث حالة الحساب.');
     }
@@ -262,7 +328,7 @@ export const AdminPage: React.FC = () => {
     try {
       await unlockDeviceInSupabase(uuid);
       showOk('تم فك ارتباط الجهاز بنجاح.');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر فك الارتباط.');
     }
@@ -272,7 +338,7 @@ export const AdminPage: React.FC = () => {
     try {
       await blockDeviceInSupabase(lock.device_uuid, !lock.isBlocked, 'قرار من الإدارة العليا');
       showOk(lock.isBlocked ? 'تم إلغاء حظر الجهاز.' : 'تم حظر الجهاز بالكامل.');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تعديل حالة الجهاز.');
     }
@@ -287,7 +353,7 @@ export const AdminPage: React.FC = () => {
           ? `تم إلغاء تثبيت غرفة "${room.title}" من مقدمة تبويب "حفلة".`
           : `تم تثبيت غرفة "${room.title}" في مقدمة تبويب "حفلة" 📌`
       );
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تحديث تثبيت الغرفة.');
     }
@@ -297,7 +363,7 @@ export const AdminPage: React.FC = () => {
     try {
       await closeRoomInSupabase(roomId);
       showOk('تم إغلاق الغرفة الصوتية بنجاح.');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر إغلاق الغرفة.');
     }
@@ -313,14 +379,14 @@ export const AdminPage: React.FC = () => {
   }) => {
     await createCustomGiftInSupabase(payload);
     showOk(`تمت إضافة هدية "${payload.name}" بنجاح وتفعيلها داخل الغرف والرسائل!`);
-    await loadOverview(true);
+    void loadOverview('silent');
   };
 
   const handleDeleteCustomGift = async (giftId: string) => {
     try {
       await deleteCustomGiftInSupabase(giftId);
       showOk('تم حذف الهدية المخصصة.');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر حذف الهدية.');
     }
@@ -334,7 +400,7 @@ export const AdminPage: React.FC = () => {
     });
     await broadcastAdminAnnouncement(ann);
     showOk('تم نشر وبث الإعلان العام كشريط علوي لجميع المستخدمين بنجاح!');
-    await loadOverview(true);
+    void loadOverview('silent');
   };
 
   // --- COMPETITIONS ---
@@ -350,7 +416,7 @@ export const AdminPage: React.FC = () => {
       setCompTitle('');
       setCompSub('');
       showOk('تم إطلاق المسابقة الملكية الجديدة!');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر إنشاء المسابقة.');
     }
@@ -360,7 +426,7 @@ export const AdminPage: React.FC = () => {
     try {
       await finishCompetitionInSupabase(compId);
       showOk('تم تتويج الفائز وتوزيع الجوائز تلقائياً!');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر إنهاء المسابقة.');
     }
@@ -376,7 +442,7 @@ export const AdminPage: React.FC = () => {
           ? `تم تعيين مخزون جوائز دولاب الدعوات إلى ${appPrizePoolCoins.toLocaleString('en-US')} كوينز.`
           : `تمت تعبئة المخزون بمقدار +${amount.toLocaleString('en-US')} كوينز ليصبح ${appPrizePoolCoins.toLocaleString('en-US')} كوينز.`
       );
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تحديث مخزون الجوائز.');
     }
@@ -387,7 +453,8 @@ export const AdminPage: React.FC = () => {
     try {
       await approveUsdtDepositInSupabase(depositId);
       showOk('تم تأكيد إيداع USDT ومنح الكوينز والإطار/الدخولية المؤقتة للعضو تلقائياً!');
-      await Promise.all([loadOverview(true), refreshUser()]);
+      void loadOverview('silent');
+      void refreshUser();
     } catch (err) {
       showErr(err, 'تعذّر تأكيد الإيداع.');
     }
@@ -397,7 +464,7 @@ export const AdminPage: React.FC = () => {
     try {
       await rejectUsdtDepositInSupabase(depositId, 'لم يتم التحقق من الحوالة على شبكة TRC20');
       showOk('تم رفض طلب الإيداع.');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر رفض الإيداع.');
     }
@@ -407,7 +474,7 @@ export const AdminPage: React.FC = () => {
     try {
       await approveUsdtWithdrawalInSupabase(wdId);
       showOk('تم تأكيد تحويل أرباح USDT بنجاح!');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تأكيد السحب.');
     }
@@ -417,7 +484,7 @@ export const AdminPage: React.FC = () => {
     try {
       await rejectUsdtWithdrawalInSupabase(wdId, 'بيانات محفظة TRC20 غير مكتملة');
       showOk('تم رفض طلب السحب وإرجاع الرصيد إلى محفظة العضو.');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر رفض السحب.');
     }
@@ -428,7 +495,7 @@ export const AdminPage: React.FC = () => {
     try {
       await approveFemaleVoiceInSupabase(requestId);
       showOk('تمت الموافقة ومنح شارة التوثيق النسائي وتفعيل الألماس للعضوة بنجاح!');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر اعتماد طلب التوثيق.');
     }
@@ -441,7 +508,7 @@ export const AdminPage: React.FC = () => {
         'الصوت غير واضح أو لم يطابق العبارة المطلوبة — يرجى إعادة تسجيل بصمة صوتية جديدة.'
       );
       showOk('تم رفض طلب التوثيق الصوتي مع السماح للعضوة بإعادة التسجيل.');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر رفض الطلب.');
     }
@@ -455,7 +522,7 @@ export const AdminPage: React.FC = () => {
     try {
       await updateAgencyInSupabase(agencyId, payload);
       showOk('تم تحديث بيانات الوكالة ونسبة العمولة بنجاح.');
-      await Promise.all([loadOverview(true), refreshUser()]);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تحديث الوكالة.');
     }
@@ -469,7 +536,8 @@ export const AdminPage: React.FC = () => {
       showOk(
         `تم صرف عمولة الوكيل بنجاح (+${res.paidDiamonds.toLocaleString('en-US')} 💎) وإضافتها إلى محفظته.`
       );
-      await Promise.all([loadOverview(true), refreshUser()]);
+      void loadOverview('silent');
+      void refreshUser();
     } catch (err) {
       showErr(err, 'تعذّر صرف عمولة الوكيل.');
     }
@@ -482,7 +550,7 @@ export const AdminPage: React.FC = () => {
     try {
       await updateHostApprovalInSupabase(targetId, payload);
       showOk('تم تحديث اعتماد المضيف/الوكيل بنجاح.');
-      await Promise.all([loadOverview(true), refreshUser()]);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تحديث اعتماد المضيف.');
     }
@@ -496,7 +564,7 @@ export const AdminPage: React.FC = () => {
           ? 'تم قبول الطلب وربط المضيف بالوكالة بنجاح!'
           : 'تم رفض طلب الانضمام للوكالة.'
       );
-      await Promise.all([loadOverview(true), refreshUser()]);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر مراجعة طلب الانضمام.');
     }
@@ -606,7 +674,7 @@ export const AdminPage: React.FC = () => {
         `تم استيراد ${res.importedCount} سؤالاً بنجاح (${importMode === 'replace' ? 'استبدال' : 'إضافة'}). إجمالي بنك الأسئلة الآن: ${res.totalCount}.`
       );
       if (questionFileRef.current) questionFileRef.current.value = '';
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر قراءة ملف Excel/CSV.');
     } finally {
@@ -624,7 +692,7 @@ export const AdminPage: React.FC = () => {
       showOk(
         `تم استيراد ${res.importedCount} سؤالاً من النص بنجاح! إجمالي الأسئلة: ${res.totalCount}.`
       );
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر استيراد الأسئلة من النص.');
     } finally {
@@ -636,7 +704,7 @@ export const AdminPage: React.FC = () => {
     try {
       const remaining = await deleteQuestionInSupabase(qId);
       showOk(`تم حذف السؤال. المتبقي في البنك: ${remaining.length} سؤالاً.`);
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر حذف السؤال.');
     }
@@ -651,7 +719,7 @@ export const AdminPage: React.FC = () => {
       const saved = await savePlatformSettingsInSupabase(settingsDraft);
       setSettingsDraft(saved);
       showOk('تم حفظ وتطبيق كافة الإعدادات الاقتصادية والمكافآت فورياً على المنصة!');
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر حفظ الإعدادات.');
     } finally {
@@ -671,7 +739,7 @@ export const AdminPage: React.FC = () => {
       const saved = await savePlatformSettingsInSupabase(updated);
       setSettingsDraft(saved);
       showOk(`تم تعديل وحفظ سعر الرسالة الخاصة إلى ${cost} كوين فورياً!`);
-      await loadOverview(true);
+      void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر حفظ السعر السريع.');
     } finally {
@@ -752,9 +820,13 @@ export const AdminPage: React.FC = () => {
     const stepY = 120;
     const stepX = 120;
     const scroller = adminScrollRef.current;
+    const mainScroller = scroller?.closest('main') as HTMLElement | null;
 
     if (e.key === 'ArrowDown' || e.key === 'PageDown') {
       const amount = e.key === 'PageDown' ? 380 : stepY;
+      if (mainScroller && mainScroller.scrollHeight > mainScroller.clientHeight) {
+        mainScroller.scrollBy({ top: amount, behavior: 'smooth' });
+      }
       if (scroller && scroller.scrollHeight > scroller.clientHeight) {
         scroller.scrollBy({ top: amount, behavior: 'smooth' });
       }
@@ -762,23 +834,28 @@ export const AdminPage: React.FC = () => {
       e.preventDefault();
     } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
       const amount = e.key === 'PageUp' ? -380 : -stepY;
+      if (mainScroller && mainScroller.scrollHeight > mainScroller.clientHeight) {
+        mainScroller.scrollBy({ top: amount, behavior: 'smooth' });
+      }
       if (scroller && scroller.scrollHeight > scroller.clientHeight) {
         scroller.scrollBy({ top: amount, behavior: 'smooth' });
       }
       window.scrollBy({ top: amount, behavior: 'smooth' });
       e.preventDefault();
     } else if (e.key === 'ArrowRight') {
-      if (scroller && scroller.scrollWidth > scroller.clientWidth) {
-        scroller.scrollBy({ left: stepX, behavior: 'smooth' });
-      } else if (navScrollRef.current) {
+      if (mainScroller && mainScroller.scrollWidth > mainScroller.clientWidth) {
+        mainScroller.scrollBy({ left: stepX, behavior: 'smooth' });
+      }
+      if (navScrollRef.current && navScrollRef.current.scrollWidth > navScrollRef.current.clientWidth) {
         navScrollRef.current.scrollBy({ left: stepX, behavior: 'smooth' });
       }
       window.scrollBy({ left: stepX, behavior: 'smooth' });
       e.preventDefault();
     } else if (e.key === 'ArrowLeft') {
-      if (scroller && scroller.scrollWidth > scroller.clientWidth) {
-        scroller.scrollBy({ left: -stepX, behavior: 'smooth' });
-      } else if (navScrollRef.current) {
+      if (mainScroller && mainScroller.scrollWidth > mainScroller.clientWidth) {
+        mainScroller.scrollBy({ left: -stepX, behavior: 'smooth' });
+      }
+      if (navScrollRef.current && navScrollRef.current.scrollWidth > navScrollRef.current.clientWidth) {
         navScrollRef.current.scrollBy({ left: -stepX, behavior: 'smooth' });
       }
       window.scrollBy({ left: -stepX, behavior: 'smooth' });
@@ -791,7 +868,7 @@ export const AdminPage: React.FC = () => {
       ref={adminScrollRef}
       tabIndex={0}
       onKeyDown={handleAdminKeyDown}
-      className="w-full min-h-screen overflow-y-auto overflow-x-auto overscroll-contain scroll-smooth pb-32 focus:outline-none"
+      className="w-full min-h-screen overflow-visible pb-32 focus:outline-none"
     >
       {/* Top Sticky Responsive Header & Organized Tabs */}
       <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-[#070913]/92 backdrop-blur-md">

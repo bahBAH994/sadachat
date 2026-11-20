@@ -172,6 +172,8 @@ const LobbyRoomCard = memo<LobbyRoomCardProps>(
 
 export const LobbyPage: React.FC = () => {
   const { user, onlineUserIds } = useAuth();
+  const userRef = useRef(user);
+  userRef.current = user;
   const { activeRoomId, isMinimized } = useActiveRoom();
   const { openMiniProfile } = useMiniProfile();
   const navigate = useNavigate();
@@ -319,18 +321,22 @@ export const LobbyPage: React.FC = () => {
     [user?.id]
   );
 
-  const loadPrivateConversations = useCallback(async () => {
-    if (!user) return;
-    setLoadingPm(true);
-    try {
-      const ov = await getPmOverviewFromSupabase(user);
-      setPmConversations(ov.conversations);
-    } catch {
-      // ignore transient error
-    } finally {
-      setLoadingPm(false);
-    }
-  }, [user]);
+  const loadPrivateConversations = useCallback(
+    async (silent = false) => {
+      const currentUser = userRef.current;
+      if (!currentUser?.id) return;
+      if (!silent) setLoadingPm(true);
+      try {
+        const ov = await getPmOverviewFromSupabase(currentUser);
+        setPmConversations(ov.conversations);
+      } catch {
+        // ignore transient error
+      } finally {
+        if (!silent) setLoadingPm(false);
+      }
+    },
+    [user?.id]
+  );
 
   useEffect(() => {
     void loadRooms();
@@ -356,7 +362,7 @@ export const LobbyPage: React.FC = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sada_private_messages' },
         () => {
-          void loadPrivateConversations();
+          void loadPrivateConversations(true);
         }
       )
       .subscribe();

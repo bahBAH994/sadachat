@@ -246,9 +246,13 @@ const ActiveRoomContext = createContext<ActiveRoomContextValue | undefined>(unde
 
 export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, updateLocalUser } = useAuth();
+  const userRef = useRef(user);
+  userRef.current = user;
 
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
+  const roomRef = useRef(room);
+  roomRef.current = room;
   const [extras, setExtras] = useState<RoomExtrasConfig>(createEmptyRoomExtras());
   const [gifts, setGifts] = useState<GiftItem[]>([]);
   const [wheelSegments, setWheelSegments] = useState<LuckyWheelSegment[]>([]);
@@ -638,10 +642,11 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const roomChannel = roomChannelRef.current;
       presenceChannelRef.current = null;
       roomChannelRef.current = null;
+      const currentUserId = userRef.current?.id;
 
-      if (prevId && user?.id) {
+      if (prevId && currentUserId) {
         try {
-          await leaveRoomInSupabase(prevId, user.id);
+          await leaveRoomInSupabase(prevId, currentUserId);
         } catch (err) {
           console.warn('leaveRoomInSupabase error:', err);
         }
@@ -668,7 +673,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } catch {
       // ignore any teardown failure
     }
-  }, [cleanupMicMonitor, stopMusicEngines, user?.id]);
+  }, [cleanupMicMonitor, stopMusicEngines]);
 
   const leaveActiveRoom = useCallback(async () => {
     setExitModalOpen(false);
@@ -688,8 +693,9 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const enterRoom = useCallback(
     async (roomId: string) => {
-      if (!user) return;
-      if (activeRoomIdRef.current === roomId && room) {
+      const currentUser = userRef.current;
+      if (!currentUser) return;
+      if (activeRoomIdRef.current === roomId && roomRef.current) {
         setIsMinimized(false);
         return;
       }
@@ -891,7 +897,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         // Shared presence channel for Lobby & Room member count
         try {
           const lobbyPresenceChannel = supabase.channel('sada-agencies-presence', {
-            config: { presence: { key: `${roomId}_${user.id}` } },
+            config: { presence: { key: `${roomId}_${currentUser.id}` } },
           });
           presenceChannelRef.current = lobbyPresenceChannel;
 
@@ -923,14 +929,15 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               .subscribe((status) => {
                 if (status === 'SUBSCRIBED' && presenceChannelRef.current) {
                   try {
+                    const activeUser = userRef.current || currentUser;
                     void presenceChannelRef.current.track({
                       roomId,
-                      userId: user.id,
-                      displayName: user.displayName,
-                      avatarUrl: user.avatarUrl,
-                      frameId: user.frameId,
-                      level: user.level,
-                      vipLevel: getUserVipTierInfo(user).key,
+                      userId: activeUser.id,
+                      displayName: activeUser.displayName,
+                      avatarUrl: activeUser.avatarUrl,
+                      frameId: activeUser.frameId,
+                      level: activeUser.level,
+                      vipLevel: getUserVipTierInfo(activeUser).key,
                     });
                   } catch {
                     // ignore presence track errors
@@ -943,7 +950,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
 
         // Join room & emit entry banner
-        const joinRes = await joinRoomInSupabase(roomId, user);
+        const joinRes = await joinRoomInSupabase(roomId, userRef.current || currentUser);
         if (activeRoomIdRef.current !== roomId) return;
         setRoom(joinRes.room);
         setExtras(joinRes.extras);
@@ -969,29 +976,31 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setLoading(false);
       }
     },
-    [leaveActiveRoom, room, showTimedEntryBanner, teardownActiveChannels, user]
+    [leaveActiveRoom, showTimedEntryBanner, teardownActiveChannels]
   );
 
   // Auto-eject if kicked from agency by manager
   useEffect(() => {
-    if (!room || !user) return;
+    const activeRoom = roomRef.current;
+    const activeUser = userRef.current;
+    if (!activeRoom || !activeUser) return;
     if (
-      !user.is_admin &&
-      user.id !== room.hostId &&
+      !activeUser.is_admin &&
+      activeUser.id !== activeRoom.hostId &&
       Array.isArray(extras?.kickedUserIds) &&
-      extras.kickedUserIds.includes(user.id)
+      extras.kickedUserIds.includes(activeUser.id)
     ) {
       void leaveActiveRoom();
       setError('تم طردك من هذه الوكالة بقرار من إدارة الوكالة.');
     }
-  }, [extras?.kickedUserIds, leaveActiveRoom, room, user]);
+  }, [extras?.kickedUserIds, leaveActiveRoom, room?.hostId, user?.id, user?.is_admin]);
 
   // Cleanup everything on user logout
   useEffect(() => {
-    if (!user && activeRoomIdRef.current) {
+    if (!user?.id && activeRoomIdRef.current) {
       void leaveActiveRoom();
     }
-  }, [leaveActiveRoom, user]);
+  }, [leaveActiveRoom, user?.id]);
 
   const mySeat = useMemo(
     () => (Array.isArray(room?.seats) ? room.seats.find((s) => s.userId === user?.id) : null) || null,
