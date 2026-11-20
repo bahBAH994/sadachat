@@ -705,7 +705,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                   className="absolute -top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none drop-shadow-[0_6px_12px_rgba(0,0,0,0.85)]"
                   aria-hidden="true"
                 >
-                  <svg viewBox="0 0 44 50" className="w-10 h-11">
+                  <svg width={40} height={44} viewBox="0 0 44 50" className="w-10 h-11">
                     <defs>
                       <linearGradient id="refPtrGold" x1="0" y1="0" x2="1" y2="1">
                         <stop offset="0%" stopColor="#FFFBEB" />
@@ -740,7 +740,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                           : 'none',
                       }}
                     >
-                      <svg viewBox="0 0 300 300" className="w-full h-full">
+                      <svg width={300} height={300} viewBox="0 0 300 300" className="w-full h-full">
                         <defs>
                           <linearGradient id="refGoldSlice" x1="0" y1="0" x2="1" y2="1">
                             <stop offset="0%" stopColor="#FEF08A" />

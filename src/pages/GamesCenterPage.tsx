@@ -1990,7 +1990,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                 className="absolute -top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none drop-shadow-[0_6px_12px_rgba(0,0,0,0.85)]"
                 aria-hidden="true"
               >
-                <svg viewBox="0 0 44 50" className="w-10 h-11">
+                <svg width={40} height={44} viewBox="0 0 44 50" className="w-10 h-11">
                   <defs>
                     <linearGradient id="roulPtrGold" x1="0" y1="0" x2="1" y2="1">
                       <stop offset="0%" stopColor="#FFFBEB" />
@@ -2023,7 +2023,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                       transition: 'transform 3200ms cubic-bezier(0.12, 0.85, 0.2, 1)',
                     }}
                   >
-                  <svg viewBox="0 0 200 200" className="w-full h-full">
+                  <svg width={200} height={200} viewBox="0 0 200 200" className="w-full h-full">
                     {ROULETTE_WHEEL_ORDER.map((num, idx) => {
                       const sliceDeg = 360 / 37;
                       const startAngle = (idx * sliceDeg - sliceDeg / 2 - 90) * (Math.PI / 180);

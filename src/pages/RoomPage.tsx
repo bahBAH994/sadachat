@@ -1741,6 +1741,8 @@ export const RoomPage: React.FC = () => {
             title="اضغط للاستمرار في إرسال الهدية (Combo)"
           >
             <svg
+              width={74}
+              height={74}
               className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-[0_0_16px_rgba(251,191,36,0.9)]"
               viewBox="0 0 74 74"
             >

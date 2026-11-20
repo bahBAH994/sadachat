@@ -202,7 +202,7 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
             }}
             aria-hidden="true"
           >
-            <svg viewBox="0 0 46 54" className="w-11 h-12">
+            <svg width={44} height={48} viewBox="0 0 46 54" className="w-11 h-12">
               <defs>
                 <linearGradient id="modalPtrGold" x1="0" y1="0" x2="1" y2="1">
                   <stop offset="0%" stopColor="#FFFBEB" />
@@ -266,7 +266,7 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
                   willChange: 'transform',
                 }}
               >
-                <svg viewBox="0 0 200 200" className="w-full h-full">
+                <svg width={200} height={200} viewBox="0 0 200 200" className="w-full h-full">
                   <defs>
                     <linearGradient id="wheelGoldSlice" x1="0" y1="0" x2="1" y2="1">
                       <stop offset="0%" stopColor="#FEF08A" />

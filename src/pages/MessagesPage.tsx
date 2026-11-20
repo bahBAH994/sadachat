@@ -1170,6 +1170,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                         title="اضغط للاستمرار في إرسال الهدية (Combo)"
                       >
                         <svg
+                          width={68}
+                          height={68}
                           className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-[0_0_12px_rgba(251,191,36,0.85)]"
                           viewBox="0 0 68 68"
                         >
