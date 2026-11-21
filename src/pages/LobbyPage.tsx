@@ -1017,7 +1017,6 @@ export const LobbyPage: React.FC = () => {
                         <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white z-20" />
                       )}
                     </div>
-                    </div>
 
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center justify-between gap-2">
@@ -1211,6 +1210,7 @@ export const LobbyPage: React.FC = () => {
             </section>
           </div>
         )}
+        </div>
       </div>
 
       <button

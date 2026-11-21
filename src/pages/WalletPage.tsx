@@ -519,8 +519,6 @@ export const WalletPage: React.FC = () => {
                   <div className="flex items-center gap-2 text-[#FCE9A6]">
                     <QrCode className="w-5 h-5 text-[#D4AF37]" />
                     <h2 className="text-base font-extrabold">محفظة الإدارة الدائمة (TRC20)</h2>
-                    </div>
-                    </div>
                   </div>
                   <span className="text-[11px] font-bold text-emerald-300 font-mono-num">
                     USDT · TRC20 حصراً
@@ -1114,6 +1112,8 @@ export const WalletPage: React.FC = () => {
           </section>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };

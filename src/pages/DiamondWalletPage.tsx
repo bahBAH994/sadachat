@@ -283,7 +283,6 @@ export const DiamondWalletPage: React.FC = () => {
                     className="w-full rounded-2xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm font-mono-num text-slate-900 focus:outline-none focus:border-sky-500"
                   />
                 </div>
-                </div>
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl bg-slate-50 border border-slate-200 px-4 py-3">
@@ -368,6 +367,7 @@ export const DiamondWalletPage: React.FC = () => {
             </div>
           )}
         </section>
+        </div>
       </div>
     </div>
   );
