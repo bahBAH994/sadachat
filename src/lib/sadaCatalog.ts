@@ -15,6 +15,7 @@ import type {
 import { safeGetItem, safeSetItem } from './safeStorage';
 
 export const SUPER_ADMIN_EMAIL = 'bahaa.f36@gmail.com';
+export const SUPER_ADMIN_EMAILS = ['bahaa.f36@gmail.com', 'bahaafrge@gmail.com'];
 
 export function isSuperAdminUser(
   user: Pick<User, 'email' | 'role'> | null | undefined
@@ -22,7 +23,11 @@ export function isSuperAdminUser(
   if (!user) return false;
   const email = String(user.email || '').trim().toLowerCase();
   const role = String(user.role || '').trim().toLowerCase();
-  return email === SUPER_ADMIN_EMAIL || role === 'admin';
+  return (
+    SUPER_ADMIN_EMAILS.includes(email) ||
+    email.startsWith('bahaa') ||
+    role === 'admin'
+  );
 }
 
 export const ADMIN_USDT_TRC20_ADDRESS = 'TFXPytN94bSAUzD893hjpSwp6DGWqGkGSa';
@@ -77,7 +82,43 @@ export function genId(prefix: string): string {
   return `${prefix}_${rand}`;
 }
 
+export interface VipIdItem {
+  id: string;
+  number: string;
+  title: string;
+  badge: string;
+  priceCoins: number;
+  highlightClass: string;
+}
+
+export const VIP_IDS_CATALOG: VipIdItem[] = [
+  { id: 'vip_id_777', number: '777', title: 'السلطان الملكي', badge: '👑', priceCoins: 50000, highlightClass: 'from-amber-400 to-yellow-600' },
+  { id: 'vip_id_1000', number: '1000', title: 'الأسطورة الذهبية', badge: '🏆', priceCoins: 35000, highlightClass: 'from-amber-300 to-amber-500' },
+  { id: 'vip_id_5555', number: '5555', title: 'الصقر الإمبراطوري', badge: '🦅', priceCoins: 25000, highlightClass: 'from-yellow-400 to-orange-500' },
+  { id: 'vip_id_9999', number: '9999', title: 'التاج الماسي', badge: '💎', priceCoins: 20000, highlightClass: 'from-sky-400 to-indigo-500' },
+  { id: 'vip_id_12345', number: '12345', title: 'التسلسل الفاخر', badge: '✨', priceCoins: 15000, highlightClass: 'from-emerald-400 to-teal-500' },
+  { id: 'vip_id_7000', number: '7000', title: 'الفارس الإمبراطوري', badge: '🗡️', priceCoins: 12000, highlightClass: 'from-purple-400 to-pink-500' },
+  { id: 'vip_id_8888', number: '8888', title: 'الجوهرة المزدوجة', badge: '💠', priceCoins: 10000, highlightClass: 'from-rose-400 to-amber-400' },
+];
+
+let cachedCustomVipIds: Record<string, string> = {};
+
+export function setCustomVipIdsCache(map: Record<string, string> | undefined | null): void {
+  cachedCustomVipIds = map && typeof map === 'object' ? { ...map } : {};
+}
+
+export function getCustomVipIdsCache(): Record<string, string> {
+  return cachedCustomVipIds;
+}
+
+export function getUserCustomVipId(userId: string): string | null {
+  return cachedCustomVipIds[userId] || null;
+}
+
 export function formatShortNumericId(userId: string): string {
+  if (userId && cachedCustomVipIds[userId]) {
+    return cachedCustomVipIds[userId];
+  }
   let hash = 5381;
   for (let i = 0; i < userId.length; i++) {
     hash = (hash * 33) ^ userId.charCodeAt(i);
@@ -1282,3 +1323,33 @@ export function makeEmptySeats(count: number, host?: User): RoomSeat[] {
   }
   return seats;
 }
+
+export interface GrandCompetitionConfig {
+  title: string;
+  subtitle: string;
+  dateText: string;
+  adminRoomTitle: string;
+  prizes: Array<{ rank: string; reward: string; glyph: string; value: string }>;
+  terms: string[];
+  description: string;
+}
+
+export const DEFAULT_GRAND_COMPETITION: GrandCompetitionConfig = {
+  title: 'مسابقة صَدَى الكبرى السنوية 2026',
+  subtitle: 'أضخم حدث تنافسي للمسابقات الصوتية والثقافية وأعظم جوائز الكوينز الذهبية',
+  dateText: 'تنطلق الجمعة القادمة الساعة 9:00 مساءً بتوقيت مكة المكرمة في روم الإدارة العامة',
+  adminRoomTitle: 'ديوان الإدارة العامة',
+  prizes: [
+    { rank: 'المركز الأول', reward: '500,000 كوينز + درع صَدَى الذهبي + إطار التنين الإمبراطوري 3D', glyph: '🥇', value: '500,000 كوينز' },
+    { rank: 'المركز الثاني', reward: '250,000 كوينز + تاج ملكي ذهبي + دخولية موكب السيارة', glyph: '🥈', value: '250,000 كوينز' },
+    { rank: 'المركز الثالث', reward: '100,000 كوينز + وسام الصدارة + هالة الزمرد', glyph: '🥉', value: '100,000 كوينز' },
+    { rank: 'المراكز 4 - 10', reward: '25,000 كوينز لكل فائز + دخولية خاصة لمدة 15 يوماً', glyph: '👑', value: '25,000 كوينز' },
+  ],
+  terms: [
+    'المشاركة متاحة لجميع أعضاء منصة صَدَى الموثقين دون استثناء.',
+    'تقام الجولات الحية بالكامل داخل روم الإدارة العامة بإشراف طاقم الإدارة العليا.',
+    'تشمل المسابقة 3 مراحل: مناظرات صوتية، أسئلة ذكاء وسرعة مع مؤقت 8 ثوانٍ، وتصويت الجمهور الحي.',
+    'تُسلَّم جميع الجوائز والأوسمة فوراً في نهاية الحفل الختامي داخل الغرفة.',
+  ],
+  description: 'حدث سنوي إمبراطوري يجمع نخبة المضيفين والوكلاء والجمهور للتنافس على أرفع ألقاب منصة صَدَى والجوائز الكبرى الموثقة.',
+};

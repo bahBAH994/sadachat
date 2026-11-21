@@ -27,7 +27,7 @@ import { safeGetItem, safeSetItem } from './safeStorage';
 import { supabase } from './supabase';
 
 export const USER_COLUMNS =
-  'id, email, display_name, bio, avatar_url, gender, female_voice_status, female_verified, female_verified_badge, female_voice_note, is_host, is_agent, agency_id, host_badge, host_agency_name, host_diamonds_earned, referral_code, referred_by, referral_count, referral_spins, frame_id, unlocked_frames, previous_permanent_frame_id, temp_frame_id, temp_frame_expires_at, active_entry_id, active_entry_name, temp_entry_expires_at, coins, diamonds, level, xp, role, is_admin, is_banned, device_uuid, created_at, last_seen';
+  'id, email, display_name, bio, avatar_url, gender, female_voice_status, female_verified, female_verified_badge, female_voice_note, is_host, is_agent, agency_id, host_badge, host_agency_name, host_diamonds_earned, referral_code, referred_by, referral_count, referral_spins, frame_id, unlocked_frames, previous_permanent_frame_id, temp_frame_id, temp_frame_expires_at, active_entry_id, active_entry_name, temp_entry_expires_at, coins, diamonds, level, xp, is_admin, is_banned, device_uuid, created_at, last_seen';
 
 export const ROOM_COLUMNS =
   'id, title, category, description, host_id, host_name, host_avatar, cover_image, is_private, password, max_seats, seats, listeners_count, is_active, total_gifts_coins, created_at';
