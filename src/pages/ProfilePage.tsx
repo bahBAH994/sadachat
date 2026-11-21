@@ -38,8 +38,9 @@ import {
   getUserVipTierInfo,
   isSuperAdminUser,
   STORE_3D_ITEMS,
+  VIP_IDS_CATALOG,
 } from '../lib/sadaCatalog';
-import { getPlatformState } from '../lib/sadaMappers';
+import { getPlatformState, savePlatformState } from '../lib/sadaMappers';
 import {
   getProfileSocialListFromSupabase,
   getUserGiftLevelsFromSupabase,
@@ -115,6 +116,8 @@ export const ProfilePage: React.FC = () => {
   const [savingPendingAvatar, setSavingPendingAvatar] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showPremiumIdModal, setShowPremiumIdModal] = useState(false);
+  const [buyingPremiumId, setBuyingPremiumId] = useState(false);
   const showEditModalRef = useRef(false);
   showEditModalRef.current = showEditModal;
   const [copiedId, setCopiedId] = useState(false);
@@ -259,6 +262,38 @@ export const ProfilePage: React.FC = () => {
     navigator.clipboard?.writeText(numericId).catch(() => {});
     setCopiedId(true);
     window.setTimeout(() => setCopiedId(false), 1600);
+  };
+
+  const handlePurchasePremiumId = async (vipId: (typeof VIP_IDS_CATALOG)[number]) => {
+    if (buyingPremiumId) return;
+    if (user.coins < vipId.priceCoins) {
+      setFeedback({ type: 'err', text: `رصيدك لا يكفي. سعر ID ${vipId.number} هو ${vipId.priceCoins.toLocaleString('en-US')} كوينز.` });
+      return;
+    }
+    setBuyingPremiumId(true);
+    setFeedback(null);
+    try {
+      const state = await getPlatformState({ forceRefresh: true });
+      const customVipIds = { ...(state.settings.customVipIds || {}) };
+      const alreadyOwned = Object.values(customVipIds).includes(vipId.number);
+      if (alreadyOwned) throw new Error(`رقم ID ${vipId.number} مستخدم مسبقاً.`);
+
+      const nextCoins = user.coins - vipId.priceCoins;
+      const { error } = await supabase.from('sada_users').update({ coins: nextCoins }).eq('id', user.id);
+      if (error) throw new Error(error.message);
+
+      customVipIds[user.id] = vipId.number;
+      await savePlatformState({
+        settings: { ...state.settings, customVipIds },
+      });
+      updateLocalUser({ ...user, coins: nextCoins });
+      setShowPremiumIdModal(false);
+      setFeedback({ type: 'ok', text: `تم شراء ID المميز ${vipId.number} بنجاح!` });
+    } catch (err) {
+      setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'تعذّر شراء ID المميز.' });
+    } finally {
+      setBuyingPremiumId(false);
+    }
   };
 
   const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -847,9 +882,11 @@ export const ProfilePage: React.FC = () => {
         </section>
 
         {/* Female Voice Verification Card exclusively inside Profile ("أنا") */}
-        <div id="female-voice-verification-card">
-          <FemaleVoiceVerificationCard />
-        </div>
+        {user.gender === 'female' && (
+          <div id="female-voice-verification-card">
+            <FemaleVoiceVerificationCard />
+          </div>
+        )}
 
         {/* Feature Tiles: "وكالتي" visible ONLY for Agency Owners / Admin */}
         <section className="light-card rounded-3xl p-4 grid grid-cols-2 gap-3">
@@ -903,6 +940,20 @@ export const ProfilePage: React.FC = () => {
             <span className="text-sm font-extrabold text-rose-950">دعوة الأصدقاء</span>
             <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-rose-600 shadow-sm">
               <Gift className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowPremiumIdModal(true)}
+            className="col-span-2 rounded-2xl bg-sky-50/90 hover:bg-sky-100/80 border border-sky-100 p-4 flex items-center justify-between cursor-pointer transition"
+          >
+            <div className="text-right">
+              <span className="block text-sm font-extrabold text-sky-950">شراء ID مميز</span>
+              <span className="block text-[10px] font-bold text-sky-700">أرقام ملكية حصرية وكوينز</span>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-sky-600 shadow-sm">
+              <Crown className="w-5 h-5" />
             </div>
           </button>
         </section>
@@ -1177,6 +1228,51 @@ export const ProfilePage: React.FC = () => {
                     : `${taskProgress.streakDays}/15`}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPremiumIdModal && (
+        <div
+          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-slate-950/70 backdrop-blur-sm p-0 sm:p-4"
+          onClick={() => setShowPremiumIdModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#0B0F20] border border-sky-300/30 p-5 space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-extrabold text-sky-100">شراء ID مميز</h3>
+                <p className="text-[11px] text-slate-400">اختر رقماً ملكياً حصرياً</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPremiumIdModal(false)}
+                className="w-9 h-9 rounded-full bg-white/10 text-slate-300 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[55vh] overflow-y-auto no-scrollbar">
+              {VIP_IDS_CATALOG.map((vipId) => (
+                <button
+                  key={vipId.id}
+                  type="button"
+                  disabled={buyingPremiumId}
+                  onClick={() => void handlePurchasePremiumId(vipId)}
+                  className="rounded-2xl border border-sky-300/25 bg-gradient-to-br from-sky-950/70 to-[#070913] p-3 text-right flex items-center justify-between gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <div>
+                    <span className="block text-lg font-black font-mono-num text-sky-100">{vipId.number}</span>
+                    <span className="block text-[11px] text-slate-300">{vipId.title}</span>
+                  </div>
+                  <span className="rounded-full bg-sky-400/15 border border-sky-300/30 px-2 py-1 text-[10px] font-mono-num font-bold text-sky-100">
+                    {vipId.priceCoins.toLocaleString('en-US')} كوينز
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         </div>

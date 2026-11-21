@@ -11,6 +11,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  Trophy,
   Upload,
   UserMinus,
   Users,
@@ -30,7 +31,7 @@ interface RoomSettingsModalProps {
   presenceMembers: RoomPresenceMember[];
   isOwnerOrAdmin: boolean;
   isAgencyOwner?: boolean;
-  initialTab?: 'agency' | 'members' | 'logs';
+  initialTab?: 'agency' | 'members' | 'logs' | 'contests';
   ownedBackgrounds?: string[];
   isAdmin?: boolean;
   effectsMuted?: boolean;
@@ -53,6 +54,20 @@ interface RoomSettingsModalProps {
       | { type: 'toggle_deputy'; targetUserId: string; targetName?: string }
       | { type: 'toggle_moderator'; targetUserId: string; targetName?: string }
   ) => Promise<void>;
+  onStartAgencyContest?: (payload: {
+    title: string;
+    mode: 'open' | 'mics' | 'qa';
+    prizeLabel: string;
+    agencyQuiz: {
+      questions: Array<{
+        question: string;
+        options: string[];
+        correctIndex: number;
+        seconds: number;
+      }>;
+      currentIndex: number;
+    };
+  }) => Promise<void>;
   onClose: () => void;
 }
 
@@ -71,10 +86,11 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   onToggleEffectsMuted,
   onUpdateSettings,
   onAdminAction,
+  onStartAgencyContest,
   onClose,
 }) => {
   const canSeeLogs = Boolean(isAgencyOwner);
-  const [tab, setTab] = useState<'agency' | 'members' | 'logs'>(
+  const [tab, setTab] = useState<'agency' | 'members' | 'logs' | 'contests'>(
     initialTab === 'logs' && !canSeeLogs ? 'agency' : initialTab
   );
   const [titleInput, setTitleInput] = useState(room.title);
@@ -84,6 +100,22 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   const [coverImage, setCoverImage] = useState(room.coverImage || 'dragon_dark');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [agencyContestTitle, setAgencyContestTitle] = useState('مسابقة الوكالة الثقافية');
+  const [agencyContestPrize, setAgencyContestPrize] = useState('10,000 كوينز + لقب بطل الوكالة');
+  const [agencyQuizQuestions, setAgencyQuizQuestions] = useState<
+    Array<{ question: string; options: string[]; correctIndex: number; seconds: number }>
+  >([
+    { question: 'ما عاصمة المملكة العربية السعودية؟', options: ['الرياض', 'جدة', 'مكة', 'الدمام'], correctIndex: 0, seconds: 8 },
+    { question: 'كم عدد أيام شهر رمضان؟', options: ['28', '29 أو 30', '31', '27'], correctIndex: 1, seconds: 8 },
+    { question: 'ما هي لغة الضاد؟', options: ['الفرنسية', 'الإنجليزية', 'العربية', 'التركية'], correctIndex: 2, seconds: 8 },
+    { question: 'أي بحر يطِل على مصر؟', options: ['البحر الأحمر', 'البحر الميت', 'بحر قزوين', 'بحر البلطيق'], correctIndex: 0, seconds: 8 },
+    { question: 'كم عدد قارات العالم؟', options: ['5', '6', '7', '8'], correctIndex: 2, seconds: 8 },
+    { question: 'ما اسم أكبر محيط؟', options: ['الهندي', 'الأطلسي', 'القطبي', 'الهادئ'], correctIndex: 3, seconds: 8 },
+    { question: 'كم جانباً للمثلث؟', options: ['2', '3', '4', '5'], correctIndex: 1, seconds: 8 },
+    { question: 'ما عاصمة مصر؟', options: ['الإسكندرية', 'الأقصر', 'القاهرة', 'الجيزة'], correctIndex: 2, seconds: 8 },
+    { question: 'ما اسم مجموعة أقدم قصص عربية شعبية؟', options: ['ألف ليلة وليلة', 'المعلقات', 'السيرة الهلالية', 'كليلة ودمنة'], correctIndex: 0, seconds: 8 },
+    { question: 'ما الكوكب الأحمر؟', options: ['المريخ', 'الزهرة', 'المشتري', 'زحل'], correctIndex: 0, seconds: 8 },
+  ]);
 
   const readImageFile = (
     file: File,
@@ -237,7 +269,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
         {/* Tabs */}
         <div
           className={`grid ${
-            canSeeLogs ? 'grid-cols-3' : 'grid-cols-2'
+            canSeeLogs ? 'grid-cols-4' : 'grid-cols-3'
           } gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/20`}
         >
           <button
@@ -262,6 +294,20 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           >
             المشرفين والأعضاء ({memberList.length})
           </button>
+          {isAgencyOwner && (
+            <button
+              type="button"
+              onClick={() => setTab('contests')}
+              className={`min-h-[40px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+                tab === 'contests'
+                  ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
+                  : 'text-[#FCE9A6] hover:text-white'
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5" />
+              مسابقات الوكالة
+            </button>
+          )}
           {canSeeLogs && (
             <button
               type="button"
@@ -284,7 +330,99 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           </div>
         )}
 
-        {tab === 'logs' && canSeeLogs ? (
+        {tab === 'contests' && isAgencyOwner ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#FCE9A6]">عنوان المسابقة</label>
+                <input
+                  value={agencyContestTitle}
+                  onChange={(e) => setAgencyContestTitle(e.target.value)}
+                  className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-xs text-white"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#FCE9A6]">جائزة المسابقة</label>
+                <input
+                  value={agencyContestPrize}
+                  onChange={(e) => setAgencyContestPrize(e.target.value)}
+                  className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-xs text-white"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2 max-h-[48vh] overflow-y-auto no-scrollbar pr-1">
+              {agencyQuizQuestions.map((item, qIndex) => (
+                <div key={qIndex} className="rounded-2xl border border-white/10 bg-[#070913]/75 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-extrabold text-[#FCE9A6]">السؤال {qIndex + 1}</span>
+                    <span className="text-[10px] font-mono-num text-slate-400">8 ثوانٍ</span>
+                  </div>
+                  <input
+                    value={item.question}
+                    onChange={(e) => setAgencyQuizQuestions((prev) =>
+                      prev.map((q, i) => i === qIndex ? { ...q, question: e.target.value } : q)
+                    )}
+                    className="w-full rounded-xl bg-black/35 border border-white/10 px-3 py-2 text-xs text-white"
+                  />
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {item.options.map((option, oIndex) => (
+                      <button
+                        key={oIndex}
+                        type="button"
+                        onClick={() => setAgencyQuizQuestions((prev) =>
+                          prev.map((q, i) => i === qIndex ? { ...q, correctIndex: oIndex } : q)
+                        )}
+                        className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-right"
+                      >
+                        <input
+                          value={option}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setAgencyQuizQuestions((prev) =>
+                            prev.map((q, i) => i === qIndex
+                              ? { ...q, options: q.options.map((opt, oi) => oi === oIndex ? e.target.value : opt) }
+                              : q
+                            )
+                          )}
+                          className={`w-full bg-transparent text-[11px] text-white ${item.correctIndex === oIndex ? 'text-emerald-300 font-bold' : ''}`}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                  {item.correctIndex >= 0 && (
+                    <p className="text-[9px] text-emerald-300/80">اضغط احتمالاً لتعيينه إجابة صحيحة</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              disabled={saving || !agencyContestTitle.trim() || !onStartAgencyContest}
+              onClick={async () => {
+                if (!onStartAgencyContest) return;
+                setSaving(true);
+                try {
+                  await onStartAgencyContest({
+                    title: agencyContestTitle.trim(),
+                    mode: 'qa',
+                    prizeLabel: agencyContestPrize.trim(),
+                    agencyQuiz: { questions: agencyQuizQuestions, currentIndex: 0 },
+                  });
+                  setFeedback('تم إطلاق مسابقة الوكالة بـ 10 أسئلة وتوقيت 8 ثوانٍ لكل سؤال.');
+                } catch (err) {
+                  setFeedback(err instanceof Error ? err.message : 'تعذّر إطلاق المسابقة.');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className="gold-btn w-full min-h-[48px] rounded-2xl text-sm font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Trophy className="w-5 h-5" />
+              GO — إطلاق المسابقة الآن
+            </button>
+          </div>
+        ) : tab === 'logs' && canSeeLogs ? (
           <div className="space-y-3">
             <div className="rounded-2xl border border-[#D4AF37]/30 bg-[#070913]/85 p-3 flex items-center justify-between">
               <div className="flex items-center gap-2">

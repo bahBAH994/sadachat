@@ -2207,7 +2207,8 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            <div className="sticky bottom-0 z-30 rounded-2xl border border-[#D4AF37]/35 bg-[#070913]/95 backdrop-blur-md p-2.5 space-y-2">
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
               {BET_AMOUNTS.map((val) => (
                 <button
                   key={val}
@@ -2223,9 +2224,9 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   {val.toLocaleString('en-US')}
                 </button>
               ))}
-            </div>
+              </div>
 
-            <button
+              <button
               type="button"
               disabled={isRouletteSpinning || user.coins < bet}
               onClick={handleSpinRoulette}
@@ -2237,7 +2238,8 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   ? 'العجلة الذهبية تدور...'
                   : `تدوير الروليت الملكية (${bet.toLocaleString('en-US')} كوينز)`}
               </span>
-            </button>
+              </button>
+            </div>
           </div>
         </section>
       )}
@@ -2264,24 +2266,6 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                 <span>صناديق جديدة</span>
               </button>
             )}
-          </div>
-
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {BET_AMOUNTS.map((val) => (
-              <button
-                key={val}
-                type="button"
-                disabled={isOpeningBox || Boolean(mysteryResult)}
-                onClick={() => setBet(val)}
-                className={`min-h-[42px] rounded-xl text-xs font-extrabold font-mono-num border cursor-pointer transition disabled:opacity-60 ${
-                  bet === val
-                    ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6]'
-                    : 'bg-white/5 border-white/15 text-slate-200 hover:border-[#D4AF37]/45'
-                }`}
-              >
-                {val.toLocaleString('en-US')}
-              </button>
-            ))}
           </div>
 
           <div className="grid grid-cols-3 gap-3 sm:gap-4 max-w-2xl mx-auto">
@@ -2345,6 +2329,24 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                 </button>
               );
             })}
+          </div>
+
+          <div className="sticky bottom-0 z-30 rounded-2xl border border-[#D4AF37]/35 bg-[#070913]/95 backdrop-blur-md p-2.5 grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {BET_AMOUNTS.map((val) => (
+              <button
+                key={val}
+                type="button"
+                disabled={isOpeningBox || Boolean(mysteryResult)}
+                onClick={() => setBet(val)}
+                className={`min-h-[42px] rounded-xl text-xs font-extrabold font-mono-num border cursor-pointer transition disabled:opacity-60 ${
+                  bet === val
+                    ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6]'
+                    : 'bg-white/5 border-white/15 text-slate-200 hover:border-[#D4AF37]/45'
+                }`}
+              >
+                {val.toLocaleString('en-US')}
+              </button>
+            ))}
           </div>
 
           {mysteryResult && (

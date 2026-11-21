@@ -212,6 +212,15 @@ export interface RoomLiveContest {
   winnerName?: string | null;
   createdAt: string;
   endedAt?: string | null;
+  agencyQuiz?: {
+    questions: Array<{
+      question: string;
+      options: string[];
+      correctIndex: number;
+      seconds: number;
+    }>;
+    currentIndex: number;
+  } | null;
 }
 
 export interface RoomExtrasConfig {
@@ -479,6 +488,7 @@ export interface PlatformSettings {
   pinnedRoomIds?: string[];
   customGifts?: GiftItem[];
   userVipOverrides?: Record<string, VipTierKey>;
+  customVipIds?: Record<string, string>;
   latestAdminAnnouncement?: GlobalAdminAnnouncement | null;
   globalZeroResetV1Applied?: boolean;
 }

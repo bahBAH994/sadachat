@@ -145,6 +145,10 @@ interface ActiveRoomContextValue {
   micActive: boolean;
   micDenied: boolean;
   manualSpeakPulse: boolean;
+  micRequest: { userId: string; displayName: string; nonce: number } | null;
+  micApprovedRequest: { userId: string; nonce: number } | null;
+  approveMicRequest: (request: { userId: string; displayName: string; nonce: number }) => void;
+  denyMicRequest: (request: { userId: string; displayName: string; nonce: number }) => void;
   presenceMembers: RoomPresenceMember[];
   liveListenersCount: number;
   topGifters: RoomGifterEntry[];
@@ -266,6 +270,15 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [micActive, setMicActive] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
   const [manualSpeakPulse, setManualSpeakPulse] = useState(false);
+  const [micRequest, setMicRequest] = useState<{
+    userId: string;
+    displayName: string;
+    nonce: number;
+  } | null>(null);
+  const [micApprovedRequest, setMicApprovedRequest] = useState<{
+    userId: string;
+    nonce: number;
+  } | null>(null);
 
   const [giftBanner, setGiftBanner] = useState<ActiveRoomContextValue['giftBanner']>(null);
   const [wheelBanner, setWheelBanner] = useState<ActiveRoomContextValue['wheelBanner']>(null);
@@ -882,6 +895,22 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               };
             });
           })
+          .on('broadcast', { event: 'mic:request' }, ({ payload }) => {
+            const request = payload as {
+              userId: string;
+              displayName: string;
+              nonce: number;
+            };
+            if (request?.userId) setMicRequest(request);
+          })
+          .on('broadcast', { event: 'mic:approve' }, ({ payload }) => {
+            const approval = payload as { userId: string; nonce: number };
+            if (approval?.userId) setMicApprovedRequest(approval);
+          })
+          .on('broadcast', { event: 'mic:deny' }, ({ payload }) => {
+            const denied = payload as { userId: string; nonce: number };
+            if (denied?.userId === user?.id) setMicRequest(null);
+          })
           .on('broadcast', { event: 'music:sync' }, ({ payload }) => {
             const m = payload as RoomMusicState | null;
             setExtras((prev) => ({ ...prev, musicState: m }));
@@ -1227,11 +1256,64 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setMicDenied(false);
       setMicActive(true);
       setError(null);
+      if (user && room) {
+        const nonce = Date.now();
+        const request = {
+          userId: user.id,
+          displayName: user.displayName,
+          nonce,
+        };
+        setMicRequest(request);
+        await roomChannelRef.current?.send({
+          type: 'broadcast',
+          event: 'mic:request',
+          payload: request,
+        });
+      }
     } catch {
       setMicDenied(true);
       setError('يرجى السماح بإذن المايكروفون من إعدادات الهاتف أو المتصفح.');
     }
-  }, []);
+  }, [room, user]);
+
+  const approveMicRequest = useCallback(
+    (request: { userId: string; displayName: string; nonce: number }) => {
+      if (!room || !user) return;
+      const manager =
+        user.is_admin ||
+        room.hostId === user.id ||
+        extras.deputyIds.includes(user.id) ||
+        extras.moderatorIds.includes(user.id);
+      if (!manager) return;
+      const approval = { userId: request.userId, nonce: request.nonce };
+      setMicRequest(null);
+      void roomChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'mic:approve',
+        payload: approval,
+      });
+    },
+    [extras, room, user]
+  );
+
+  const denyMicRequest = useCallback(
+    (request: { userId: string; displayName: string; nonce: number }) => {
+      if (!room || !user) return;
+      const manager =
+        user.is_admin ||
+        room.hostId === user.id ||
+        extras.deputyIds.includes(user.id) ||
+        extras.moderatorIds.includes(user.id);
+      if (!manager) return;
+      setMicRequest(null);
+      void roomChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'mic:deny',
+        payload: { userId: request.userId, nonce: request.nonce },
+      });
+    },
+    [extras, room, user]
+  );
 
   const sendChat = useCallback(
     async (text: string) => {
@@ -1552,6 +1634,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       title: string;
       mode: RoomLiveContest['mode'];
       prizeLabel: string;
+      agencyQuiz?: RoomLiveContest['agencyQuiz'];
     }) => {
       if (!room || !user) return;
       const next = await startRoomContestInSupabase(room.id, user, payload);
@@ -1680,6 +1763,10 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         micActive,
         micDenied,
         manualSpeakPulse,
+        micRequest,
+        micApprovedRequest,
+        approveMicRequest,
+        denyMicRequest,
         presenceMembers,
         liveListenersCount,
         topGifters,

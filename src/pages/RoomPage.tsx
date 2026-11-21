@@ -65,6 +65,8 @@ import { VipEntranceOverlay } from '../components/VipEntranceOverlay';
 
 const COMBO_DURATION_MS = 3000;
 
+const FIXED_CHAT_EMOJIS = ['😀', '😂', '😍', '🥰', '😎', '😭', '😡', '👍', '👏', '🙏', '❤️', '🔥'];
+
 interface ComboSession {
   gift: GiftItem;
   targetUserIds: string[];
@@ -491,6 +493,10 @@ export const RoomPage: React.FC = () => {
     micActive,
     micDenied,
     manualSpeakPulse,
+    micRequest,
+    micApprovedRequest,
+    approveMicRequest,
+    denyMicRequest,
     presenceMembers,
     liveListenersCount,
     topGifters,
@@ -555,7 +561,7 @@ export const RoomPage: React.FC = () => {
   const [showGamesOverlay, setShowGamesOverlay] = useState(false);
   const [showInboxOverlay, setShowInboxOverlay] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'agency' | 'members' | 'logs'>(
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'agency' | 'members' | 'logs' | 'contests'>(
     'agency'
   );
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
@@ -567,7 +573,6 @@ export const RoomPage: React.FC = () => {
   const [seatActionTarget, setSeatActionTarget] = useState<RoomSeat | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isFollowingAgency, setIsFollowingAgency] = useState(false);
-  const [heartBurstTick, setHeartBurstTick] = useState(0);
   const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
 
   const userProfileLookup = useMemo(() => {
@@ -674,6 +679,19 @@ export const RoomPage: React.FC = () => {
     clearGiftTargetRequest();
   }, [giftTargetRequest, clearGiftTargetRequest]);
 
+  useEffect(() => {
+    if (!micApprovedRequest || !user || micApprovedRequest.userId !== user.id || !room) return;
+    const free = (Array.isArray(room.seats) ? room.seats : []).find(
+      (seat) => !seat.userId && !seat.isLocked
+    );
+    if (free) {
+      void handleSeatClick(free.seatIndex);
+      showToast('تمت الموافقة: تم إصعادك إلى المايك');
+    } else {
+      showToast('جميع المقاعد مشغولة حالياً');
+    }
+  }, [micApprovedRequest, room, user, handleSeatClick, showToast]);
+
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const giftBtnRef = useRef<HTMLButtonElement | null>(null);
   const headerAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -700,7 +718,12 @@ export const RoomPage: React.FC = () => {
       }
 
       if (!seat.userId) {
-        await handleSeatClick(seat.seatIndex);
+        if (canManage) {
+          await handleSeatClick(seat.seatIndex);
+        } else {
+          await handleRequestMicAccess();
+          showToast('تم إرسال طلب الصعود إلى المايك بانتظار موافقة الوكيل');
+        }
         return;
       }
 
@@ -724,6 +747,7 @@ export const RoomPage: React.FC = () => {
       handleToggleLock,
       showToast,
       handleSeatClick,
+      handleRequestMicAccess,
       openMiniProfile,
     ]
   );
@@ -818,7 +842,6 @@ export const RoomPage: React.FC = () => {
 
   const handleFollowAgency = async () => {
     if (!room || !user) return;
-    setHeartBurstTick((t) => t + 1);
     try {
       const res = await toggleFollowAgencyInSupabase(user.id, room.id);
       setIsFollowingAgency(res.following);
@@ -859,10 +882,19 @@ export const RoomPage: React.FC = () => {
 
   const filteredMessages = useMemo(() => {
     const list = room?.messages || [];
+    const seenJoinUserIds = new Set<string>();
+    const deduplicated = list.filter((m) => {
+      const isJoinMessage =
+        m.type === 'system' && typeof m.text === 'string' && m.text.startsWith('دخل الغرفة');
+      if (!isJoinMessage) return true;
+      if (seenJoinUserIds.has(m.userId)) return false;
+      seenJoinUserIds.add(m.userId);
+      return true;
+    });
     if (chatFilter === 'chat') {
-      return list.filter((m) => m.type === 'chat');
+      return deduplicated.filter((m) => m.type === 'chat');
     }
-    return list;
+    return deduplicated;
   }, [chatFilter, room?.messages]);
 
   const handleSendChat = async (e: React.FormEvent) => {
@@ -1020,7 +1052,7 @@ export const RoomPage: React.FC = () => {
           {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
           <DragonStageBackdrop coverImage={room.coverImage} />
 
-      <div className="relative z-10 flex-1 flex flex-col max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2 min-h-0">
+      <div className="fixed inset-0 h-[100dvh] z-10 flex flex-col justify-between max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2 min-h-0">
         {/* 1. ROOM TOP BAR */}
         <header className="flex items-center justify-between gap-1.5 shrink-0">
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
@@ -1053,19 +1085,21 @@ export const RoomPage: React.FC = () => {
 
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
-                <h1 className="text-[11px] sm:text-sm font-extrabold text-white truncate max-w-[88px] sm:max-w-[140px] leading-tight">
+                <h1 className="text-[11px] sm:text-sm font-extrabold text-white leading-tight">
                   {room.title}
                 </h1>
                 <button
                   type="button"
                   onClick={() => void handleFollowAgency()}
-                  className={`rounded-full px-2 py-0.5 text-[9px] sm:text-[10px] font-extrabold shrink-0 cursor-pointer transition shadow ${
+                  className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition ${
                     isFollowingAgency
-                      ? 'bg-[#D4AF37] text-[#070913]'
-                      : 'bg-gradient-to-r from-[#2CE376] to-[#0FA958] text-white hover:brightness-110'
+                      ? 'bg-rose-600/35 border border-rose-400 text-rose-300'
+                      : 'bg-black/45 border border-white/20 text-rose-200 hover:bg-rose-950/50'
                   }`}
+                  aria-label={isFollowingAgency ? 'إلغاء متابعة الوكالة' : 'متابعة الوكالة'}
+                  title={isFollowingAgency ? 'إلغاء متابعة الوكالة' : 'متابعة الوكالة'}
                 >
-                  {isFollowingAgency ? 'متابَع ✓' : 'متابعة الوكالة'}
+                  <Heart className={`w-3.5 h-3.5 ${isFollowingAgency ? 'fill-rose-400 text-rose-400' : ''}`} />
                 </button>
               </div>
               <div className="flex items-center gap-1 text-[10px] text-amber-200/90 font-mono-num">
@@ -1169,32 +1203,6 @@ export const RoomPage: React.FC = () => {
               <Users className="w-3 h-3 text-slate-200" />
             </button>
 
-            {/* Heart Follow / Interact Button replacing (X) */}
-            <button
-              type="button"
-              onClick={() => void handleFollowAgency()}
-              className={`relative w-8 h-8 rounded-full border flex items-center justify-center cursor-pointer transition active:scale-90 ${
-                isFollowingAgency
-                  ? 'bg-rose-600/35 border-rose-400 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.55)]'
-                  : 'bg-black/45 hover:bg-rose-950/50 border-white/20 text-rose-200'
-              }`}
-              aria-label="متابعة وتفاعل"
-              title="متابعة الوكالة / تفاعل"
-            >
-              <Heart className={`w-4 h-4 ${isFollowingAgency ? 'fill-rose-400 text-rose-400' : ''}`} />
-              {heartBurstTick > 0 && (
-                <motion.span
-                  key={heartBurstTick}
-                  initial={{ scale: 0.7, opacity: 1, y: 0 }}
-                  animate={{ scale: 1.7, opacity: 0, y: -18 }}
-                  transition={{ duration: 0.65 }}
-                  className="pointer-events-none absolute text-rose-400 text-xs"
-                >
-                  ♥
-                </motion.span>
-              )}
-            </button>
-
             {/* Agency Settings Icon right beside the Heart */}
             {canManage && (
               <button
@@ -1275,26 +1283,6 @@ export const RoomPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setShowMusicModal(true)}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold max-w-[125px] cursor-pointer ${
-                musicState?.isPlaying
-                  ? 'bg-[#D4AF37]/25 border-[#FCE9A6]/75 text-[#FCE9A6]'
-                  : 'bg-black/50 border-white/20 text-slate-200 hover:border-[#D4AF37]/50'
-              }`}
-              title="تشغيل مقطع صوتي من جهازك"
-            >
-              <Music
-                className={`w-3 h-3 shrink-0 ${
-                  musicState?.isPlaying ? 'text-emerald-400 animate-pulse' : 'text-[#FCE9A6]'
-                }`}
-              />
-              <span className="truncate">
-                {musicState ? musicState.trackName : 'موسيقى'}
-              </span>
-            </button>
-
             {isAgencyOwner && (
               <>
                 <button
@@ -1554,7 +1542,7 @@ export const RoomPage: React.FC = () => {
             >
               <div className="flex items-center justify-between px-1 mb-1.5">
                 <span className="text-[11px] font-extrabold text-[#FCE9A6]">
-                  سمايلات المايك التفاعلية 3D (3 ثوانٍ)
+                  سمايلات الدردشة والمايك
                 </span>
                 <button
                   type="button"
@@ -1564,30 +1552,79 @@ export const RoomPage: React.FC = () => {
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <div className="grid grid-cols-5 sm:grid-cols-9 gap-1.5">
-                {ROOM_REACTION_EMOJIS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handlePickSeatEmoji(item)}
-                    className="rounded-xl bg-white/5 hover:bg-[#D4AF37]/20 border border-white/10 hover:border-[#F3D37A]/60 py-1.5 px-1 flex flex-col items-center gap-1 transition cursor-pointer active:scale-95"
-                  >
-                    <Fluent3DAsset
-                      glyph={item.emoji}
-                      alt={item.label}
-                      priority
-                      sizeClass="w-7 h-7"
-                      fallbackTextClass="text-xl"
-                    />
-                    <span className="text-[9px] font-bold text-slate-200 truncate max-w-full">
-                      {item.label}
-                    </span>
-                  </button>
-                ))}
+              <div className="space-y-2">
+                <div>
+                  <p className="text-[9px] font-bold text-slate-300 mb-1">سمايلات الدردشة الثابتة</p>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {FIXED_CHAT_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => setChatText((prev) => `${prev}${emoji}`)}
+                        className="h-8 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-xl flex items-center justify-center cursor-pointer"
+                        aria-label={`إضافة ${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-[#FCE9A6] mb-1">
+                    سمايلات تفاعلية متحركة فوق المايك
+                  </p>
+                  <div className="grid grid-cols-5 sm:grid-cols-9 gap-1.5">
+                    {ROOM_REACTION_EMOJIS.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handlePickSeatEmoji(item)}
+                        className="rounded-xl bg-white/5 hover:bg-[#D4AF37]/20 border border-white/10 hover:border-[#F3D37A]/60 py-1.5 px-1 flex flex-col items-center gap-1 transition cursor-pointer active:scale-95"
+                      >
+                        <Fluent3DAsset
+                          glyph={item.emoji}
+                          alt={item.label}
+                          priority
+                          sizeClass="w-7 h-7"
+                          fallbackTextClass="text-xl"
+                        />
+                        <span className="text-[9px] font-bold text-slate-200 truncate max-w-full">
+                          {item.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+
+        {micRequest && canManage && (
+          <div className="mb-1.5 rounded-2xl border border-[#D4AF37]/50 bg-[#15100A]/95 px-3 py-2 flex items-center justify-between gap-2 shrink-0">
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold text-[#FCE9A6] truncate">
+                طلب صعود للمايك: {micRequest.displayName}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => approveMicRequest(micRequest)}
+                className="rounded-xl bg-emerald-600/80 border border-emerald-300/70 px-3 py-1 text-[10px] font-extrabold text-white cursor-pointer"
+              >
+                موافقة
+              </button>
+              <button
+                type="button"
+                onClick={() => denyMicRequest(micRequest)}
+                className="rounded-xl bg-rose-950/70 border border-rose-400/50 px-3 py-1 text-[10px] font-extrabold text-rose-200 cursor-pointer"
+              >
+                رفض
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 4. FIXED SINGLE-ROW BOTTOM ACTION BAR (Chat Input + 😊 + 🎁 + 🎮 + 🎙️) */}
         <footer className="pt-1.5 pb-[max(env(safe-area-inset-bottom,0px),6px)] shrink-0">
@@ -1604,15 +1641,14 @@ export const RoomPage: React.FC = () => {
                 placeholder="أهلاً..."
                 className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none py-1"
               />
-              {chatText.trim() && (
-                <button
-                  type="submit"
-                  className="w-7 h-7 rounded-full bg-gradient-to-br from-[#FDE047] to-[#D4AF37] text-[#070913] flex items-center justify-center cursor-pointer shrink-0"
-                  aria-label="إرسال"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              )}
+              <button
+                type="submit"
+                disabled={!chatText.trim()}
+                className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FEF08A] via-[#D4AF37] to-[#B45309] border border-[#FFF8DC] text-[#070913] flex items-center justify-center cursor-pointer shrink-0 shadow-[0_0_12px_rgba(212,175,55,0.45)] disabled:opacity-50 disabled:cursor-default"
+                aria-label="إرسال"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
             </form>
 
             {/* 2. Interactive Seat Emojis Button (😊) */}
@@ -1675,11 +1711,16 @@ export const RoomPage: React.FC = () => {
                 if (mySeat) {
                   void handleToggleMute?.();
                 } else {
-                  const free = (Array.isArray(room?.seats) ? room.seats : []).find(
-                    (s) => !s?.userId && !s?.isLocked
-                  );
-                  if (free) void handleSeatClick?.(free.seatIndex);
-                  else showToast('جميع المقاعد مشغولة حالياً');
+                  if (canManage) {
+                    const free = (Array.isArray(room?.seats) ? room.seats : []).find(
+                      (seat) => !seat.userId && !seat.isLocked
+                    );
+                    if (free) void handleSeatClick(free.seatIndex);
+                    else showToast('جميع المقاعد مشغولة حالياً');
+                  } else {
+                    void handleRequestMicAccess();
+                    showToast('تم إرسال طلب الصعود إلى المايك بانتظار موافقة الوكيل');
+                  }
                 }
               }}
               className={`w-10 h-10 rounded-full flex items-center justify-center border cursor-pointer shrink-0 transition ${
@@ -2412,6 +2453,7 @@ export const RoomPage: React.FC = () => {
           }}
           onUpdateSettings={updateSettings}
           onAdminAction={runAdminAction}
+          onStartAgencyContest={startContest}
           onClose={() => setShowSettingsModal(false)}
         />
       )}

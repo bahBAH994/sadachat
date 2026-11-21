@@ -11,6 +11,7 @@ interface RoomContestModalProps {
     title: string;
     mode: RoomLiveContest['mode'];
     prizeLabel: string;
+    agencyQuiz?: RoomLiveContest['agencyQuiz'];
   }) => Promise<void>;
   onJoinContest: (note?: string) => Promise<void>;
   onVoteContest: (contestantUserId: string) => Promise<void>;

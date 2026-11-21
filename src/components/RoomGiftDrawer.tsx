@@ -314,7 +314,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
         exit={{ y: 70, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-t-[28px] border-t border-x border-[#F3D37A]/45 bg-gradient-to-b from-[#1A140B]/98 via-[#110D08]/98 to-[#090704] shadow-[0_-18px_50px_rgba(0,0,0,0.85)] flex flex-col max-h-[82dvh] overflow-hidden"
+        className="w-full max-w-2xl rounded-t-[28px] border-t border-x border-[#F3D37A]/45 bg-gradient-to-b from-[#1A140B]/98 via-[#110D08]/98 to-[#090704] shadow-[0_-18px_50px_rgba(0,0,0,0.85)] flex flex-col max-h-[48vh] overflow-hidden"
       >
         {/* Top Drawer Header */}
         <div className="flex items-center justify-between px-4 pt-3.5 pb-2 border-b border-white/10 shrink-0">

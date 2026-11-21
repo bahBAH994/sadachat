@@ -2,13 +2,15 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Compass, Home, MessageCircle, UserCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useActiveRoom } from '../context/ActiveRoomContext';
 
 export const BottomNav: React.FC = () => {
   const { user } = useAuth();
+  const { isMinimized } = useActiveRoom();
   const location = useLocation();
 
   if (!user) return null;
-  if (location.pathname.startsWith('/room/')) return null;
+  if (location.pathname.startsWith('/room/') && !isMinimized) return null;
 
   const items = [
     { to: '/', label: 'حفلة', icon: Home },

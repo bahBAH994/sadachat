@@ -415,33 +415,45 @@ export async function joinRoomInSupabase(
 
   // If user is VIP1/2/3/SVIP, emit styled VIP entry bar in chat; otherwise keep standard join notice
   if (vipInfo.key === 'none') {
-    const joinNoticeMsg: RoomMessage = {
-      id: genId('msg'),
-      userId: vipUser.id,
-      displayName: vipUser.displayName,
-      level: vipUser.level,
-      isAdmin: vipUser.is_admin,
-      vipTier: resolvedVipTag,
-      hostBadge: vipUser.hostBadge || null,
-      femaleVerifiedBadge: vipUser.femaleVerifiedBadge || null,
-      text: `دخل الغرفة ${vipUser.displayName}`,
-      type: 'system',
-      timestamp: nowJoinIso,
-    };
-    await supabase.from('sada_room_messages').insert({
-      id: joinNoticeMsg.id,
-      room_id: roomId,
-      user_id: joinNoticeMsg.userId,
-      display_name: joinNoticeMsg.displayName,
-      level: joinNoticeMsg.level,
-      is_admin: joinNoticeMsg.isAdmin,
-      vip_tier: joinNoticeMsg.vipTier || null,
-      host_badge: joinNoticeMsg.hostBadge || null,
-      female_verified_badge: joinNoticeMsg.femaleVerifiedBadge || null,
-      text: joinNoticeMsg.text,
-      type: joinNoticeMsg.type,
-      timestamp: joinNoticeMsg.timestamp,
-    });
+    const joinText = `دخل الغرفة ${vipUser.displayName}`;
+    const { data: existingJoin } = await supabase
+      .from('sada_room_messages')
+      .select('id')
+      .eq('room_id', roomId)
+      .eq('user_id', vipUser.id)
+      .eq('text', joinText)
+      .eq('type', 'system')
+      .limit(1)
+      .maybeSingle();
+    if (!existingJoin) {
+      const joinNoticeMsg: RoomMessage = {
+        id: genId('msg'),
+        userId: vipUser.id,
+        displayName: vipUser.displayName,
+        level: vipUser.level,
+        isAdmin: vipUser.is_admin,
+        vipTier: resolvedVipTag,
+        hostBadge: vipUser.hostBadge || null,
+        femaleVerifiedBadge: vipUser.femaleVerifiedBadge || null,
+        text: joinText,
+        type: 'system',
+        timestamp: nowJoinIso,
+      };
+      await supabase.from('sada_room_messages').insert({
+        id: joinNoticeMsg.id,
+        room_id: roomId,
+        user_id: joinNoticeMsg.userId,
+        display_name: joinNoticeMsg.displayName,
+        level: joinNoticeMsg.level,
+        is_admin: joinNoticeMsg.isAdmin,
+        vip_tier: joinNoticeMsg.vipTier || null,
+        host_badge: joinNoticeMsg.hostBadge || null,
+        female_verified_badge: joinNoticeMsg.femaleVerifiedBadge || null,
+        text: joinNoticeMsg.text,
+        type: joinNoticeMsg.type,
+        timestamp: joinNoticeMsg.timestamp,
+      });
+    }
   } else {
     const vipChatText =
       vipInfo.key === 'svip'
@@ -1729,6 +1741,7 @@ export async function startRoomContestInSupabase(
     title: string;
     mode: RoomLiveContest['mode'];
     prizeLabel: string;
+    agencyQuiz?: RoomLiveContest['agencyQuiz'];
   }
 ): Promise<RoomExtrasConfig> {
   const { data: roomRow } = await supabase
@@ -1763,6 +1776,7 @@ export async function startRoomContestInSupabase(
     winnerName: null,
     createdAt: now,
     endedAt: null,
+    agencyQuiz: payload.agencyQuiz || null,
   };
 
   const nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({

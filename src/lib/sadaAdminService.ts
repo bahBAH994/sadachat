@@ -88,6 +88,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
     depositsRes,
     withdrawalsRes,
     femaleRes,
+    usersCountRes,
     state,
   ] = await Promise.all([
     supabase.from('sada_users').select(USER_COLUMNS).order('created_at', { ascending: false }),
@@ -103,6 +104,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
       .from('sada_female_voice_requests')
       .select(FEMALE_VOICE_REQ_COLUMNS)
       .order('created_at', { ascending: false }),
+    supabase.from('sada_users').select('id', { count: 'exact', head: true }),
     getPlatformState(),
   ]);
 
@@ -157,7 +159,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
     femaleVoiceRequests,
     hostJoinApplications,
     stats: {
-      totalUsers: users.length,
+      totalUsers: Number(usersCountRes.count ?? users.length),
       activeRooms,
       totalCoins,
       blockedAttempts,

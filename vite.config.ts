@@ -98,8 +98,8 @@ export default defineConfig(() => {
       },
     },
     build: {
-      target: ['es2015', 'chrome64', 'safari12'],
-      cssTarget: ['chrome64', 'safari12'],
+      target: 'es2015',
+      cssTarget: 'es2015',
       sourcemap: false,
     },
     server: {
