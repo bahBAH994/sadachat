@@ -24,7 +24,7 @@ export const TopBar: React.FC = () => {
   if (isCustomHeaderRoute) return null;
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
       <div className="max-w-5xl mx-auto px-3 sm:px-5 h-14 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 shrink-0">
           <button

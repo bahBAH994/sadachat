@@ -239,14 +239,14 @@ const AuthenticatedAppShell: React.FC = () => {
   const shouldKeepRoomMounted = Boolean(activeRoomId || room || roomLoading);
 
   return (
-    <div className="w-full min-h-screen flex flex-col overflow-x-auto">
+    <div className="w-full min-h-screen flex flex-col overflow-x-hidden">
       {!isFullScreenRoom && <TopBar />}
       <main
         tabIndex={0}
         className={
           isFullScreenRoom
             ? 'hidden'
-            : 'flex-1 min-h-0 w-full overflow-y-auto overflow-x-auto overscroll-contain scroll-smooth focus:outline-none'
+            : 'flex-1 w-full overflow-visible focus:outline-none'
         }
       >
         <Routes>

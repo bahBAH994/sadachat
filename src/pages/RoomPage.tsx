@@ -575,6 +575,20 @@ export const RoomPage: React.FC = () => {
   const [isFollowingAgency, setIsFollowingAgency] = useState(false);
   const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
 
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const giftBtnRef = useRef<HTMLButtonElement | null>(null);
+  const headerAnchorRef = useRef<HTMLDivElement | null>(null);
+  const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 2600);
+  }, []);
+
+  const registerSeatRef = useCallback((seatIndex: number, el: HTMLDivElement | null) => {
+    seatRefs.current[seatIndex] = el;
+  }, []);
+
   const userProfileLookup = useMemo(() => {
     const map = new Map<
       string,
@@ -691,20 +705,6 @@ export const RoomPage: React.FC = () => {
       showToast('جميع المقاعد مشغولة حالياً');
     }
   }, [micApprovedRequest, room, user, handleSeatClick, showToast]);
-
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
-  const giftBtnRef = useRef<HTMLButtonElement | null>(null);
-  const headerAnchorRef = useRef<HTMLDivElement | null>(null);
-  const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
-
-  const showToast = useCallback((msg: string) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(null), 2600);
-  }, []);
-
-  const registerSeatRef = useCallback((seatIndex: number, el: HTMLDivElement | null) => {
-    seatRefs.current[seatIndex] = el;
-  }, []);
 
   const handleSeatInteraction = useCallback(
     async (seat: RoomSeat) => {

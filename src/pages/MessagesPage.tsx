@@ -11,7 +11,6 @@ import {
   Gift,
   MessageCircle,
   MessageCircleHeart,
-  MoreVertical,
   Plus,
   Search,
   Send,
@@ -524,7 +523,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   return (
     <div className={embedded ? 'flex flex-col h-full bg-[#F5F6FA]' : 'min-h-screen bg-[#F5F6FA] pb-28'}>
       {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-white border-b border-slate-100 shrink-0">
+      <header className="sticky top-0 z-30 bg-white border-b border-slate-100 pt-[env(safe-area-inset-top)] shrink-0">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             {embedded && onCloseEmbedded && (
@@ -563,16 +562,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             >
               <Search className="w-4 h-4" />
             </button>
-            {!embedded && (
-              <button
-                type="button"
-                onClick={() => setShowRulesModal(true)}
-                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer"
-                title="قواعد المستخدم"
-              >
-                <MoreVertical className="w-4 h-4" />
-              </button>
-            )}
           </div>
         </div>
 
@@ -808,8 +797,10 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
           {/* Active Conversation Window */}
           <section
-            className={`lg:col-span-7 light-card rounded-3xl px-4 pt-3.5 pb-2.5 sm:px-5 sm:pt-4 sm:pb-3 flex flex-col relative ${
-              embedded ? 'h-[72dvh] max-h-[580px]' : 'h-[580px]'
+            className={`lg:col-span-7 light-card rounded-3xl px-4 pt-3.5 sm:px-5 sm:pt-4 flex flex-col justify-between relative ${
+              embedded
+                ? 'h-[72dvh] max-h-[580px] pb-2.5 sm:pb-3'
+                : 'min-h-[calc(100dvh-76px)] pb-20'
             } ${mobileChatOpen ? 'flex' : 'hidden lg:flex'}`}
           >
             {activePeer ? (
@@ -1110,20 +1101,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                   onSubmit={(e) => handleSend(e)}
                   className="mt-2 pt-1.5 border-t border-slate-100 flex items-center gap-1.5 shrink-0"
                 >
-                  <button
-                    type="button"
-                    onClick={() => setShowGiftDrawer((prev) => !prev)}
-                    className={`w-10 h-10 rounded-2xl flex items-center justify-center border shrink-0 cursor-pointer transition ${
-                      showGiftDrawer
-                        ? 'bg-amber-500 border-amber-300 text-[#070913] shadow-md'
-                        : 'bg-gradient-to-br from-[#FEF08A] via-[#D4AF37] to-[#B45309] border-[#FDE047] text-[#070913] shadow-[0_0_12px_rgba(212,175,55,0.4)] hover:brightness-105'
-                    }`}
-                    title="صندوق الهدايا الخاصة"
-                    aria-label="صندوق الهدايا الخاصة"
-                  >
-                    <Gift className="w-4 h-4 stroke-[2.3]" />
-                  </button>
-
                   <input
                     type="text"
                     value={text}
