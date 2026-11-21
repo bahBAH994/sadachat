@@ -547,6 +547,7 @@ export const RoomPage: React.FC = () => {
 
   const [chatText, setChatText] = useState('');
   const [chatFilter, setChatFilter] = useState<'all' | 'chat'>('all');
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [giftInitialTargets, setGiftInitialTargets] = useState<string[] | undefined>(
@@ -574,6 +575,37 @@ export const RoomPage: React.FC = () => {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isFollowingAgency, setIsFollowingAgency] = useState(false);
   const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    let maxViewportHeight = Math.max(window.innerHeight, viewport.height);
+    let orientationTimer: number | undefined;
+    const updateKeyboardState = () => {
+      maxViewportHeight = Math.max(maxViewportHeight, viewport.height);
+      setIsKeyboardOpen(maxViewportHeight - viewport.height > 120);
+    };
+    const resetAfterOrientationChange = () => {
+      window.clearTimeout(orientationTimer);
+      orientationTimer = window.setTimeout(() => {
+        maxViewportHeight = viewport.height;
+        setIsKeyboardOpen(false);
+      }, 350);
+    };
+
+    viewport.addEventListener('resize', updateKeyboardState);
+    viewport.addEventListener('scroll', updateKeyboardState);
+    window.addEventListener('orientationchange', resetAfterOrientationChange);
+    updateKeyboardState();
+
+    return () => {
+      viewport.removeEventListener('resize', updateKeyboardState);
+      viewport.removeEventListener('scroll', updateKeyboardState);
+      window.removeEventListener('orientationchange', resetAfterOrientationChange);
+      window.clearTimeout(orientationTimer);
+    };
+  }, []);
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const giftBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -1053,7 +1085,11 @@ export const RoomPage: React.FC = () => {
 
       <div className="fixed inset-0 h-[100dvh] z-10 flex flex-col gap-2 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2 min-h-0">
         {/* 1. ROOM TOP BAR */}
-        <header className="flex items-center justify-between gap-1.5 shrink-0">
+        <header
+          className={`flex items-center justify-between gap-1.5 shrink-0 ${
+            isKeyboardOpen ? 'sticky top-0 z-20 scale-95 origin-top' : ''
+          }`}
+        >
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
           <div
             ref={headerAnchorRef}
@@ -1083,8 +1119,8 @@ export const RoomPage: React.FC = () => {
             </button>
 
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <h1 className="text-[11px] sm:text-sm font-extrabold text-white leading-tight">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h1 className="min-w-0 break-words text-[11px] sm:text-sm font-extrabold text-white leading-tight">
                   {room.title}
                 </h1>
                 <button
@@ -1403,7 +1439,11 @@ export const RoomPage: React.FC = () => {
         {/* 2. SMART GEOMETRIC MIC GRID (1+4 | 2+4+4 | 5xN up to 30 Larger Mics) */}
         <section
           className={`shrink-0 ${
-            showGamesOverlay ? 'max-h-[34dvh]' : 'max-h-[50dvh]'
+            isKeyboardOpen
+              ? 'sticky top-0 z-20 scale-95 origin-top max-h-none'
+              : showGamesOverlay
+              ? 'max-h-[34dvh]'
+              : 'max-h-[50dvh]'
           } overflow-y-auto no-scrollbar py-1 space-y-2`}
         >
           {micRows.map((row, rIdx) => (
@@ -1411,7 +1451,7 @@ export const RoomPage: React.FC = () => {
               key={rIdx}
               className={`${
                 row.cols === 5
-                  ? 'grid grid-cols-5 gap-y-2 gap-x-1'
+                  ? 'grid grid-cols-5 gap-2'
                   : row.cols === 4
                   ? 'grid grid-cols-4 gap-2 sm:gap-3 max-w-md mx-auto'
                   : row.cols === 2
@@ -1454,7 +1494,11 @@ export const RoomPage: React.FC = () => {
         {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
         <section className="flex-1 min-h-0 flex flex-col mt-1 overflow-hidden">
           {/* Compact Chat Filter Tabs */}
-          <div className="flex items-center gap-1.5 px-1 mb-1 shrink-0">
+          <div
+            className={`flex items-center gap-1.5 px-1 mb-1 shrink-0 ${
+              isKeyboardOpen ? 'hidden' : ''
+            }`}
+          >
             <button
               type="button"
               onClick={() => setChatFilter('all')}

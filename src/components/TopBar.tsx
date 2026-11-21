@@ -51,7 +51,7 @@ export const TopBar: React.FC = () => {
           </Link>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto touch-pan-x no-scrollbar">
           <Link
             to="/wallet"
             title="رصيد الكوينز"

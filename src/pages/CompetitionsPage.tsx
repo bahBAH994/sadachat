@@ -374,7 +374,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
       className={
         embedded
           ? 'space-y-4 sm:space-y-5'
-          : 'max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6 overflow-y-auto overscroll-y-contain'
+          : 'min-h-screen max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-32 space-y-6 overflow-y-auto touch-pan-y'
       }
     >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -390,7 +390,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
         )}
 
         {/* Section Tabs */}
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25 overflow-x-auto no-scrollbar shrink-0">
+        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25 overflow-x-auto touch-pan-x no-scrollbar shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('cultural')}
@@ -944,7 +944,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F20] via-[#0B0F20]/70 to-transparent" />
+                      <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-[#0B0F20] via-[#0B0F20]/70 to-transparent pointer-events-none" />
                       <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                         <div>
                           <div className="flex items-center gap-2 text-xs text-[#F3D37A] font-semibold">

@@ -49,7 +49,7 @@ const GiftGridItem = memo<GiftGridItemProps>(({ gift, active, onSelect }) => {
     <button
       type="button"
       onClick={() => onSelect(gift.id)}
-      className={`relative rounded-2xl p-1.5 flex flex-col items-center text-center transition cursor-pointer overflow-hidden ${
+      className={`relative min-h-[96px] h-auto rounded-xl p-2 shrink-0 flex flex-col items-center justify-between text-center transition cursor-pointer overflow-hidden ${
         active
           ? 'bg-gradient-to-b from-[#3A280B] via-[#241807] to-[#120D05] border-2 border-[#FCE9A6] shadow-[0_0_22px_rgba(243,211,122,0.5)] scale-[1.03]'
           : isImperial
@@ -73,7 +73,7 @@ const GiftGridItem = memo<GiftGridItemProps>(({ gift, active, onSelect }) => {
         </span>
       )}
 
-      <div className="relative mt-0.5 mb-0.5 w-10 h-10 flex items-center justify-center">
+      <div className="relative w-10 h-10 flex items-center justify-center">
         <span
           aria-hidden="true"
           className={`absolute inset-0.5 rounded-full blur-[6px] transition duration-300 ${
@@ -106,7 +106,7 @@ const GiftGridItem = memo<GiftGridItemProps>(({ gift, active, onSelect }) => {
         </div>
       </div>
 
-      <span className="text-[10px] font-extrabold text-white line-clamp-1 leading-tight">
+      <span className="w-full min-w-0 text-[10px] font-extrabold text-white break-words leading-tight">
         {gift.name}
       </span>
 
@@ -368,7 +368,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
             )}
           </div>
 
-          <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1">
+          <div className="flex items-center gap-2.5 overflow-x-auto touch-pan-x no-scrollbar pb-1">
             {/* ALL Button */}
             <button
               type="button"
@@ -479,7 +479,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
           </div>
 
           {giftTab !== 'history' && (
-            <div className="flex items-center gap-1.5 mt-1 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-1.5 mt-1 overflow-x-auto touch-pan-x no-scrollbar">
               {[
                 { id: 'all', label: 'الكل' },
                 { id: 'light', label: 'خفيفة (<100)' },
@@ -533,7 +533,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
               لا توجد هدايا في هذه الفئة ضمن هذا التبويب.
             </p>
           ) : (
-            <div className="flex-1 min-h-[190px] overflow-y-auto grid grid-cols-4 gap-2 p-2">
+            <div className="flex-1 min-h-[190px] max-h-[240px] overflow-y-auto grid grid-cols-4 gap-2 p-2">
               {visibleGifts.map((gift) => (
                 <GiftGridItem
                   key={gift.id}
@@ -550,7 +550,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
         {giftTab !== 'history' && selectedGift && (
           <div className="px-4 pt-2.5 pb-[max(env(safe-area-inset-bottom,0px),12px)] bg-black/75 border-t border-[#D4AF37]/30 space-y-2 shrink-0">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+              <div className="flex items-center gap-1 overflow-x-auto touch-pan-x no-scrollbar">
                 {QUANTITIES.map((qty) => (
                   <button
                     key={qty}

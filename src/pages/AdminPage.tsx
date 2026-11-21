@@ -868,7 +868,7 @@ export const AdminPage: React.FC = () => {
       ref={adminScrollRef}
       tabIndex={0}
       onKeyDown={handleAdminKeyDown}
-      className="w-full min-h-screen overflow-visible pb-32 focus:outline-none"
+      className="w-full min-h-screen overflow-y-auto touch-pan-y pb-32 focus:outline-none"
     >
       {/* Top Sticky Responsive Header & Organized Tabs */}
       <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-[#070913]/92 backdrop-blur-md">
@@ -902,7 +902,7 @@ export const AdminPage: React.FC = () => {
             ref={navScrollRef}
             tabIndex={0}
             aria-label="أقسام لوحة الإدارة"
-            className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain touch-pan-x scroll-smooth pb-1 focus:outline-none"
+            className="flex items-center gap-1.5 overflow-x-auto touch-pan-x scroll-smooth pb-1 focus:outline-none"
           >
             {tabs.map((t) => {
               const active = tab === t.id;

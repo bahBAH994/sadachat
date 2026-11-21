@@ -239,7 +239,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="royal-glass w-full sm:max-w-xl rounded-t-3xl sm:rounded-3xl p-5 space-y-4 max-h-[88vh] overflow-y-auto no-scrollbar"
+        className="royal-glass w-full sm:max-w-xl rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 space-y-3 max-h-[85vh] overflow-y-auto touch-pan-y pb-10 no-scrollbar"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -275,7 +275,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           <button
             type="button"
             onClick={() => setTab('agency')}
-            className={`min-h-[40px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer ${
+            className={`min-h-[44px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer ${
               tab === 'agency'
                 ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
                 : 'text-slate-300 hover:text-white'
@@ -286,7 +286,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           <button
             type="button"
             onClick={() => setTab('members')}
-            className={`min-h-[40px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer ${
+            className={`min-h-[44px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer ${
               tab === 'members'
                 ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
                 : 'text-slate-300 hover:text-white'
@@ -298,7 +298,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
             <button
               type="button"
               onClick={() => setTab('contests')}
-              className={`min-h-[40px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+              className={`min-h-[44px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
                 tab === 'contests'
                   ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
                   : 'text-[#FCE9A6] hover:text-white'
@@ -312,7 +312,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
             <button
               type="button"
               onClick={() => setTab('logs')}
-              className={`min-h-[40px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+              className={`min-h-[44px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
                 tab === 'logs'
                   ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
                   : 'text-amber-200 hover:text-white'
@@ -351,7 +351,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               </div>
             </div>
 
-            <div className="space-y-2 max-h-[48vh] overflow-y-auto no-scrollbar pr-1">
+            <div className="space-y-2 max-h-[48vh] overflow-y-auto touch-pan-y no-scrollbar pr-1">
               {agencyQuizQuestions.map((item, qIndex) => (
                 <div key={qIndex} className="rounded-2xl border border-white/10 bg-[#070913]/75 p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -446,7 +446,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                 لا توجد إجراءات إشرافية مسجلة حتى الآن داخل هذه الوكالة.
               </div>
             ) : (
-              <div className="space-y-2 max-h-[52vh] overflow-y-auto no-scrollbar">
+              <div className="space-y-2 max-h-[52vh] overflow-y-auto touch-pan-y no-scrollbar">
                 {(extras.modLogs || []).map((log) => {
                   const badgeStyle =
                     log.actionType === 'kick_room'
@@ -540,7 +540,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={() => onToggleEffectsMuted(!effectsMuted)}
-                  className={`min-h-[38px] px-3.5 rounded-xl text-xs font-extrabold shrink-0 transition cursor-pointer ${
+                  className={`min-h-[44px] px-3.5 rounded-xl text-xs font-extrabold shrink-0 transition cursor-pointer ${
                     effectsMuted
                       ? 'bg-rose-600 text-white shadow-[0_0_14px_rgba(225,29,72,0.4)]'
                       : 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 hover:bg-emerald-500/35'
@@ -564,7 +564,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                     type="button"
                     disabled={saving}
                     onClick={() => handleQuickSeatChange(cnt)}
-                    className={`min-h-[40px] rounded-xl text-xs font-mono-num font-extrabold border transition cursor-pointer ${
+                    className={`min-h-[44px] rounded-xl text-xs font-mono-num font-extrabold border transition cursor-pointer ${
                       seatCount === cnt
                         ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6]'
                         : 'bg-[#070913]/80 text-slate-300 border-[#D4AF37]/25 hover:border-[#D4AF37]/60'
@@ -623,7 +623,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                   />
                 </label>
               </div>
-              <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1">
+              <div className="flex items-center gap-2.5 overflow-x-auto touch-pan-x no-scrollbar pb-1">
                 <img
                   src={resolveAsset(avatarUrl)}
                   alt="معاينة"
@@ -725,7 +725,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               <button
                 type="button"
                 onClick={() => onAdminAction({ type: 'mute_all' })}
-                className="min-h-[42px] rounded-2xl bg-amber-500/20 border border-amber-400/50 text-[#FCE9A6] text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-amber-500/30"
+                className="min-h-[44px] rounded-2xl bg-amber-500/20 border border-amber-400/50 text-[#FCE9A6] text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-amber-500/30"
               >
                 <MicOff className="w-4 h-4" />
                 <span>كتم المايك للجميع</span>
@@ -733,7 +733,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               <button
                 type="button"
                 onClick={() => onAdminAction({ type: 'clear_all' })}
-                className="min-h-[42px] rounded-2xl bg-rose-500/20 border border-rose-400/50 text-rose-200 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-rose-500/30"
+                className="min-h-[44px] rounded-2xl bg-rose-500/20 border border-rose-400/50 text-rose-200 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-rose-500/30"
               >
                 <UserMinus className="w-4 h-4" />
                 <span>إنزال الجميع من المايكات</span>
@@ -751,7 +751,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                   لا يوجد أعضاء آخرون حالياً.
                 </p>
               ) : (
-                <div className="space-y-2 max-h-[38vh] overflow-y-auto no-scrollbar">
+                <div className="space-y-2 max-h-[38vh] overflow-y-auto touch-pan-y no-scrollbar">
                   {memberList.map((m) => {
                     const isHost = m.userId === room.hostId;
                     const isDeputy = extras.deputyIds.includes(m.userId);

@@ -138,7 +138,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="royal-glass w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl p-5 space-y-4 max-h-[88vh] overflow-y-auto no-scrollbar border border-[#F3D37A]/40"
+        className="royal-glass w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 space-y-3 max-h-[85vh] overflow-y-auto touch-pan-y pb-10 no-scrollbar border border-[#F3D37A]/40"
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
@@ -320,7 +320,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                   type="button"
                   disabled={busy}
                   onClick={() => void handleJoin()}
-                  className="w-full emerald-btn min-h-[42px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="w-full emerald-btn min-h-[44px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <Plus className="w-4 h-4" />
                   <span>انضم كمتسابق الآن</span>
@@ -336,7 +336,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
             )}
 
             {/* Contestants List */}
-            <div className="space-y-2 max-h-[38vh] overflow-y-auto no-scrollbar">
+            <div className="space-y-2 max-h-[38vh] overflow-y-auto touch-pan-y no-scrollbar">
               {sortedEntries.length === 0 ? (
                 <p className="text-xs text-center text-slate-400 py-6">
                   لم ينضم متسابقون بعد — بانتظار المشاركين!
@@ -385,7 +385,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                             type="button"
                             disabled={busy || hasVoted}
                             onClick={() => void handleVote(entry.userId)}
-                            className={`min-h-[34px] rounded-xl px-2.5 text-[11px] font-extrabold flex items-center gap-1 cursor-pointer transition ${
+                            className={`min-h-[44px] rounded-xl px-2.5 text-[11px] font-extrabold flex items-center gap-1 cursor-pointer transition ${
                               hasVoted
                                 ? 'bg-white/5 text-slate-400 cursor-not-allowed'
                                 : 'bg-[#D4AF37]/20 hover:bg-[#D4AF37]/35 border border-[#D4AF37]/50 text-[#FCE9A6]'
@@ -400,7 +400,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                             type="button"
                             disabled={busy}
                             onClick={() => void handleFinish(entry.userId)}
-                            className="min-h-[34px] rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-400/50 px-2.5 text-[11px] font-extrabold text-emerald-100 cursor-pointer"
+                            className="min-h-[44px] rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-400/50 px-2.5 text-[11px] font-extrabold text-emerald-100 cursor-pointer"
                             title="تتويج كفائز وإنهاء المسابقة"
                           >
                             تتويج 🏆
@@ -421,7 +421,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                     type="button"
                     disabled={busy}
                     onClick={() => void handleFinish()}
-                    className="gold-btn min-h-[42px] rounded-2xl text-xs font-extrabold cursor-pointer"
+                    className="gold-btn min-h-[44px] rounded-2xl text-xs font-extrabold cursor-pointer"
                   >
                     إنهاء وإعلان الفائز
                   </button>
@@ -429,7 +429,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowCreateForm(true)}
-                    className="gold-btn min-h-[42px] rounded-2xl text-xs font-extrabold cursor-pointer"
+                    className="gold-btn min-h-[44px] rounded-2xl text-xs font-extrabold cursor-pointer"
                   >
                     مسابقة جديدة
                   </button>
@@ -438,7 +438,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                   type="button"
                   disabled={busy}
                   onClick={() => void handleClear()}
-                  className="min-h-[42px] rounded-2xl bg-rose-600/25 border border-rose-500/45 text-rose-200 hover:bg-rose-600/40 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="min-h-[44px] rounded-2xl bg-rose-600/25 border border-rose-500/45 text-rose-200 hover:bg-rose-600/40 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>حذف / إغلاق</span>

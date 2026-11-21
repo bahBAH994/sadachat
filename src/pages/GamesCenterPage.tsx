@@ -954,7 +954,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
           ? 'space-y-2.5'
           : embedded
           ? 'space-y-4 sm:space-y-5'
-          : 'max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-28 space-y-6 overflow-y-auto overscroll-y-contain'
+          : 'min-h-screen max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-32 space-y-6 overflow-y-auto touch-pan-y'
       }
     >
       {/* Header + Live Wallet Sync Strip (Hidden in compact 45% room mode) */}
@@ -1131,7 +1131,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
       {category === 'slots' && (
         <>
           {compactRoomMode ? (
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x no-scrollbar pb-0.5">
               {SLOT_MACHINES.map((machine) => {
                 const isSelected = machine.id === activeMachine.id;
                 return (
@@ -1530,7 +1530,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
       {category === 'dice' && (
         <section className={compactRoomMode ? 'space-y-2' : 'space-y-5'}>
           {compactRoomMode ? (
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x no-scrollbar">
               {(
                 [
                   { id: 'double_dice', title: 'نرد مزدوج', badge: '×4.8' },

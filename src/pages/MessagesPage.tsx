@@ -521,7 +521,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const comboCircumference = 2 * Math.PI * comboCircleRadius;
 
   return (
-    <div className={embedded ? 'flex flex-col h-full bg-[#F5F6FA]' : 'min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto touch-pan-y'}>
+    <div className={embedded ? 'flex flex-col h-full bg-[#F5F6FA]' : 'min-h-screen bg-[#F5F6FA] pb-32 overflow-y-auto touch-pan-y'}>
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 pt-[env(safe-area-inset-top)] shrink-0">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
@@ -610,7 +610,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       <div
         className={
           embedded
-            ? 'flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-3 py-3 space-y-3'
+            ? 'flex-1 min-h-0 overflow-y-auto touch-pan-y px-3 py-3 space-y-3'
             : 'max-w-5xl mx-auto px-3.5 sm:px-5 pt-3 space-y-4 pb-24'
         }
       >
@@ -676,7 +676,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                   لا يوجد أعضاء مسجلون آخرون بعد.
                 </p>
               ) : (
-                <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
+                <div className="flex items-center gap-3 overflow-x-auto touch-pan-x no-scrollbar pb-1">
                   {recipients.map((rec) => {
                     const live = isPeerOnline(rec);
                     return (
@@ -715,7 +715,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             </div>
 
             {/* Filter Chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x no-scrollbar">
               {(['كامل', 'غير مقروء', 'وجوه مألوفة', 'المجموعات'] as InboxFilter[]).map(
                 (tab) => (
                   <button
@@ -1001,7 +1001,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                         </button>
                       </div>
 
-                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                      <div className="flex items-center gap-2 overflow-x-auto touch-pan-x no-scrollbar pb-1">
                         {visibleGifts.map((g) => (
                           <PmGiftItem
                             key={g.id}
@@ -1015,7 +1015,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                       {selectedGift && (
                         <div className="pt-2 border-t border-white/10 space-y-2">
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                            <div className="flex items-center gap-1 overflow-x-auto touch-pan-x no-scrollbar">
                               {QUANTITIES.map((qty) => (
                                 <button
                                   key={qty}

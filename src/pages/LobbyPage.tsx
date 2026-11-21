@@ -619,7 +619,7 @@ export const LobbyPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto touch-pan-y">
+    <div className="min-h-screen bg-[#F5F6FA] pb-32 overflow-y-auto touch-pan-y">
       {/* Top App Header matching screenshot */}
       <header className="sticky top-0 z-30 bg-white/95 border-b border-slate-100">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
@@ -941,7 +941,7 @@ export const LobbyPage: React.FC = () => {
 
         {/* Category Filter Strip (cleaned — no 'لعبة' chip & no Grid square button) */}
         <section className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x no-scrollbar py-0.5">
             {(['جديدة', 'أكثر شعبية', 'لايف', 'محادثة'] as FilterChip[]).map((chip) => {
               const active = activeChip === chip;
               return (

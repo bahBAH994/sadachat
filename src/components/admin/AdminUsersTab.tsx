@@ -129,7 +129,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         </div>
 
         {/* Filter Chips */}
-        <div className="flex items-center gap-2 overflow-x-auto overscroll-x-contain touch-pan-x no-scrollbar pb-1">
+        <div className="flex items-center gap-2 overflow-x-auto touch-pan-x no-scrollbar pb-1">
           {(
             [
               { id: 'all', label: `الكل (${counts.total})` },

@@ -604,7 +604,7 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                     onClick={handleOpenHallOfFame}
                     className="relative h-16 sm:h-[72px] rounded-2xl border-2 border-[#FDE047]/80 bg-gradient-to-br from-[#FDE68A]/90 via-[#B45309]/95 to-[#78350F] overflow-hidden shadow-[0_6px_18px_rgba(250,204,21,0.3)] cursor-pointer group active:scale-[0.98] transition flex flex-col items-center justify-center px-2"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
+                    <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent pointer-events-none" />
                     <div className="relative flex items-center gap-1.5">
                       <Crown className="w-4 h-4 text-[#FEF08A] drop-shadow" />
                       <span className="text-xs sm:text-sm font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
@@ -621,7 +621,7 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                     onClick={() => setViewMode('agency_partner')}
                     className="relative h-16 sm:h-[72px] rounded-2xl border-2 border-[#FDE047]/80 bg-gradient-to-br from-[#FDE047]/85 via-[#92400E]/95 to-[#451A03] overflow-hidden shadow-[0_6px_18px_rgba(250,204,21,0.3)] cursor-pointer group active:scale-[0.98] transition flex flex-col items-center justify-center px-2"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
+                    <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent pointer-events-none" />
                     <div className="relative flex items-center gap-1.5">
                       <Building2 className="w-4 h-4 text-[#FEF08A] drop-shadow" />
                       <span className="text-xs sm:text-sm font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">

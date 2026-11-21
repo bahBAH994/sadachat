@@ -233,7 +233,7 @@ export const AgencyPage: React.FC = () => {
 
   if (loading || !data) {
     return (
-      <div className="min-h-screen bg-[#F5F6FA] pt-10 px-4 text-center text-sm font-bold text-slate-600">
+      <div className="min-h-screen bg-[#F5F6FA] overflow-y-auto touch-pan-y pb-32 pt-10 px-4 text-center text-sm font-bold text-slate-600">
         جارٍ تحميل منظومة الوكالات والمضيفين...
       </div>
     );
@@ -256,8 +256,8 @@ export const AgencyPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
-      <div className="max-w-5xl mx-auto px-4 pt-4 space-y-5">
+    <div className="min-h-screen bg-[#F5F6FA] pb-32 overflow-y-auto touch-pan-y">
+      <div className="max-w-5xl mx-auto p-4 space-y-3">
         {/* Crisp Dark Royal Top Banner */}
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#17253D] to-[#064E3B] p-5 sm:p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1.5">
@@ -291,7 +291,7 @@ export const AgencyPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('my-agency')}
-              className={`min-h-[42px] rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+              className={`min-h-[44px] rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
                 activeTab === 'my-agency' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
@@ -302,7 +302,7 @@ export const AgencyPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('host-center')}
-              className={`min-h-[42px] rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+              className={`min-h-[44px] rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
                 activeTab === 'host-center' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
@@ -335,16 +335,16 @@ export const AgencyPage: React.FC = () => {
         {activeTab === 'my-agency' && myAgency && (
           <div className="space-y-5">
             {/* Agency Summary + Code + Weekly Target */}
-            <section className="light-card rounded-3xl p-5 sm:p-6 space-y-5">
+            <section className="light-card rounded-3xl p-4 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div>
                   <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-0.5">
                     وكالة معتمدة · ID: {formatShortNumericId(myAgency.agency.id).slice(0, 6)}
                   </span>
-                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1.5">
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1.5 break-words">
                     {myAgency.agency.name}
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">{myAgency.agency.description}</p>
+                  <p className="text-xs text-slate-500 mt-0.5 break-words">{myAgency.agency.description}</p>
                 </div>
 
                 <div className="flex flex-col sm:items-end gap-1.5">
@@ -359,7 +359,7 @@ export const AgencyPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleCopyCode(myAgency.agency.code)}
-                      className="emerald-btn min-h-[38px] rounded-xl px-3.5 py-1.5 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                      className="emerald-btn min-h-[44px] rounded-xl px-3.5 py-1.5 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
                     >
                       {copiedCode ? (
                         <>
@@ -541,7 +541,7 @@ export const AgencyPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => navigate(`/messages?to=${host.id}`)}
-                            className="min-h-[38px] rounded-xl border border-slate-200 bg-white hover:border-emerald-400 px-3 text-xs font-bold text-slate-700 flex items-center gap-1 cursor-pointer"
+                            className="min-h-[44px] rounded-xl border border-slate-200 bg-white hover:border-emerald-400 px-3 text-xs font-bold text-slate-700 flex items-center gap-1 cursor-pointer"
                           >
                             <MessageCircleHeart className="w-3.5 h-3.5 text-emerald-600" />
                             <span>مراسلة</span>
@@ -564,7 +564,7 @@ export const AgencyPage: React.FC = () => {
                     ستظهر هنا عمولات الوكالة المعتمدة فور صرفها من لوحة الإدارة العليا.
                   </p>
                 ) : (
-                  <div className="space-y-2.5 max-h-[360px] overflow-y-auto no-scrollbar">
+                  <div className="space-y-2.5 max-h-[85vh] overflow-y-auto touch-pan-y pb-10 no-scrollbar">
                     {myAgency.commissionTransactions.map((tx) => (
                       <div
                         key={tx.id}
@@ -597,7 +597,7 @@ export const AgencyPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('host-center')}
-              className="emerald-btn rounded-2xl px-5 py-2.5 text-xs font-extrabold cursor-pointer"
+              className="emerald-btn min-h-[44px] rounded-2xl px-5 py-2.5 text-xs font-extrabold cursor-pointer"
             >
               الانتقال إلى مركز المضيف
             </button>
@@ -637,14 +637,14 @@ export const AgencyPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => navigate('/')}
-                    className="emerald-btn min-h-[40px] rounded-xl px-4 text-xs font-extrabold cursor-pointer"
+                    className="emerald-btn min-h-[44px] rounded-xl px-4 text-xs font-extrabold cursor-pointer"
                   >
                     الدخول للغرف الصوتية
                   </button>
                   <button
                     type="button"
                     onClick={handleLeaveAgency}
-                    className="min-h-[40px] rounded-xl px-4 text-xs font-bold border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                    className="min-h-[44px] rounded-xl px-4 text-xs font-bold border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
                   >
                     مغادرة الوكالة
                   </button>
@@ -736,7 +736,7 @@ export const AgencyPage: React.FC = () => {
                             key={ag.id}
                             type="button"
                             onClick={() => setAgencyInput(ag.code)}
-                            className={`rounded-xl px-3 py-1.5 text-xs font-bold border cursor-pointer transition ${
+                            className={`min-h-[44px] rounded-xl px-3 py-1.5 text-xs font-bold border cursor-pointer transition ${
                               agencyInput.trim().toUpperCase() === ag.code.toUpperCase()
                                 ? 'bg-emerald-50 border-emerald-400 text-emerald-800'
                                 : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-emerald-300'
@@ -825,7 +825,7 @@ export const AgencyPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowCreateAgency((prev) => !prev)}
-                  className="w-full p-5 flex items-center justify-between text-right cursor-pointer hover:bg-slate-50 transition"
+                  className="w-full min-h-[44px] p-4 flex items-center justify-between text-right cursor-pointer hover:bg-slate-50 transition"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700">
