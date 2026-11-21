@@ -5,6 +5,23 @@ interface DragonStageBackdropProps {
   coverImage?: string | null;
 }
 
+const RoyalParticles: React.FC<{ color: string }> = ({ color }) => (
+  <div aria-hidden="true" className="royal-room-particles absolute inset-0">
+    {Array.from({ length: 16 }, (_, index) => (
+      <span
+        key={index}
+        className="royal-room-particle"
+        style={{
+          left: `${5 + ((index * 23) % 90)}%`,
+          animationDelay: `${(index % 8) * -0.65}s`,
+          backgroundColor: color,
+          color,
+        }}
+      />
+    ))}
+  </div>
+);
+
 export const DragonStageBackdrop: React.FC<DragonStageBackdropProps> = ({
   coverImage = 'dragon_dark',
 }) => {
@@ -103,7 +120,10 @@ export const DragonStageBackdrop: React.FC<DragonStageBackdropProps> = ({
           <circle cx="150" cy="240" r="2.4" fill="#E0F2FE" opacity="0.8" />
           <circle cx="465" cy="210" r="2.2" fill="#7DD3FC" opacity="0.85" />
           <circle cx="490" cy="520" r="2" fill="#E0F2FE" opacity="0.7" />
+          <polygon points="300,120 330,170 300,220 270,170" fill="none" stroke="#E0F2FE" strokeOpacity=".7" className="royal-scene-glint" />
+          <path d="M30 650 C170 600 430 600 570 650" fill="none" stroke="#7DD3FC" strokeOpacity=".5" strokeWidth="2" className="royal-scene-wave" />
         </svg>
+        <RoyalParticles color="#BAE6FD" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/15 to-black/75" />
       </div>
     );
@@ -125,7 +145,11 @@ export const DragonStageBackdrop: React.FC<DragonStageBackdropProps> = ({
           <circle cx="300" cy="360" r="180" fill="none" stroke="#FDE047" strokeOpacity="0.28" strokeWidth="1.5" strokeDasharray="8 6" />
           <polygon points="300,150 370,290 300,430 230,290" fill="#10B981" fillOpacity="0.16" stroke="#A7F3D0" strokeOpacity="0.45" strokeWidth="1.5" />
           <path d="M90 880 C160 660, 230 620, 300 620 C370 620, 440 660, 510 880" fill="none" stroke="#FCD34D" strokeOpacity="0.32" strokeWidth="2" />
+          <path d="M245 24h110l-12 26h-86zM265 50v54m70-54v54m-84 0h98" fill="none" stroke="#FDE047" strokeOpacity=".65" strokeWidth="2" />
+          <path d="M276 105l8 13-8 13-8-13zM300 105l8 13-8 13-8-13zM324 105l8 13-8 13-8-13z" fill="#FDE047" fillOpacity=".8" className="royal-scene-glint" />
+          <path d="M300 180l22 24-22 35-22-35z" fill="none" stroke="#FDE047" strokeOpacity=".6" className="royal-scene-glint" />
         </svg>
+        <RoyalParticles color="#FDE047" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/15 to-black/75" />
       </div>
     );
@@ -147,7 +171,10 @@ export const DragonStageBackdrop: React.FC<DragonStageBackdropProps> = ({
           <path d="M600 0 C490 210, 510 480, 600 760 L600 0 Z" fill="#881337" fillOpacity="0.35" />
           <polygon points="300,170 400,295 300,455 200,295" fill="#FB7185" fillOpacity="0.16" stroke="#FDE047" strokeOpacity="0.45" strokeWidth="1.5" />
           <circle cx="300" cy="310" r="190" fill="none" stroke="#F59E0B" strokeOpacity="0.22" strokeWidth="1.5" />
+          <path d="M80 120 L210 205 M400 690 L520 780 M85 460 L190 510" fill="none" stroke="#FDE047" strokeOpacity=".85" strokeWidth="2" className="royal-scene-meteor" />
+          <path d="M300 90l10 17 20 3-15 14 4 20-19-10-19 10 4-20-15-14 20-3z" fill="#FDE047" fillOpacity=".65" className="royal-scene-glint" />
         </svg>
+        <RoyalParticles color="#FBBF24" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/15 to-black/75" />
       </div>
     );

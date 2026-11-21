@@ -8,7 +8,6 @@ import {
   Gem,
   Image as ImageIcon,
   Sparkles,
-  Store,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -253,14 +252,6 @@ export const BagPage: React.FC = () => {
               <p className="text-xs font-bold text-slate-600">
                 لم تشترِ أي خلفية وكالة فخمة بعد. يمكنك اقتناء خلفيات القصور الفاخرة من المتجر بـ 5,000 كوينز!
               </p>
-              <button
-                type="button"
-                onClick={() => navigate('/store')}
-                className="emerald-btn rounded-2xl px-5 py-2.5 text-xs font-extrabold cursor-pointer inline-flex items-center gap-2"
-              >
-                <Store className="w-4 h-4" />
-                <span>تصفح المتجر والخلفيات</span>
-              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -291,16 +282,6 @@ export const BagPage: React.FC = () => {
           )}
         </section>
 
-        <div className="flex justify-center pt-1">
-          <button
-            type="button"
-            onClick={() => navigate('/store')}
-            className="emerald-btn rounded-2xl px-6 py-2.5 text-xs font-extrabold cursor-pointer flex items-center gap-2"
-          >
-            <Store className="w-4 h-4" />
-            <span>الانتقال إلى المتجر لاقتناء المزيد</span>
-          </button>
-        </div>
       </div>
     </div>
   );

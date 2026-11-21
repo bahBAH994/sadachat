@@ -39,6 +39,7 @@ import { MessagesPage } from './pages/MessagesPage';
 import { AgencyPage } from './pages/AgencyPage';
 import { GamesCenterPage } from './pages/GamesCenterPage';
 import { AdminPage } from './pages/AdminPage';
+import { SvipPage } from './pages/SvipPage';
 
 class AppErrorBoundary extends Component<
   { children: React.ReactNode },
@@ -242,43 +243,49 @@ const AuthenticatedAppShell: React.FC = () => {
   }
 
   const isFullScreenRoom = Boolean((activeRoomId || roomLoading) && !isRoomMinimized);
+  const isFullScreenSvip = location.pathname === '/svip';
   const shouldKeepRoomMounted = Boolean(activeRoomId || room || roomLoading);
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden">
-      {!isFullScreenRoom && <TopBar />}
+      {!isFullScreenRoom && !isFullScreenSvip && <TopBar />}
       <main
         tabIndex={0}
         className={
           isFullScreenRoom
             ? 'hidden'
-            : 'flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y pb-28 focus:outline-none'
+            : isFullScreenSvip
+            ? 'flex-1 min-h-0 w-full overflow-hidden focus:outline-none'
+            : 'flex-1 min-h-0 w-full overflow-hidden pb-[76px] focus:outline-none'
         }
       >
-        <Routes>
-          <Route path="/" element={<LobbyPage />} />
-          <Route path="/meet" element={<MeetPage />} />
-          <Route path="/room/:id" element={<RoomRouteBridge />} />
-          <Route path="/competitions" element={<CompetitionsPage />} />
-          <Route path="/games" element={<GamesCenterPage />} />
-          <Route path="/store" element={<StorePage />} />
-          <Route path="/bag" element={<BagPage />} />
-          <Route path="/diamond-wallet" element={<DiamondWalletPage />} />
-          <Route path="/my-level" element={<MyLevelPage />} />
-          <Route path="/wallet" element={<WalletPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/messages" element={<MessagesPage />} />
-          <Route path="/agency" element={<AgencyPage />} />
-          <Route
-            path="/admin"
-            element={
-              isSuperAdminUser(user) ? <AdminPage /> : <Navigate to="/" replace />
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y">
+          <Routes>
+            <Route path="/" element={<LobbyPage />} />
+            <Route path="/meet" element={<MeetPage />} />
+            <Route path="/room/:id" element={<RoomRouteBridge />} />
+            <Route path="/competitions" element={<CompetitionsPage />} />
+            <Route path="/games" element={<GamesCenterPage />} />
+            <Route path="/store" element={<StorePage />} />
+            <Route path="/bag" element={<BagPage />} />
+            <Route path="/diamond-wallet" element={<DiamondWalletPage />} />
+            <Route path="/my-level" element={<MyLevelPage />} />
+            <Route path="/wallet" element={<WalletPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/svip" element={<SvipPage />} />
+            <Route path="/messages" element={<MessagesPage />} />
+            <Route path="/agency" element={<AgencyPage />} />
+            <Route
+              path="/admin"
+              element={
+                isSuperAdminUser(user) ? <AdminPage /> : <Navigate to="/" replace />
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
       </main>
-      {!isFullScreenRoom && <BottomNav />}
+      {!isFullScreenRoom && !isFullScreenSvip && <BottomNav />}
       {shouldKeepRoomMounted && (
         <div style={{ display: isRoomMinimized ? 'none' : 'contents' }}>
           <RoomPage />

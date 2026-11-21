@@ -216,6 +216,140 @@
   }
 }
 
+@keyframes frame-ornament-flare {
+  0%, 100% {
+    transform: translateX(-50%) scale(0.9) rotate(-5deg);
+    filter: drop-shadow(0 0 3px currentColor);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.2) rotate(5deg);
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+}
+
+.frame-ornament-emerald {
+  color: #FDE68A;
+  animation: frame-ornament-flare 2.2s ease-in-out infinite;
+}
+
+.frame-ornament-phoenix {
+  color: #FDBA74;
+  animation: frame-ornament-flare 1.4s ease-in-out infinite;
+}
+
+.frame-ornament-galaxy {
+  color: #E9D5FF;
+  animation: frame-ornament-flare 2.6s ease-in-out infinite;
+}
+
+.frame-ornament-dragon {
+  color: #FDE047;
+  animation: frame-ornament-flare 1.7s ease-in-out infinite;
+}
+
+@keyframes royal-gold-fall {
+  0% {
+    transform: translate3d(0, -8px, 0) scale(0.5);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(18px, 142px, 0) scale(0.9);
+    opacity: 0;
+  }
+}
+
+@keyframes royal-scene-glint {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes royal-scene-meteor {
+  0%, 65% {
+    opacity: 0.1;
+    transform: translate3d(-18px, -8px, 0);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.1;
+    transform: translate3d(22px, 10px, 0);
+  }
+}
+
+@keyframes royal-scene-wave {
+  0%, 100% {
+    transform: translateX(-8px);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translateX(8px);
+    opacity: 0.85;
+  }
+}
+
+@keyframes royal-room-lightfall {
+  0% {
+    transform: translate3d(0, -8px, 0) scale(0.55);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(24px, 900px, 0) scale(1);
+    opacity: 0;
+  }
+}
+
+.royal-room-particles {
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.royal-room-particle {
+  position: absolute;
+  top: -8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  box-shadow: 0 0 12px currentColor;
+  animation: royal-room-lightfall 5s linear infinite;
+}
+
+.royal-scene-wave {
+  animation: royal-scene-wave 5s ease-in-out infinite;
+}
+
+.royal-gold-particle {
+  position: absolute;
+  top: -6px;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  box-shadow: 0 0 8px currentColor;
+  animation: royal-gold-fall 3.8s linear infinite;
+}
+
+.royal-scene-glint {
+  transform-origin: center;
+  animation: royal-scene-glint 2.2s ease-in-out infinite;
+}
+
+.royal-scene-meteor {
+  transform-origin: center;
+  animation: royal-scene-meteor 3.6s ease-in-out infinite;
+}
+
 .animate-frame-orbit {
   animation: frame-orbit 6s linear infinite;
 }

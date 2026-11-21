@@ -19,6 +19,8 @@ import {
   STORE_COIN_ITEMS,
   STORE_LUXURY_BACKGROUNDS,
   TEMP_ONLY_FRAME_IDS,
+  setCustomVipIdsCache,
+  type VipIdItem,
 } from './sadaCatalog';
 import {
   DEPOSIT_COLUMNS,
@@ -671,6 +673,61 @@ export async function purchaseRoomBackgroundInSupabase(
   ]);
 
   return { user: freshUser, ownedBackgrounds: owned };
+}
+
+export async function purchaseVipIdInSupabase(
+  user: User,
+  vipId: VipIdItem
+): Promise<{ user: User; customVipIds: Record<string, string> }> {
+  const { error: purchaseError } = await supabase.rpc('sada_purchase_vip_id', {
+    p_user_id: user.id,
+    p_item_id: vipId.id,
+  });
+  if (purchaseError) {
+    if (purchaseError.message.includes('مملوك')) {
+      throw new Error('هذا الرقم مملوك بالفعل لمستخدم آخر.');
+    }
+    if (purchaseError.message.includes('رصيد')) {
+      throw new Error('رصيد الكوينز غير كافٍ لشراء هذا الرقم.');
+    }
+    throw new Error(purchaseError.message);
+  }
+
+  const [{ data: userRow, error: userError }, state] = await Promise.all([
+    supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
+    getPlatformState({ forceRefresh: true }),
+  ]);
+  if (userError) throw new Error(userError.message);
+  if (!userRow) throw new Error('تم الشراء، لكن تعذّر تحديث بيانات الحساب. أعد فتح المتجر للمزامنة.');
+
+  const customVipIds = state.settings.customVipIds || {};
+  setCustomVipIdsCache(customVipIds);
+  return { user: rowToUser(userRow), customVipIds };
+}
+
+export async function activateSvipMembershipInSupabase(
+  user: User,
+  level: 1 | 2 | 3 | 4
+): Promise<User> {
+  const { error: activationError } = await supabase.rpc('sada_activate_svip', {
+    p_user_id: user.id,
+    p_level: level,
+  });
+  if (activationError) {
+    if (activationError.message.includes('رصيد')) {
+      throw new Error('رصيد الكوينز غير كافٍ لتفعيل هذا المستوى.');
+    }
+    throw new Error(activationError.message);
+  }
+
+  const { data: updatedRow, error: userError } = await supabase
+    .from('sada_users')
+    .select(USER_COLUMNS)
+    .eq('id', user.id)
+    .maybeSingle();
+  if (userError) throw new Error(userError.message);
+  if (!updatedRow) throw new Error('تم التفعيل، لكن تعذّر تحديث بيانات الحساب. أعد فتح الصفحة للمزامنة.');
+  return rowToUser(updatedRow);
 }
 
 export async function applyRoomBackgroundToMyRoomInSupabase(

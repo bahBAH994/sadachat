@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS public.sada_users (
   diamonds BIGINT NOT NULL DEFAULT 0,
   level INTEGER NOT NULL DEFAULT 1,
   xp BIGINT NOT NULL DEFAULT 0,
+  svip_level SMALLINT CHECK (svip_level BETWEEN 1 AND 4),
+  svip_expires_at TIMESTAMPTZ,
   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   is_banned BOOLEAN NOT NULL DEFAULT FALSE,
   device_uuid TEXT NOT NULL,
@@ -48,6 +50,9 @@ CREATE TABLE IF NOT EXISTS public.sada_users (
 CREATE INDEX IF NOT EXISTS idx_sada_users_email ON public.sada_users(email);
 CREATE INDEX IF NOT EXISTS idx_sada_users_device ON public.sada_users(device_uuid);
 CREATE INDEX IF NOT EXISTS idx_sada_users_agency ON public.sada_users(agency_id);
+ALTER TABLE public.sada_users
+  ADD COLUMN IF NOT EXISTS svip_level SMALLINT CHECK (svip_level BETWEEN 1 AND 4),
+  ADD COLUMN IF NOT EXISTS svip_expires_at TIMESTAMPTZ;
 
 -- 2. جدول جلسات تسجيل الدخول
 CREATE TABLE IF NOT EXISTS public.sada_sessions (
@@ -269,6 +274,103 @@ CREATE TABLE IF NOT EXISTS public.sada_platform_state (
   ladder_sessions JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS public.sada_vip_ids_catalog (
+  id TEXT PRIMARY KEY,
+  number TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  badge TEXT NOT NULL,
+  price_coins BIGINT NOT NULL CHECK (price_coins > 0),
+  owner_id TEXT UNIQUE REFERENCES public.sada_users(id) ON DELETE SET NULL
+);
+
+INSERT INTO public.sada_vip_ids_catalog (id, number, title, badge, price_coins) VALUES
+  ('vip_id_100', '100', 'المئة الملكية', '👑', 70000),
+  ('vip_id_111', '111', 'ثلاثية النور', '✨', 65000),
+  ('vip_id_222', '222', 'ثلاثية التاج', '👑', 65000),
+  ('vip_id_333', '333', 'ثلاثية الألماس', '💎', 65000),
+  ('vip_id_444', '444', 'ثلاثية الفخامة', '🏆', 65000),
+  ('vip_id_555', '555', 'ثلاثية الصقر', '🦅', 65000),
+  ('vip_id_666', '666', 'ثلاثية المجد', '⚜️', 65000),
+  ('vip_id_777', '777', 'السلطان الملكي', '👑', 85000),
+  ('vip_id_888', '888', 'ثلاثية الحظ', '🍀', 65000),
+  ('vip_id_999', '999', 'التسعمئة الإمبراطورية', '💠', 85000),
+  ('vip_id_1000', '1000', 'الأسطورة الذهبية', '🏆', 35000),
+  ('vip_id_1001', '1001', 'مرآة الألف', '🪞', 28000),
+  ('vip_id_1111', '1111', 'الرباعية الملكية', '👑', 40000),
+  ('vip_id_1221', '1221', 'انعكاس الصقر', '🦅', 28000),
+  ('vip_id_2000', '2000', 'بداية الألفين', '✨', 25000),
+  ('vip_id_2026', '2026', 'عام التميز', '🌟', 35000),
+  ('vip_id_2222', '2222', 'الرباعية الفضية', '💠', 35000),
+  ('vip_id_3333', '3333', 'الرباعية المتلألئة', '💎', 35000),
+  ('vip_id_4444', '4444', 'الرباعية الإمبراطورية', '🏆', 45000),
+  ('vip_id_5555', '5555', 'الصقر الإمبراطوري', '🦅', 30000),
+  ('vip_id_6666', '6666', 'الرباعية الأنيقة', '⚜️', 35000),
+  ('vip_id_7000', '7000', 'الفارس الإمبراطوري', '🗡️', 12000),
+  ('vip_id_7777', '7777', 'الرباعية السلطانية', '👑', 45000),
+  ('vip_id_8888', '8888', 'الجوهرة المزدوجة', '💠', 40000),
+  ('vip_id_9000', '9000', 'قمة التسعة', '🌟', 25000),
+  ('vip_id_9090', '9090', 'توازن التسعة', '✨', 28000),
+  ('vip_id_9999', '9999', 'التاج الماسي', '💎', 45000),
+  ('vip_id_10101', '10101', 'خماسي المرآة', '🪞', 18000),
+  ('vip_id_11111', '11111', 'الخماسي الملكي', '👑', 25000),
+  ('vip_id_12345', '12345', 'التسلسل الفاخر', '✨', 15000),
+  ('vip_id_20000', '20000', 'عشرون ألفاً', '🏅', 12000),
+  ('vip_id_22222', '22222', 'خماسي التاج', '👑', 22000),
+  ('vip_id_33333', '33333', 'خماسي الجوهرة', '💎', 22000),
+  ('vip_id_44444', '44444', 'خماسي الفخامة', '🏆', 22000),
+  ('vip_id_55555', '55555', 'الخماسي الإمبراطوري', '🦅', 25000),
+  ('vip_id_66666', '66666', 'خماسي المجد', '⚜️', 22000),
+  ('vip_id_77777', '77777', 'خماسي السلطان', '👑', 25000),
+  ('vip_id_88888', '88888', 'خماسي الحظ', '💠', 25000),
+  ('vip_id_90000', '90000', 'الرقم الملكي الأخير', '🌟', 18000),
+  ('vip_id_99999', '99999', 'الخماسي الأسطوري', '🐉', 30000)
+ON CONFLICT (id) DO UPDATE SET
+  number = EXCLUDED.number,
+  title = EXCLUDED.title,
+  badge = EXCLUDED.badge,
+  price_coins = EXCLUDED.price_coins;
+
+WITH legacy_owned_ids AS (
+  SELECT DISTINCT ON (id_number.value)
+    id_number.key AS owner_id,
+    id_number.value AS number
+  FROM public.sada_platform_state AS platform,
+       jsonb_each_text(coalesce(platform.settings -> 'customVipIds', '{}'::jsonb)) AS id_number
+  WHERE platform.id = 'global'
+  ORDER BY id_number.value, id_number.key
+)
+UPDATE public.sada_vip_ids_catalog AS catalog
+SET owner_id = legacy_owned_ids.owner_id
+FROM legacy_owned_ids
+WHERE catalog.number = legacy_owned_ids.number
+  AND catalog.owner_id IS NULL;
+
+CREATE TABLE IF NOT EXISTS public.sada_svip_tiers (
+  level SMALLINT PRIMARY KEY CHECK (level BETWEEN 1 AND 4),
+  label TEXT NOT NULL,
+  price_coins BIGINT NOT NULL CHECK (price_coins > 0)
+);
+
+INSERT INTO public.sada_svip_tiers (level, label, price_coins) VALUES
+  (1, 'SVIP 1 البرونزي', 10000),
+  (2, 'SVIP 2 الفضي', 25000),
+  (3, 'SVIP 3 الذهبي', 60000),
+  (4, 'SVIP 4 الإمبراطوري', 150000)
+ON CONFLICT (level) DO UPDATE SET
+  label = EXCLUDED.label,
+  price_coins = EXCLUDED.price_coins;
+
+ALTER TABLE public.sada_vip_ids_catalog ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sada_svip_tiers ENABLE ROW LEVEL SECURITY;
+GRANT SELECT ON public.sada_vip_ids_catalog, public.sada_svip_tiers TO anon, authenticated, service_role;
+REVOKE INSERT, UPDATE, DELETE ON public.sada_vip_ids_catalog, public.sada_svip_tiers FROM anon, authenticated;
+DROP POLICY IF EXISTS "sada_vip_ids_catalog_read" ON public.sada_vip_ids_catalog;
+CREATE POLICY "sada_vip_ids_catalog_read" ON public.sada_vip_ids_catalog
+  FOR SELECT TO anon, authenticated, service_role USING (TRUE);
+DROP POLICY IF EXISTS "sada_svip_tiers_read" ON public.sada_svip_tiers;
+CREATE POLICY "sada_svip_tiers_read" ON public.sada_svip_tiers
+  FOR SELECT TO anon, authenticated, service_role USING (TRUE);
 
 -- ============================================================================
 -- صلاحيات الوصول وسياسات RLS (لعمل الباك-إند والواجهة الفورية بسلاسة)
@@ -512,12 +614,137 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.sada_purchase_vip_id(p_user_id TEXT, p_item_id TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_id TEXT := auth.uid()::TEXT;
+  item public.sada_vip_ids_catalog%ROWTYPE;
+  next_coins BIGINT;
+BEGIN
+  IF caller_id IS NULL OR caller_id <> p_user_id THEN
+    RAISE EXCEPTION 'لا يمكن شراء رقم ID لحساب آخر.';
+  END IF;
+
+  SELECT * INTO item
+  FROM public.sada_vip_ids_catalog
+  WHERE id = p_item_id
+  FOR UPDATE;
+  IF item.id IS NULL THEN
+    RAISE EXCEPTION 'رقم ID غير موجود في المتجر.';
+  END IF;
+  IF item.owner_id IS NOT NULL THEN
+    RAISE EXCEPTION 'هذا الرقم مملوك بالفعل.';
+  END IF;
+
+  UPDATE public.sada_users
+  SET coins = coins - item.price_coins
+  WHERE id = p_user_id AND coins >= item.price_coins
+  RETURNING coins INTO next_coins;
+  IF next_coins IS NULL THEN
+    RAISE EXCEPTION 'رصيد الكوينز غير كافٍ.';
+  END IF;
+
+  UPDATE public.sada_vip_ids_catalog SET owner_id = NULL WHERE owner_id = p_user_id;
+  UPDATE public.sada_vip_ids_catalog SET owner_id = p_user_id WHERE id = p_item_id;
+
+  INSERT INTO public.sada_platform_state (id, settings)
+  VALUES ('global', '{}'::jsonb)
+  ON CONFLICT (id) DO NOTHING;
+  UPDATE public.sada_platform_state
+  SET settings = jsonb_set(
+    coalesce(settings, '{}'::jsonb),
+    '{customVipIds}',
+    (CASE
+      WHEN jsonb_typeof(settings -> 'customVipIds') = 'object'
+        THEN settings -> 'customVipIds'
+      ELSE '{}'::jsonb
+    END) || jsonb_build_object(p_user_id, item.number),
+    TRUE
+  ),
+  updated_at = NOW()
+  WHERE id = 'global';
+
+  INSERT INTO public.sada_transactions (id, user_id, type, amount, currency, description, timestamp)
+  VALUES (
+    'tx_' || replace(gen_random_uuid()::TEXT, '-', ''),
+    p_user_id,
+    'store_purchase',
+    -item.price_coins,
+    'coins',
+    'شراء رقم ID مميز: ' || item.number,
+    NOW()
+  );
+
+  RETURN jsonb_build_object('number', item.number, 'price_coins', item.price_coins, 'coins', next_coins);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_activate_svip(p_user_id TEXT, p_level SMALLINT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_id TEXT := auth.uid()::TEXT;
+  tier public.sada_svip_tiers%ROWTYPE;
+  updated_user public.sada_users%ROWTYPE;
+BEGIN
+  IF caller_id IS NULL OR caller_id <> p_user_id THEN
+    RAISE EXCEPTION 'لا يمكن تفعيل عضوية SVIP لحساب آخر.';
+  END IF;
+
+  SELECT * INTO tier
+  FROM public.sada_svip_tiers
+  WHERE level = p_level
+  FOR UPDATE;
+  IF tier.level IS NULL THEN
+    RAISE EXCEPTION 'مستوى SVIP غير صالح.';
+  END IF;
+
+  UPDATE public.sada_users
+  SET coins = coins - tier.price_coins,
+      svip_level = tier.level,
+      svip_expires_at = greatest(coalesce(svip_expires_at, NOW()), NOW()) + INTERVAL '30 days'
+  WHERE id = p_user_id AND coins >= tier.price_coins
+  RETURNING * INTO updated_user;
+  IF updated_user.id IS NULL THEN
+    RAISE EXCEPTION 'رصيد الكوينز غير كافٍ.';
+  END IF;
+
+  INSERT INTO public.sada_transactions (id, user_id, type, amount, currency, description, timestamp)
+  VALUES (
+    'tx_' || replace(gen_random_uuid()::TEXT, '-', ''),
+    p_user_id,
+    'store_purchase',
+    -tier.price_coins,
+    'coins',
+    'تفعيل عضوية ' || tier.label || ' لمدة 30 يوماً',
+    NOW()
+  );
+
+  RETURN jsonb_build_object(
+    'coins', updated_user.coins,
+    'svip_level', updated_user.svip_level,
+    'svip_expires_at', updated_user.svip_expires_at
+  );
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.sada_can_clear_room_chat(TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_clear_room_chat(TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_admin_reset_all_except_super_admin() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_purchase_vip_id(TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_activate_svip(TEXT, SMALLINT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.sada_can_clear_room_chat(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_clear_room_chat(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_admin_reset_all_except_super_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_purchase_vip_id(TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_activate_svip(TEXT, SMALLINT) TO authenticated;
 
 -- ============================================================================
 -- تفعيل المزامنة الفورية (Supabase Realtime) للجداول التفاعلية

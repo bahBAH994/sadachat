@@ -38,9 +38,8 @@ import {
   getUserVipTierInfo,
   isSuperAdminUser,
   STORE_3D_ITEMS,
-  VIP_IDS_CATALOG,
 } from '../lib/sadaCatalog';
-import { getPlatformState, savePlatformState } from '../lib/sadaMappers';
+import { getPlatformState } from '../lib/sadaMappers';
 import {
   getProfileSocialListFromSupabase,
   getUserGiftLevelsFromSupabase,
@@ -57,7 +56,6 @@ import {
   FemaleVerifiedBadge,
   FemaleVoiceVerificationCard,
 } from '../components/FemaleVoiceVerificationCard';
-import { PWAInstallButton } from '../components/PWAInstallButton';
 
 async function compressStaticImageToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -116,8 +114,6 @@ export const ProfilePage: React.FC = () => {
   const [savingPendingAvatar, setSavingPendingAvatar] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showPremiumIdModal, setShowPremiumIdModal] = useState(false);
-  const [buyingPremiumId, setBuyingPremiumId] = useState(false);
   const showEditModalRef = useRef(false);
   showEditModalRef.current = showEditModal;
   const [copiedId, setCopiedId] = useState(false);
@@ -249,8 +245,6 @@ export const ProfilePage: React.FC = () => {
   if (!user) return null;
 
   const numericId = formatShortNumericId(user.id);
-  const xpNextLevel = Math.pow(user.level, 2) * 120;
-  const xpProgress = Math.min(100, Math.round((user.xp / Math.max(1, xpNextLevel)) * 100));
   const vipInfo = getUserVipTierInfo(user);
   const active3D = STORE_3D_ITEMS.find((i) => i.id === user.frameId) || STORE_3D_ITEMS[0];
   const userCountry = user.country
@@ -262,38 +256,6 @@ export const ProfilePage: React.FC = () => {
     navigator.clipboard?.writeText(numericId).catch(() => {});
     setCopiedId(true);
     window.setTimeout(() => setCopiedId(false), 1600);
-  };
-
-  const handlePurchasePremiumId = async (vipId: (typeof VIP_IDS_CATALOG)[number]) => {
-    if (buyingPremiumId) return;
-    if (user.coins < vipId.priceCoins) {
-      setFeedback({ type: 'err', text: `رصيدك لا يكفي. سعر ID ${vipId.number} هو ${vipId.priceCoins.toLocaleString('en-US')} كوينز.` });
-      return;
-    }
-    setBuyingPremiumId(true);
-    setFeedback(null);
-    try {
-      const state = await getPlatformState({ forceRefresh: true });
-      const customVipIds = { ...(state.settings.customVipIds || {}) };
-      const alreadyOwned = Object.values(customVipIds).includes(vipId.number);
-      if (alreadyOwned) throw new Error(`رقم ID ${vipId.number} مستخدم مسبقاً.`);
-
-      const nextCoins = user.coins - vipId.priceCoins;
-      const { error } = await supabase.from('sada_users').update({ coins: nextCoins }).eq('id', user.id);
-      if (error) throw new Error(error.message);
-
-      customVipIds[user.id] = vipId.number;
-      await savePlatformState({
-        settings: { ...state.settings, customVipIds },
-      });
-      updateLocalUser({ ...user, coins: nextCoins });
-      setShowPremiumIdModal(false);
-      setFeedback({ type: 'ok', text: `تم شراء ID المميز ${vipId.number} بنجاح!` });
-    } catch (err) {
-      setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'تعذّر شراء ID المميز.' });
-    } finally {
-      setBuyingPremiumId(false);
-    }
   };
 
   const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -456,7 +418,7 @@ export const ProfilePage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-full bg-[#F5F6FA]">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#F5F6FA]">
       <input
         ref={fileInputRef}
         type="file"
@@ -466,7 +428,7 @@ export const ProfilePage: React.FC = () => {
       />
 
       {/* Dark Royal Profile Top Header */}
-      <section className="relative bg-gradient-to-b from-[#090D16] via-[#12192B] to-[#1A2438] text-white pt-4 pb-12 px-4 overflow-hidden">
+      <section className="relative shrink-0 bg-gradient-to-b from-[#090D16] via-[#12192B] to-[#1A2438] text-white pt-4 pb-12 px-4 overflow-hidden">
         <div className="max-w-3xl mx-auto space-y-5 relative z-10">
           {/* Top utility row */}
           <div className="flex items-center justify-between text-xs">
@@ -668,7 +630,7 @@ export const ProfilePage: React.FC = () => {
             <div className="col-span-5 flex justify-end">
               <button
                 type="button"
-                onClick={() => navigate('/store')}
+                onClick={() => navigate('/svip')}
                 className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 px-3.5 py-2.5 flex items-center gap-1.5 text-xs font-extrabold text-[#FCE9A6] cursor-pointer transition shadow-md"
               >
                 <span className="text-base">{active3D.badgeGlyph}</span>
@@ -680,8 +642,40 @@ export const ProfilePage: React.FC = () => {
         </div>
       </section>
 
+      <div className="w-full max-w-3xl mx-auto -mt-6 relative z-20 shrink-0 rounded-t-[28px] bg-[#F5F6FA] px-4 pt-5 pb-3 space-y-3">
+        <section className="light-card rounded-3xl p-3 grid grid-cols-4 gap-1.5 text-center">
+          <button type="button" onClick={() => navigate('/my-level')} className="flex flex-col items-center gap-1 cursor-pointer">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 border border-amber-300/70 flex items-center justify-center text-amber-700"><Crown className="w-5 h-5" /></div>
+            <span className="text-[11px] font-extrabold text-slate-800">مستواي</span>
+          </button>
+          <button type="button" onClick={() => navigate('/store')} className="flex flex-col items-center gap-1 cursor-pointer">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-200 border border-emerald-300/70 flex items-center justify-center text-emerald-700"><Store className="w-5 h-5" /></div>
+            <span className="text-[11px] font-extrabold text-slate-800">المتجر</span>
+          </button>
+          <button type="button" onClick={() => navigate('/bag')} className="flex flex-col items-center gap-1 cursor-pointer">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-200 border border-indigo-300/70 flex items-center justify-center text-indigo-700"><Briefcase className="w-5 h-5" /></div>
+            <span className="text-[11px] font-extrabold text-slate-800">الحقيبة</span>
+          </button>
+          <button type="button" onClick={() => navigate('/diamond-wallet')} className="flex flex-col items-center gap-1 cursor-pointer">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-sky-100 to-cyan-200 border border-sky-300/70 flex items-center justify-center text-sky-700"><Gem className="w-5 h-5" /></div>
+            <span className="text-[11px] font-extrabold text-slate-800">محفظة الألماس</span>
+          </button>
+        </section>
+        <section className="light-card rounded-3xl p-3 grid grid-cols-2 divide-x divide-x-reverse divide-slate-100">
+          <button type="button" onClick={() => navigate('/wallet')} className="pl-2 text-right space-y-1 cursor-pointer">
+            <span className="block text-[11px] text-slate-500 font-bold">رصيد الكوينز · الشحن USDT</span>
+            <span className="flex items-center gap-2 text-xl font-black text-slate-900 font-mono-num"><Coins className="w-5 h-5 text-amber-500" />{user.coins.toLocaleString('en-US')}</span>
+          </button>
+          <button type="button" onClick={() => navigate('/diamond-wallet')} className="pr-3 text-right space-y-1 cursor-pointer">
+            <span className="block text-[11px] text-slate-500 font-bold">رصيد الألماس · السحب</span>
+            <span className="flex items-center gap-2 text-xl font-black text-slate-900 font-mono-num"><Gem className="w-5 h-5 text-sky-500" />{user.diamonds.toLocaleString('en-US')}</span>
+          </button>
+        </section>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y">
       {/* Crisp White Rounded Body */}
-      <div className="max-w-3xl mx-auto -mt-6 relative z-20 rounded-t-[28px] bg-[#F5F6FA] px-4 pt-5 space-y-4">
+      <div className="max-w-3xl mx-auto px-4 pt-3 pb-6 space-y-4">
         {feedback && (
           <div
             className={`rounded-2xl px-4 py-3 text-xs font-bold border ${
@@ -693,59 +687,6 @@ export const ProfilePage: React.FC = () => {
             {feedback.text}
           </div>
         )}
-
-        {/* 4 Quick Icons Bar: مستواي - المتجر - الحقيبة - محفظة الألماس (عائلة محذوفة) */}
-        <section className="light-card rounded-3xl p-4 grid grid-cols-4 gap-2 text-center">
-          <button
-            type="button"
-            onClick={() => navigate('/my-level')}
-            className="flex flex-col items-center gap-1.5 cursor-pointer group"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 border border-amber-300/70 flex items-center justify-center text-amber-700 group-hover:scale-105 transition">
-              <Crown className="w-6 h-6" />
-            </div>
-            <span className="text-xs font-extrabold text-slate-800">مستواي</span>
-            <span className="text-[10px] text-amber-600 font-mono-num font-bold">
-              {xpProgress}% · S{giftLevels.sendLevel}/R{giftLevels.receiveLevel}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/store')}
-            className="flex flex-col items-center gap-1.5 cursor-pointer group"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-200 border border-emerald-300/70 flex items-center justify-center text-emerald-700 group-hover:scale-105 transition">
-              <Store className="w-6 h-6" />
-            </div>
-            <span className="text-xs font-extrabold text-slate-800">المتجر</span>
-            <span className="text-[10px] text-emerald-600 font-bold">إطارات وخلفيات</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/bag')}
-            className="flex flex-col items-center gap-1.5 cursor-pointer group"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-200 border border-indigo-300/70 flex items-center justify-center text-indigo-700 group-hover:scale-105 transition">
-              <Briefcase className="w-6 h-6" />
-            </div>
-            <span className="text-xs font-extrabold text-slate-800">الحقيبة</span>
-            <span className="text-[10px] text-indigo-600 font-bold">ممتلكاتي</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/diamond-wallet')}
-            className="flex flex-col items-center gap-1.5 cursor-pointer group"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-100 to-cyan-200 border border-sky-300/70 flex items-center justify-center text-sky-700 group-hover:scale-105 transition">
-              <Gem className="w-6 h-6" />
-            </div>
-            <span className="text-xs font-extrabold text-slate-800">محفظة الألماس</span>
-            <span className="text-[10px] text-sky-600 font-bold">أرباحي وسحبها</span>
-          </button>
-        </section>
 
         {/* Automatic VIP Level & Next-Tier Progress Card */}
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#1B223C] to-[#0A0E1A] border border-[#D4AF37]/40 p-4 sm:p-5 text-white shadow-[0_14px_34px_-12px_rgba(15,23,42,0.45)] space-y-3">
@@ -834,53 +775,6 @@ export const ProfilePage: React.FC = () => {
           </div>
         </section>
 
-        {/* Prominent Dual Wallet Summary Card */}
-        <section className="light-card rounded-3xl p-4 sm:p-5 grid grid-cols-2 divide-x divide-x-reverse divide-slate-100">
-          <button
-            type="button"
-            onClick={() => navigate('/wallet')}
-            className="pl-3 text-right space-y-1.5 cursor-pointer group"
-          >
-            <div className="flex items-center justify-between text-xs text-slate-500 font-bold">
-              <span>رصيد الكوينز</span>
-              <span className="text-slate-400 group-hover:text-emerald-600 flex items-center gap-0.5">
-                الشحن
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
-                <Coins className="w-5 h-5" />
-              </div>
-              <span className="text-2xl sm:text-3xl font-black text-slate-900 font-mono-num truncate">
-                {user.coins.toLocaleString('en-US')}
-              </span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/diamond-wallet')}
-            className="pr-4 text-right space-y-1.5 cursor-pointer group"
-          >
-            <div className="flex items-center justify-between text-xs text-slate-500 font-bold">
-              <span>رصيد الألماس</span>
-              <span className="text-slate-400 group-hover:text-sky-600 flex items-center gap-0.5">
-                محفظة الألماس
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full bg-sky-100 flex items-center justify-center text-sky-600 shrink-0">
-                <Gem className="w-5 h-5" />
-              </div>
-              <span className="text-2xl sm:text-3xl font-black text-slate-900 font-mono-num truncate">
-                {user.diamonds.toLocaleString('en-US')}
-              </span>
-            </div>
-          </button>
-        </section>
-
         {/* Female Voice Verification Card exclusively inside Profile ("أنا") */}
         {user.gender === 'female' && (
           <div id="female-voice-verification-card">
@@ -945,7 +839,7 @@ export const ProfilePage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => setShowPremiumIdModal(true)}
+            onClick={() => navigate('/store?tab=ids')}
             className="col-span-2 rounded-2xl bg-sky-50/90 hover:bg-sky-100/80 border border-sky-100 p-4 flex items-center justify-between cursor-pointer transition"
           >
             <div className="text-right">
@@ -995,9 +889,7 @@ export const ProfilePage: React.FC = () => {
           </button>
         </section>
 
-        <div className="flex justify-center">
-          <PWAInstallButton variant="full" />
-        </div>
+      </div>
       </div>
 
       {/* Social List Modal (Friends / Followers / Following / Visitors) */}
@@ -1233,51 +1125,6 @@ export const ProfilePage: React.FC = () => {
         </div>
       )}
 
-      {showPremiumIdModal && (
-        <div
-          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-slate-950/70 backdrop-blur-sm p-0 sm:p-4"
-          onClick={() => setShowPremiumIdModal(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#0B0F20] border border-sky-300/30 p-5 space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-extrabold text-sky-100">شراء ID مميز</h3>
-                <p className="text-[11px] text-slate-400">اختر رقماً ملكياً حصرياً</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPremiumIdModal(false)}
-                className="w-9 h-9 rounded-full bg-white/10 text-slate-300 flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[55vh] overflow-y-auto no-scrollbar">
-              {VIP_IDS_CATALOG.map((vipId) => (
-                <button
-                  key={vipId.id}
-                  type="button"
-                  disabled={buyingPremiumId}
-                  onClick={() => void handlePurchasePremiumId(vipId)}
-                  className="rounded-2xl border border-sky-300/25 bg-gradient-to-br from-sky-950/70 to-[#070913] p-3 text-right flex items-center justify-between gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  <div>
-                    <span className="block text-lg font-black font-mono-num text-sky-100">{vipId.number}</span>
-                    <span className="block text-[11px] text-slate-300">{vipId.title}</span>
-                  </div>
-                  <span className="rounded-full bg-sky-400/15 border border-sky-300/30 px-2 py-1 text-[10px] font-mono-num font-bold text-sky-100">
-                    {vipId.priceCoins.toLocaleString('en-US')} كوينز
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Edit Profile & Avatar Modal */}
       {showEditModal && (
         <div
@@ -1368,54 +1215,61 @@ export const ProfilePage: React.FC = () => {
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  فئة الحساب
-                </label>
-                <div className="grid grid-cols-2 gap-2">
+            {!canViewMyAgency ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    فئة الحساب
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setGender('male')}
+                      className={`min-h-[40px] rounded-xl text-xs font-bold border cursor-pointer ${
+                        gender === 'male'
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+                          : 'bg-slate-50 border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      عضو
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGender('female')}
+                      className={`min-h-[40px] rounded-xl text-xs font-bold border cursor-pointer ${
+                        gender === 'female'
+                          ? 'bg-pink-50 border-pink-400 text-pink-800'
+                          : 'bg-slate-50 border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      حساب نسائي 💎
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    وضع المضيف
+                  </label>
                   <button
                     type="button"
-                    onClick={() => setGender('male')}
-                    className={`min-h-[40px] rounded-xl text-xs font-bold border cursor-pointer ${
-                      gender === 'male'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+                    onClick={() => setIsHost((prev) => !prev)}
+                    className={`w-full min-h-[40px] rounded-xl text-xs font-bold border cursor-pointer px-3 ${
+                      isHost
+                        ? 'bg-sky-50 border-sky-400 text-sky-800'
                         : 'bg-slate-50 border-slate-200 text-slate-600'
                     }`}
                   >
-                    عضو
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGender('female')}
-                    className={`min-h-[40px] rounded-xl text-xs font-bold border cursor-pointer ${
-                      gender === 'female'
-                        ? 'bg-pink-50 border-pink-400 text-pink-800'
-                        : 'bg-slate-50 border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    حساب نسائي 💎
+                    {isHost ? 'مضيف وكالة مفعّل ✓' : 'تفعيل حساب كمضيف وكالة'}
                   </button>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  وضع المضيف
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setIsHost((prev) => !prev)}
-                  className={`w-full min-h-[40px] rounded-xl text-xs font-bold border cursor-pointer px-3 ${
-                    isHost
-                      ? 'bg-sky-50 border-sky-400 text-sky-800'
-                      : 'bg-slate-50 border-slate-200 text-slate-600'
-                  }`}
-                >
-                  {isHost ? 'مضيف وكالة مفعّل ✓' : 'تفعيل حساب كمضيف وكالة'}
-                </button>
+            ) : (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-2 text-sm font-extrabold text-amber-900">
+                <ShieldCheck className="w-5 h-5 text-amber-600" />
+                <span>{user.is_admin ? 'حساب الإدارة العامة' : 'حساب مالك وكالة'}</span>
               </div>
-            </div>
+            )}
 
             <button
               type="submit"

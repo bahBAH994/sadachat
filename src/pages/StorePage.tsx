@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -11,6 +11,7 @@ import {
   Sparkles,
   Store,
   Zap,
+  Tag,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -19,15 +20,87 @@ import {
   getStoreAndBagOverviewFromSupabase,
   purchaseRoomBackgroundInSupabase,
   purchaseStoreCoinItemInSupabase,
+  purchaseVipIdInSupabase,
 } from '../lib/sadaWalletService';
+import { getPlatformState } from '../lib/sadaMappers';
+import { VIP_IDS_CATALOG, type VipIdItem } from '../lib/sadaCatalog';
 import type { Store3DItem, StoreBackgroundItem } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
+
+const RoyalBackdropPreview: React.FC<{ backgroundId: string }> = ({ backgroundId }) => {
+  const isEmerald = backgroundId === 'bg_emerald_palace';
+  const isRuby = backgroundId === 'bg_ruby_throne';
+  const isSapphire = backgroundId === 'bg_sapphire_crystal';
+  const accent = isEmerald ? '#FDE047' : isRuby ? '#FDBA74' : '#BAE6FD';
+
+  return (
+    <div
+      aria-hidden="true"
+      className={`royal-store-preview pointer-events-none absolute inset-0 overflow-hidden ${
+        isEmerald
+          ? 'royal-store-preview-emerald'
+          : isRuby
+          ? 'royal-store-preview-ruby'
+          : isSapphire
+          ? 'royal-store-preview-sapphire'
+          : ''
+      }`}
+    >
+      <svg viewBox="0 0 360 128" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full opacity-75">
+        {isEmerald ? (
+          <>
+            <path d="M22 130V72C22 24 68 8 95 8s73 16 73 64v58M192 130V72c0-48 38-64 73-64s73 16 73 64v58" fill="none" stroke={accent} strokeOpacity=".5" strokeWidth="2" />
+            <path d="M36 129V76c0-37 27-54 59-54s59 17 59 54v53M207 129V76c0-37 26-54 58-54s58 17 58 54v53" fill="none" stroke="#A7F3D0" strokeOpacity=".45" />
+            <path d="M180 11l10 17 20 3-15 14 4 20-19-10-19 10 4-20-15-14 20-3z" fill="#FDE047" fillOpacity=".42" />
+            <path d="M145 0v34m70-34v34m-82 0h94" stroke={accent} strokeOpacity=".55" />
+          </>
+        ) : isRuby ? (
+          <>
+            <path d="M0 0h74c-31 34-16 80 0 128H0zM360 0h-74c31 34 16 80 0 128h74z" fill="#881337" fillOpacity=".5" />
+            <path d="M180 16l28 30-28 43-28-43z" fill="#FB7185" fillOpacity=".25" stroke={accent} strokeOpacity=".7" />
+            <path d="M80 21l45 2m109 84 54 2M42 70l35-6" stroke={accent} strokeWidth="1.5" strokeOpacity=".75" className="royal-scene-meteor" />
+            <circle cx="180" cy="50" r="44" fill="none" stroke={accent} strokeOpacity=".3" />
+          </>
+        ) : (
+          <>
+            <polygon points="180,8 256,54 220,126 140,126 104,54" fill="#38BDF8" fillOpacity=".18" stroke="#BAE6FD" strokeOpacity=".65" />
+            <polygon points="180,8 180,126 104,54" fill="#E0F2FE" fillOpacity=".15" />
+            <polygon points="180,8 256,54 180,126" fill="#2563EB" fillOpacity=".2" />
+            <path d="M34 32l18 25-18 25-18-25zM320 16l15 21-15 21-15-21z" fill="none" stroke="#E0F2FE" strokeOpacity=".8" className="royal-scene-glint" />
+            <path d="M62 112c42-34 75-34 118 0s76 34 118 0" fill="none" stroke="#7DD3FC" strokeOpacity=".6" strokeWidth="2" />
+          </>
+        )}
+      </svg>
+      <div className="royal-gold-particles absolute inset-0">
+        {Array.from({ length: 10 }, (_, index) => (
+          <span
+            key={index}
+            className="royal-gold-particle"
+            style={{
+              left: `${8 + ((index * 17) % 88)}%`,
+              animationDelay: `${(index % 5) * -0.7}s`,
+              backgroundColor: accent,
+              color: accent,
+            }}
+          />
+        ))}
+      </div>
+      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/10" />
+    </div>
+  );
+};
 
 export const StorePage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [frameTab, setFrameTab] = useState<'coins' | 'gift'>('coins');
+  const [storeTab, setStoreTab] = useState<'frames' | 'ids'>(
+    searchParams.get('tab') === 'ids' ? 'ids' : 'frames'
+  );
+  const [idTab, setIdTab] = useState<'triple' | 'quad' | 'quint'>('triple');
+  const [customVipIds, setCustomVipIds] = useState<Record<string, string>>({});
   const [coinItems, setCoinItems] = useState<Store3DItem[]>([]);
   const [giftItems, setGiftItems] = useState<Store3DItem[]>([]);
   const [luxuryBackgrounds, setLuxuryBackgrounds] = useState<StoreBackgroundItem[]>([]);
@@ -43,12 +116,19 @@ export const StorePage: React.FC = () => {
     if (!user?.id) return;
     try {
       const data = await getStoreAndBagOverviewFromSupabase(user.id);
+      const state = await getPlatformState();
       updateLocalUser(data.user);
       setCoinItems(data.coinStoreItems);
       setGiftItems(data.storeItems);
       setLuxuryBackgrounds(data.luxuryBackgrounds);
       setOwnedBackgrounds(data.ownedBackgrounds);
       setTotalRechargedCoins(data.totalRechargedCoins);
+      setCustomVipIds(state.settings.customVipIds || {});
+    } catch (error) {
+      setFeedback({
+        type: 'err',
+        text: error instanceof Error ? error.message : 'تعذّر تحميل بيانات المتجر.',
+      });
     } finally {
       setLoading(false);
     }
@@ -154,6 +234,29 @@ export const StorePage: React.FC = () => {
     }
   };
 
+  const handleBuyVipId = async (vipId: VipIdItem) => {
+    setBusyId(vipId.id);
+    setFeedback(null);
+    try {
+      const result = await purchaseVipIdInSupabase(user, vipId);
+      updateLocalUser(result.user);
+      setCustomVipIds(result.customVipIds);
+      setFeedback({ type: 'ok', text: `تم شراء ID ${vipId.number} وتفعيله على حسابك.` });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'تعذّر شراء رقم ID.',
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const visibleVipIds = useMemo(() => {
+    const length = idTab === 'triple' ? 3 : idTab === 'quad' ? 4 : 5;
+    return VIP_IDS_CATALOG.filter((item) => item.number.length === length);
+  }, [idTab]);
+
   return (
     <div className="min-h-full bg-[#F5F6FA]">
       <div className="max-w-4xl mx-auto px-4 pt-4 space-y-5">
@@ -192,7 +295,7 @@ export const StorePage: React.FC = () => {
             </div>
           </div>
 
-          {frameTab === 'gift' && (
+          {storeTab === 'frames' && frameTab === 'gift' && (
             <div className="rounded-2xl bg-black/35 border border-white/10 p-4 space-y-2.5">
               <div className="flex items-center justify-between text-xs font-mono-num">
                 <span className="text-slate-300 font-bold">إجمالي الشحن التراكمي</span>
@@ -240,6 +343,31 @@ export const StorePage: React.FC = () => {
           </div>
         )}
 
+        <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setStoreTab('frames')}
+            className={`min-h-[44px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer ${
+              storeTab === 'frames' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <Crown className="w-4 h-4" />
+            <span>الإطارات والخلفيات</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStoreTab('ids')}
+            className={`min-h-[44px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer ${
+              storeTab === 'ids' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <Tag className="w-4 h-4" />
+            <span>متجر الـ ID المميز</span>
+          </button>
+        </div>
+
+        {storeTab === 'frames' && (
+          <>
         {/* Two Store Frame Tabs */}
         <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
           <button
@@ -500,6 +628,7 @@ export const StorePage: React.FC = () => {
                   className="light-card rounded-3xl overflow-hidden flex flex-col justify-between border border-slate-200"
                 >
                   <div className={`${bg.previewClass} h-32 p-4 text-white flex flex-col justify-between relative overflow-hidden`}>
+                    <RoyalBackdropPreview backgroundId={bg.id} />
                     <div className="flex items-center justify-between relative z-10">
                       <span className="text-2xl">{bg.badgeGlyph}</span>
                       <span className="rounded-full bg-black/50 border border-amber-300/50 px-2.5 py-0.5 text-[11px] font-extrabold text-[#FCE9A6] font-mono-num">
@@ -563,6 +692,84 @@ export const StorePage: React.FC = () => {
             <span>الانتقال إلى الحقيبة وممتلكاتي</span>
           </button>
         </div>
+          </>
+        )}
+
+        {storeTab === 'ids' && (
+          <section className="space-y-4">
+            <div className="rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-5 text-white border border-indigo-300/20 shadow-xl">
+              <div className="flex items-center gap-2 text-amber-200">
+                <Tag className="w-5 h-5" />
+                <h2 className="text-lg font-black">متجر الأرقام المميزة</h2>
+              </div>
+              <p className="mt-1 text-xs text-slate-300">
+                اختر ID حصرياً؛ بعد الشراء يُربط بحسابك ويظهر مباشرة في الملف الشخصي.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-white p-1.5 border border-slate-200">
+              {([
+                ['triple', 'ثلاثية نادرة'],
+                ['quad', 'رباعية ملكية'],
+                ['quint', 'خماسية مميزة'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setIdTab(id)}
+                  className={`min-h-[42px] rounded-xl px-2 text-[11px] sm:text-xs font-extrabold cursor-pointer ${
+                    idTab === id ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {visibleVipIds.map((vipId) => {
+                const owner = Object.entries(customVipIds).find(
+                  ([, number]) => number === vipId.number
+                );
+                const isMine = owner?.[0] === user.id;
+                const isOwned = Boolean(owner);
+                return (
+                  <article
+                    key={vipId.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center justify-between gap-3 shadow-sm"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-lg bg-gradient-to-r ${vipId.highlightClass} px-2 py-1 text-white text-xs`}>
+                          {vipId.badge}
+                        </span>
+                        <strong className="font-mono-num text-xl text-slate-900">{vipId.number}</strong>
+                      </div>
+                      <p className="mt-1 text-[11px] font-bold text-slate-500">{vipId.title}</p>
+                      <p className="mt-1 text-xs font-extrabold text-amber-700">
+                        {vipId.priceCoins.toLocaleString('en-US')} كوينز
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isOwned || busyId === vipId.id}
+                      onClick={() => void handleBuyVipId(vipId)}
+                      className={`min-h-[44px] shrink-0 rounded-xl px-3 text-xs font-extrabold cursor-pointer ${
+                        isMine
+                          ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                          : isOwned
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          : 'gold-btn'
+                      }`}
+                    >
+                      {isMine ? 'مملوك لك' : isOwned ? 'مملوك' : busyId === vipId.id ? 'جارٍ الشراء...' : 'شراء الآن'}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

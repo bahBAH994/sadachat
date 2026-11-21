@@ -120,8 +120,8 @@ export const DiamondWalletPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-full bg-[#F5F6FA]">
-      <div className="max-w-3xl mx-auto px-4 pt-4 space-y-5">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#F5F6FA]">
+      <div className="w-full max-w-3xl mx-auto px-4 pt-3 space-y-4 shrink-0">
         <div className="flex items-center justify-between">
           <button
             type="button"
@@ -177,7 +177,10 @@ export const DiamondWalletPage: React.FC = () => {
             {feedback.text}
           </div>
         )}
+      </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y">
+      <div className="w-full max-w-3xl mx-auto px-4 pt-4 pb-8 space-y-5">
         {/* Convert Diamonds -> Coins */}
         <section className="light-card rounded-3xl p-5 space-y-4">
           <div>
@@ -279,6 +282,7 @@ export const DiamondWalletPage: React.FC = () => {
                     onChange={(e) => setWithdrawAddress(e.target.value)}
                     className="w-full rounded-2xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm font-mono-num text-slate-900 focus:outline-none focus:border-sky-500"
                   />
+                </div>
                 </div>
               </div>
 

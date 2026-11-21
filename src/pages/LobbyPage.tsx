@@ -619,9 +619,9 @@ export const LobbyPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-full bg-[#F5F6FA]">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#F5F6FA]">
       {/* Top App Header matching screenshot */}
-      <header className="sticky top-0 z-30 bg-white/95 border-b border-slate-100">
+      <header className="sticky top-0 z-30 shrink-0 bg-white/95 border-b border-slate-100">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
           {/* Right Brand + Tabs (حفلة / الخاص بي) */}
           <div className="flex items-center gap-3.5 sm:gap-5">
@@ -858,111 +858,93 @@ export const LobbyPage: React.FC = () => {
         )}
       </header>
 
-      <div className="max-w-3xl mx-auto px-3.5 sm:px-4 pt-3 space-y-4">
+      {mainTab === 'party' && (
+        <div className="w-full max-w-3xl mx-auto shrink-0 px-3.5 sm:px-4 pt-3 space-y-3">
+          <section className="grid grid-cols-4 gap-2">
+            <button
+              type="button"
+              onClick={() => navigate('/agency')}
+              className="rounded-2xl bg-gradient-to-b from-pink-100 to-rose-50 border border-pink-200/70 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:scale-[1.02] transition"
+            >
+              <div className="flex -space-x-2 space-x-reverse">
+                <img src={resolveAsset('host_female')} alt="مضيفة" loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover ring-2 ring-white" />
+                <img src={resolveAsset('host_male')} alt="مضيف" loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover ring-2 ring-white" />
+              </div>
+              <div>
+                <span className="block text-xs font-extrabold text-slate-800">الوكالات</span>
+                <span className="block text-[10px] text-rose-500 font-semibold">المضيفون</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/competitions?tab=referral')}
+              className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-emerald-300 transition shadow-sm"
+            >
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-lime-400 to-emerald-500 flex items-center justify-center text-white shadow-sm">
+                <Gift className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">عجلة الحظ من دعوات الصديق</span>
+                <span className="block text-[10px] text-slate-400 font-semibold">ادعُ واربح جوائز</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/games')}
+              className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-amber-300 transition shadow-sm"
+            >
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-sm">
+                <Gamepad2 className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">مركز الألعاب</span>
+                <span className="block text-[10px] text-slate-400 font-semibold">سلوتس ونرد</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/competitions')}
+              className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-sky-300 transition shadow-sm"
+            >
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white shadow-sm">
+                <Trophy className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">المسابقات الثقافية</span>
+                <span className="block text-[10px] text-slate-400 font-semibold">تحديات ودولاب الدعوات</span>
+              </div>
+            </button>
+          </section>
+
+          <section className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x no-scrollbar py-0.5">
+              {(['جديدة', 'أكثر شعبية', 'لايف', 'محادثة'] as FilterChip[]).map((chip) => {
+                const active = activeChip === chip;
+                return (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => setActiveChip(chip)}
+                    className={`rounded-xl px-3.5 py-1.5 text-xs font-extrabold whitespace-nowrap cursor-pointer transition flex items-center gap-1 ${
+                      active
+                        ? 'bg-amber-50 border border-amber-300 text-amber-900 shadow-sm'
+                        : 'bg-white border border-slate-200/70 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {chip === 'أكثر شعبية' && <Flame className="w-3.5 h-3.5 text-orange-500" />}
+                    <span>{chip}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      )}
+
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y pb-4">
+        <div className="max-w-3xl mx-auto px-3.5 sm:px-4 pt-3 space-y-4">
         {mainTab === 'party' && (
           <>
-        {/* 4 Highlight Agency & Event Cards */}
-        <section className="grid grid-cols-4 gap-2">
-          <button
-            type="button"
-            onClick={() => navigate('/agency')}
-            className="rounded-2xl bg-gradient-to-b from-pink-100 to-rose-50 border border-pink-200/70 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:scale-[1.02] transition"
-          >
-            <div className="flex -space-x-2 space-x-reverse">
-              <img
-                src={resolveAsset('host_female')}
-                alt="مضيفة"
-                loading="lazy"
-                decoding="async"
-                className="w-7 h-7 rounded-full object-cover ring-2 ring-white"
-              />
-              <img
-                src={resolveAsset('host_male')}
-                alt="مضيف"
-                loading="lazy"
-                decoding="async"
-                className="w-7 h-7 rounded-full object-cover ring-2 ring-white"
-              />
-            </div>
-            <div>
-              <span className="block text-xs font-extrabold text-slate-800">الوكالات</span>
-              <span className="block text-[10px] text-rose-500 font-semibold">المضيفون</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/competitions?tab=referral')}
-            className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-emerald-300 transition shadow-sm"
-          >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-lime-400 to-emerald-500 flex items-center justify-center text-white shadow-sm">
-              <Gift className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">
-                عجلة الحظ من دعوات الصديق
-              </span>
-              <span className="block text-[10px] text-slate-400 font-semibold">ادعُ واربح جوائز</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/games')}
-            className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-amber-300 transition shadow-sm"
-          >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-sm">
-              <Gamepad2 className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">
-                مركز الألعاب
-              </span>
-              <span className="block text-[10px] text-slate-400 font-semibold">سلوتس ونرد</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/competitions')}
-            className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-sky-300 transition shadow-sm"
-          >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white shadow-sm">
-              <Trophy className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">
-                المسابقات الثقافية
-              </span>
-              <span className="block text-[10px] text-slate-400 font-semibold">تحديات ودولاب الدعوات</span>
-            </div>
-          </button>
-        </section>
-
-        {/* Category Filter Strip (cleaned — no 'لعبة' chip & no Grid square button) */}
-        <section className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x no-scrollbar py-0.5">
-            {(['جديدة', 'أكثر شعبية', 'لايف', 'محادثة'] as FilterChip[]).map((chip) => {
-              const active = activeChip === chip;
-              return (
-                <button
-                  key={chip}
-                  type="button"
-                  onClick={() => setActiveChip(chip)}
-                  className={`rounded-xl px-3.5 py-1.5 text-xs font-extrabold whitespace-nowrap cursor-pointer transition flex items-center gap-1 ${
-                    active
-                      ? 'bg-amber-50 border border-amber-300 text-amber-900 shadow-sm'
-                      : 'bg-white border border-slate-200/70 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {chip === 'أكثر شعبية' && <Flame className="w-3.5 h-3.5 text-orange-500" />}
-                  <span>{chip}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
         {/* Agencies / Live / Private Chats Content */}
         <section className="space-y-2.5">
           {activeChip === 'لايف' ? (
@@ -1034,6 +1016,7 @@ export const LobbyPage: React.FC = () => {
                       {isOnline && (
                         <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white z-20" />
                       )}
+                    </div>
                     </div>
 
                     <div className="flex-1 min-w-0 space-y-1">
@@ -1230,14 +1213,13 @@ export const LobbyPage: React.FC = () => {
         )}
       </div>
 
-      {/* Floating Emerald Button: اذهب الدردشة -> enters user's agency room directly */}
       <button
         type="button"
         onClick={handleGoToAgencyChat}
         className="fixed bottom-24 left-4 z-30 emerald-btn rounded-full px-5 py-3 text-sm font-extrabold flex items-center gap-2 cursor-pointer"
       >
         <Mic2 className="w-4 h-4" />
-        <span>اذهب الدردشة</span>
+        <span>غرفتي / وكالتي</span>
       </button>
 
       {/* Create Agency Room Modal */}

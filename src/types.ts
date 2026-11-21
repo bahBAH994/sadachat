@@ -43,6 +43,8 @@ export interface User {
   totalRecharged?: number;
   totalSpentCoins?: number;
   vipLevel?: VipTierKey;
+  svipLevel?: 1 | 2 | 3 | 4 | null;
+  svipExpiresAt?: string | null;
   role?: string;
   is_admin: boolean;
   is_banned: boolean;

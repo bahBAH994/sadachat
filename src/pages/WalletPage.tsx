@@ -323,7 +323,8 @@ export const WalletPage: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-5 space-y-6">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#070913]">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-3 space-y-4 shrink-0">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
@@ -430,9 +431,8 @@ export const WalletPage: React.FC = () => {
         </section>
       )}
 
-      {/* Balance & Converter Strip */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* Fixed balance cards */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="royal-glass rounded-3xl p-6 flex flex-col justify-between gap-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-300">رصيد الكوينز الذهبي</span>
@@ -467,46 +467,47 @@ export const WalletPage: React.FC = () => {
                 : `يُكتسب من الهدايا والرسائل الخاصة والعمولات (${eligibility.diamondsPerUsdt} 💎 = 1 USDT أو 1 💎 = ${diamondToCoinsRate} كوينز)`}
             </p>
           </div>
-        </div>
+      </section>
+      </div>
 
-        <form
-          onSubmit={handleConvert}
-          className="lg:col-span-5 royal-glass rounded-3xl p-6 flex flex-col justify-between gap-4"
-        >
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 space-y-6">
+      <form
+        onSubmit={handleConvert}
+        className="royal-glass rounded-3xl p-5 flex flex-col sm:flex-row sm:items-end gap-3"
+      >
+        <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2 text-[#F3D37A]">
             <ArrowLeftRight className="w-5 h-5" />
-            <h2 className="text-base font-bold">تحويل الألماس إلى كوينز</h2>
+            <h2 className="text-sm font-bold">تحويل الألماس إلى كوينز</h2>
           </div>
-          <div className="space-y-2">
-            <label className="block text-xs text-slate-300">
-              عدد الألماسات المراد تحويلها (الحد الأدنى 10)
-            </label>
-            <input
-              type="number"
-              min={10}
-              max={user.diamonds}
-              value={convertAmount}
-              onChange={(e) => setConvertAmount(e.target.value)}
-              dir="ltr"
-              className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={
-              busyId === 'convert' ||
-              user.diamonds < 10 ||
-              (user.gender === 'female' && !user.is_admin && user.femaleVoiceStatus !== 'verified')
-            }
-            className="gold-btn min-h-[44px] rounded-xl py-2.5 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
-          >
-            {user.gender === 'female' && !user.is_admin && user.femaleVoiceStatus !== 'verified'
-              ? 'الألماس مقفل لحين التوثيق الصوتي'
-              : `تحويل إلى ${Math.round(Number(convertAmount || 0) * diamondToCoinsRate).toLocaleString('en-US')} كوينز`}
-          </button>
-        </form>
-      </section>
-
+          <label className="block text-xs text-slate-300">
+            عدد الألماسات المراد تحويلها (الحد الأدنى 10)
+          </label>
+          <input
+            type="number"
+            min={10}
+            max={user.diamonds}
+            value={convertAmount}
+            onChange={(e) => setConvertAmount(e.target.value)}
+            dir="ltr"
+            className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={
+            busyId === 'convert' ||
+            user.diamonds < 10 ||
+            (user.gender === 'female' && !user.is_admin && user.femaleVoiceStatus !== 'verified')
+          }
+          className="gold-btn min-h-[44px] rounded-xl px-5 py-2.5 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
+        >
+          {user.gender === 'female' && !user.is_admin && user.femaleVoiceStatus !== 'verified'
+            ? 'الألماس مقفل لحين التوثيق الصوتي'
+            : `تحويل إلى ${Math.round(Number(convertAmount || 0) * diamondToCoinsRate).toLocaleString('en-US')} كوينز`}
+        </button>
+      </form>
       {/* TAB 1: USDT TRC20 DEPOSIT */}
       {tab === 'deposit' && (
         <div className="space-y-6">
@@ -518,6 +519,8 @@ export const WalletPage: React.FC = () => {
                   <div className="flex items-center gap-2 text-[#FCE9A6]">
                     <QrCode className="w-5 h-5 text-[#D4AF37]" />
                     <h2 className="text-base font-extrabold">محفظة الإدارة الدائمة (TRC20)</h2>
+                    </div>
+                    </div>
                   </div>
                   <span className="text-[11px] font-bold text-emerald-300 font-mono-num">
                     USDT · TRC20 حصراً

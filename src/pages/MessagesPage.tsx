@@ -521,7 +521,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const comboCircumference = 2 * Math.PI * comboCircleRadius;
 
   return (
-    <div className={embedded ? 'flex flex-col h-full bg-[#F5F6FA]' : 'min-h-full bg-[#F5F6FA]'}>
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#F5F6FA]">
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 pt-[env(safe-area-inset-top)] shrink-0">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
@@ -580,7 +580,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
       {/* Notification Permission Strip */}
       {!embedded && showNotifBar && (
-        <div className="bg-white border-b border-slate-100">
+        <div className="shrink-0 bg-white border-b border-slate-100">
           <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
               <Bell className="w-4 h-4 text-amber-500 shrink-0" />
@@ -611,7 +611,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         className={
           embedded
             ? 'flex-1 min-h-0 overflow-y-auto touch-pan-y px-3 py-3 space-y-3'
-            : 'max-w-5xl mx-auto px-3.5 sm:px-5 pt-3 space-y-4 pb-24'
+            : 'w-full max-w-5xl mx-auto flex-1 min-h-0 overflow-hidden px-3.5 sm:px-5 pt-3 flex flex-col gap-3'
         }
       >
 
@@ -622,7 +622,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
               initial={{ opacity: 0, y: -12, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10 }}
-              className="rounded-2xl border border-amber-300 bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-3 text-white shadow-lg flex items-center justify-between gap-3"
+              className="shrink-0 rounded-2xl border border-amber-300 bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-3 text-white shadow-lg flex items-center justify-between gap-3"
             >
               <div>
                 <p className="text-sm font-extrabold">{celebration.title}</p>
@@ -634,17 +634,17 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         </AnimatePresence>
 
         {error && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700">
+          <div className="shrink-0 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700">
             {error}
           </div>
         )}
 
         {/* Main Split Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Inbox List Panel */}
           <aside
-            className={`lg:col-span-5 space-y-3 ${
-              mobileChatOpen ? 'hidden lg:block' : 'block'
+            className={`lg:col-span-5 min-h-0 flex flex-col gap-3 ${
+              mobileChatOpen ? 'hidden lg:flex' : 'flex'
             }`}
           >
             {!embedded && (
@@ -735,7 +735,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             </div>
 
             {/* Real Conversations List from Supabase */}
-            <div className="light-card rounded-3xl divide-y divide-slate-100 overflow-hidden">
+            <div className="light-card flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y rounded-3xl divide-y divide-slate-100">
               {loading ? (
                 <div className="p-6 text-center text-xs text-slate-400">
                   جارٍ تحميل المحادثات...
@@ -797,10 +797,10 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
           {/* Active Conversation Window */}
           <section
-            className={`lg:col-span-7 light-card rounded-3xl px-4 pt-3.5 sm:px-5 sm:pt-4 flex flex-col justify-between relative ${
+            className={`light-card min-h-0 overflow-hidden rounded-3xl px-3 pt-3 sm:px-5 sm:pt-4 flex flex-col relative ${
               embedded
-                ? 'h-[72dvh] max-h-[580px] pb-2.5 sm:pb-3'
-                : 'min-h-[calc(100dvh-76px)] pb-20'
+                ? 'lg:col-span-7 h-[72dvh] max-h-[580px] pb-2.5 sm:pb-3'
+                : 'fixed inset-x-0 top-0 bottom-[76px] z-30 bg-slate-50 lg:static lg:inset-auto lg:z-auto lg:col-span-7'
             } ${mobileChatOpen ? 'flex' : 'hidden lg:flex'}`}
           >
             {activePeer ? (
@@ -908,15 +908,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                     <span>
                       الرسائل مدفوعة ({pmCost} كوين/رسالة) — تصبح مجانية فور متابعة الطرفين لبعضهما
                     </span>
-                    {!followRel.iFollowThem && (
-                      <button
-                        type="button"
-                        onClick={() => void handleToggleFollowPeer()}
-                        className="rounded-full bg-amber-500 text-white px-2.5 py-0.5 text-[10px] font-extrabold shrink-0 cursor-pointer hover:bg-amber-600"
-                      >
-                        + متابعة
-                      </button>
-                    )}
                   </div>
                 )}
 
@@ -927,7 +918,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 )}
 
                 {/* Messages Feed */}
-                <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2.5 pl-1 pb-1">
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y no-scrollbar p-3 space-y-2.5">
                   {!activeConversation || activeConversation.messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center px-6 space-y-2">
                       <MessageCircleHeart className="w-10 h-10 text-emerald-500" />
@@ -1099,7 +1090,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 {/* Lowered Chat Input Bar with Adjacent Gift Icon & Dark Green Send Button */}
                 <form
                   onSubmit={(e) => handleSend(e)}
-                  className="mt-2 pt-1.5 border-t border-slate-100 flex items-center gap-1.5 shrink-0"
+                  className="shrink-0 p-3 bg-white border-t border-slate-200 flex items-center gap-1.5"
                 >
                   <input
                     type="text"

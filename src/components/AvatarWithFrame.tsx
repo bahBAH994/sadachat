@@ -22,7 +22,7 @@ const FRAME_CLASSES: Record<string, string> = {
   frame_host_gift_7d: 'ring-[3px] ring-rose-400 animate-diamond-aura',
 };
 
-const FRAME_3D_BADGE: Record<string, { glyph: string; ringBg: string }> = {
+const FRAME_3D_BADGE: Record<string, { glyph: string; ringBg: string; topGlyph?: string }> = {
   frame_car_luxury: {
     glyph: '🏎️',
     ringBg: 'conic-gradient(from 0deg, #10b981, #34d399, #fde047, #10b981)',
@@ -38,18 +38,22 @@ const FRAME_3D_BADGE: Record<string, { glyph: string; ringBg: string }> = {
   frame_imperial_dragon: {
     glyph: '🐉',
     ringBg: 'conic-gradient(from 0deg, #ef4444, #f59e0b, #fef08a, #ef4444)',
+    topGlyph: '🐉',
   },
   frame_emerald_aura: {
     glyph: '💚',
     ringBg: 'conic-gradient(from 0deg, #10b981, #34d399, #fef08a, #10b981)',
+    topGlyph: '👑',
   },
   frame_royal_phoenix: {
     glyph: '🔥',
     ringBg: 'conic-gradient(from 0deg, #f97316, #fbbf24, #ef4444, #f97316)',
+    topGlyph: '🔥',
   },
   frame_galaxy_sovereign: {
     glyph: '🌌',
     ringBg: 'conic-gradient(from 0deg, #8b5cf6, #38bdf8, #fde047, #8b5cf6)',
+    topGlyph: '✦',
   },
   frame_host_gift_7d: {
     glyph: '🎁',
@@ -252,10 +256,21 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
 
       {/* Store 3D Orbit Ring when no higher VIP ring overrides */}
       {frame3D && resolvedVip === 'none' && (
-        <span
-          className="absolute -inset-[3px] rounded-full animate-frame-orbit pointer-events-none opacity-90"
-          style={{ background: frame3D.ringBg }}
-        />
+        <>
+          <span
+            aria-hidden="true"
+            className="absolute -inset-[3px] rounded-full animate-frame-orbit pointer-events-none opacity-90"
+            style={{ background: frame3D.ringBg }}
+          />
+          {frame3D.topGlyph && size !== 'xs' && size !== 'sm' && (
+            <span
+              aria-hidden="true"
+              className={`absolute left-1/2 -translate-x-1/2 -top-2 z-20 pointer-events-none text-sm leading-none ${activeFrameId === 'frame_galaxy_sovereign' ? 'frame-ornament-galaxy' : activeFrameId === 'frame_royal_phoenix' ? 'frame-ornament-phoenix' : activeFrameId === 'frame_imperial_dragon' ? 'frame-ornament-dragon' : 'frame-ornament-emerald'}`}
+            >
+              {frame3D.topGlyph}
+            </span>
+          )}
+        </>
       )}
 
       {!failed ? (

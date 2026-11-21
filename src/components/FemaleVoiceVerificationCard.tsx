@@ -27,7 +27,7 @@ export const FemaleVerifiedBadge: React.FC<{ badge?: string | null; className?: 
   if (!badge) return null;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold whitespace-nowrap border border-pink-300/65 bg-gradient-to-r from-pink-500/25 via-[#D4AF37]/30 to-rose-400/25 text-pink-100 shadow-[0_0_14px_rgba(244,114,182,0.42)] ${className}`}
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold whitespace-nowrap border border-pink-300/65 bg-gradient-to-r from-pink-600 to-rose-500 text-white shadow-sm ${className}`}
     >
       <span>🌸</span>
       <span>{badge}</span>

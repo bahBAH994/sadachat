@@ -16,6 +16,7 @@ import type {
 import {
   createDefaultPlatformSettings,
   INITIAL_APP_PRIZE_POOL_COINS,
+  setCustomVipIdsCache,
   setCustomGiftsCatalog,
   setUserVipOverridesCache,
   SUPER_ADMIN_EMAIL,
@@ -27,7 +28,7 @@ import { safeGetItem, safeSetItem } from './safeStorage';
 import { supabase } from './supabase';
 
 export const USER_COLUMNS =
-  'id, email, display_name, bio, avatar_url, gender, female_voice_status, female_verified, female_verified_badge, female_voice_note, is_host, is_agent, agency_id, host_badge, host_agency_name, host_diamonds_earned, referral_code, referred_by, referral_count, referral_spins, frame_id, unlocked_frames, previous_permanent_frame_id, temp_frame_id, temp_frame_expires_at, active_entry_id, active_entry_name, temp_entry_expires_at, coins, diamonds, level, xp, is_admin, is_banned, device_uuid, created_at, last_seen';
+  'id, email, display_name, bio, avatar_url, gender, female_voice_status, female_verified, female_verified_badge, female_voice_note, is_host, is_agent, agency_id, host_badge, host_agency_name, host_diamonds_earned, referral_code, referred_by, referral_count, referral_spins, frame_id, unlocked_frames, previous_permanent_frame_id, temp_frame_id, temp_frame_expires_at, active_entry_id, active_entry_name, temp_entry_expires_at, svip_level, svip_expires_at, coins, diamonds, level, xp, is_admin, is_banned, device_uuid, created_at, last_seen';
 
 export const ROOM_COLUMNS =
   'id, title, category, description, host_id, host_name, host_avatar, cover_image, is_private, password, max_seats, seats, listeners_count, is_active, total_gifts_coins, created_at';
@@ -79,6 +80,8 @@ export interface PlatformStateDoc {
 export function rowToUser(r: Record<string, unknown>): User {
   const email = String(r.email || '').toLowerCase();
   const isSuperAdmin = email === SUPER_ADMIN_EMAIL;
+  const rawSvipLevel = Number(r.svip_level);
+  const svipLevel = ([1, 2, 3, 4] as const).find((level) => level === rawSvipLevel) || null;
   return {
     id: String(r.id),
     email: String(r.email),
@@ -112,6 +115,8 @@ export function rowToUser(r: Record<string, unknown>): User {
     activeEntryId: (r.active_entry_id as User['activeEntryId']) || null,
     activeEntryName: (r.active_entry_name as string | null) || null,
     tempEntryExpiresAt: (r.temp_entry_expires_at as string | null) || null,
+    svipLevel,
+    svipExpiresAt: (r.svip_expires_at as string | null) || null,
     coins: Number(r.coins || 0),
     diamonds: Number(r.diamonds || 0),
     level: Number(r.level || 1),
@@ -159,6 +164,8 @@ export function userToRow(u: User, passwordHash?: string) {
     active_entry_id: u.activeEntryId || null,
     active_entry_name: u.activeEntryName || null,
     temp_entry_expires_at: u.tempEntryExpiresAt || null,
+    svip_level: u.svipLevel || null,
+    svip_expires_at: u.svipExpiresAt || null,
     coins: u.coins,
     diamonds: u.diamonds,
     level: u.level,
@@ -462,6 +469,7 @@ function normalizePlatformState(
 }
 
 function syncSettingsSideCaches(settings: PlatformSettings) {
+  setCustomVipIdsCache(settings.customVipIds || {});
   setCustomGiftsCatalog(settings.customGifts || []);
   setUserVipOverridesCache(settings.userVipOverrides || {});
 }
@@ -634,7 +642,7 @@ export async function savePlatformState(patch: Partial<PlatformStateDoc>): Promi
     votedKeys: patch.votedKeys ?? current.votedKeys,
     ladderSessions: patch.ladderSessions ?? current.ladderSessions,
   };
-  await supabase.from('sada_platform_state').upsert(
+  const { error } = await supabase.from('sada_platform_state').upsert(
     {
       id: 'global',
       app_prize_pool_coins: next.appPrizePoolCoins,
@@ -646,6 +654,7 @@ export async function savePlatformState(patch: Partial<PlatformStateDoc>): Promi
     },
     { onConflict: 'id' }
   );
+  if (error) throw new Error(error.message);
   persistPlatformStateCache(next);
   return next;
 }

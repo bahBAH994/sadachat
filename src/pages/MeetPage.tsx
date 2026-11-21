@@ -250,10 +250,10 @@ export const MeetPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-full bg-[#F5F6FA]">
-      <div className="max-w-3xl mx-auto px-4 pt-4 space-y-5">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#F5F6FA]">
+      <div className="w-full max-w-3xl mx-auto px-4 pt-4 flex-1 min-h-0 flex flex-col gap-5">
         {/* Fast Search Bar by Name or Numeric ID */}
-        <section className="light-card rounded-2xl p-3 space-y-2.5">
+        <section className="light-card rounded-2xl p-3 space-y-2.5 shrink-0">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
@@ -291,7 +291,7 @@ export const MeetPage: React.FC = () => {
         </section>
 
         {/* Online Opposite-Gender Users */}
-        <section className="space-y-3">
+        <section className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y pb-4 space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
               <Users className="w-4 h-4 text-emerald-600" />

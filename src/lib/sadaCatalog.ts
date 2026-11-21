@@ -87,13 +87,53 @@ export interface VipIdItem {
 }
 
 export const VIP_IDS_CATALOG: VipIdItem[] = [
-  { id: 'vip_id_777', number: '777', title: 'السلطان الملكي', badge: '👑', priceCoins: 50000, highlightClass: 'from-amber-400 to-yellow-600' },
+  { id: 'vip_id_100', number: '100', title: 'المئة الملكية', badge: '👑', priceCoins: 70000, highlightClass: 'from-amber-400 to-yellow-600' },
+  { id: 'vip_id_111', number: '111', title: 'ثلاثية النور', badge: '✨', priceCoins: 65000, highlightClass: 'from-amber-300 to-amber-500' },
+  { id: 'vip_id_222', number: '222', title: 'ثلاثية التاج', badge: '👑', priceCoins: 65000, highlightClass: 'from-rose-400 to-amber-400' },
+  { id: 'vip_id_333', number: '333', title: 'ثلاثية الألماس', badge: '💎', priceCoins: 65000, highlightClass: 'from-sky-400 to-indigo-500' },
+  { id: 'vip_id_444', number: '444', title: 'ثلاثية الفخامة', badge: '🏆', priceCoins: 65000, highlightClass: 'from-yellow-400 to-orange-500' },
+  { id: 'vip_id_555', number: '555', title: 'ثلاثية الصقر', badge: '🦅', priceCoins: 65000, highlightClass: 'from-yellow-400 to-orange-500' },
+  { id: 'vip_id_666', number: '666', title: 'ثلاثية المجد', badge: '⚜️', priceCoins: 65000, highlightClass: 'from-purple-400 to-pink-500' },
+  { id: 'vip_id_777', number: '777', title: 'السلطان الملكي', badge: '👑', priceCoins: 85000, highlightClass: 'from-amber-400 to-yellow-600' },
+  { id: 'vip_id_888', number: '888', title: 'ثلاثية الحظ', badge: '🍀', priceCoins: 65000, highlightClass: 'from-emerald-400 to-teal-500' },
+  { id: 'vip_id_999', number: '999', title: 'التسعمئة الإمبراطورية', badge: '💠', priceCoins: 85000, highlightClass: 'from-sky-400 to-indigo-500' },
   { id: 'vip_id_1000', number: '1000', title: 'الأسطورة الذهبية', badge: '🏆', priceCoins: 35000, highlightClass: 'from-amber-300 to-amber-500' },
-  { id: 'vip_id_5555', number: '5555', title: 'الصقر الإمبراطوري', badge: '🦅', priceCoins: 25000, highlightClass: 'from-yellow-400 to-orange-500' },
-  { id: 'vip_id_9999', number: '9999', title: 'التاج الماسي', badge: '💎', priceCoins: 20000, highlightClass: 'from-sky-400 to-indigo-500' },
-  { id: 'vip_id_12345', number: '12345', title: 'التسلسل الفاخر', badge: '✨', priceCoins: 15000, highlightClass: 'from-emerald-400 to-teal-500' },
+  { id: 'vip_id_1001', number: '1001', title: 'مرآة الألف', badge: '🪞', priceCoins: 28000, highlightClass: 'from-sky-400 to-indigo-500' },
+  { id: 'vip_id_1111', number: '1111', title: 'الرباعية الملكية', badge: '👑', priceCoins: 40000, highlightClass: 'from-amber-400 to-yellow-600' },
+  { id: 'vip_id_1221', number: '1221', title: 'انعكاس الصقر', badge: '🦅', priceCoins: 28000, highlightClass: 'from-yellow-400 to-orange-500' },
+  { id: 'vip_id_2000', number: '2000', title: 'بداية الألفين', badge: '✨', priceCoins: 25000, highlightClass: 'from-emerald-400 to-teal-500' },
+  { id: 'vip_id_2026', number: '2026', title: 'عام التميز', badge: '🌟', priceCoins: 35000, highlightClass: 'from-amber-300 to-amber-500' },
+  { id: 'vip_id_2222', number: '2222', title: 'الرباعية الفضية', badge: '💠', priceCoins: 35000, highlightClass: 'from-sky-400 to-indigo-500' },
+  { id: 'vip_id_3333', number: '3333', title: 'الرباعية المتلألئة', badge: '💎', priceCoins: 35000, highlightClass: 'from-sky-400 to-indigo-500' },
+  { id: 'vip_id_4444', number: '4444', title: 'الرباعية الإمبراطورية', badge: '🏆', priceCoins: 45000, highlightClass: 'from-yellow-400 to-orange-500' },
+  { id: 'vip_id_5555', number: '5555', title: 'الصقر الإمبراطوري', badge: '🦅', priceCoins: 30000, highlightClass: 'from-yellow-400 to-orange-500' },
+  { id: 'vip_id_6666', number: '6666', title: 'الرباعية الأنيقة', badge: '⚜️', priceCoins: 35000, highlightClass: 'from-purple-400 to-pink-500' },
   { id: 'vip_id_7000', number: '7000', title: 'الفارس الإمبراطوري', badge: '🗡️', priceCoins: 12000, highlightClass: 'from-purple-400 to-pink-500' },
-  { id: 'vip_id_8888', number: '8888', title: 'الجوهرة المزدوجة', badge: '💠', priceCoins: 10000, highlightClass: 'from-rose-400 to-amber-400' },
+  { id: 'vip_id_7777', number: '7777', title: 'الرباعية السلطانية', badge: '👑', priceCoins: 45000, highlightClass: 'from-amber-400 to-yellow-600' },
+  { id: 'vip_id_8888', number: '8888', title: 'الجوهرة المزدوجة', badge: '💠', priceCoins: 40000, highlightClass: 'from-rose-400 to-amber-400' },
+  { id: 'vip_id_9000', number: '9000', title: 'قمة التسعة', badge: '🌟', priceCoins: 25000, highlightClass: 'from-amber-300 to-amber-500' },
+  { id: 'vip_id_9090', number: '9090', title: 'توازن التسعة', badge: '✨', priceCoins: 28000, highlightClass: 'from-emerald-400 to-teal-500' },
+  { id: 'vip_id_9999', number: '9999', title: 'التاج الماسي', badge: '💎', priceCoins: 45000, highlightClass: 'from-sky-400 to-indigo-500' },
+  { id: 'vip_id_10101', number: '10101', title: 'خماسي المرآة', badge: '🪞', priceCoins: 18000, highlightClass: 'from-sky-400 to-indigo-500' },
+  { id: 'vip_id_11111', number: '11111', title: 'الخماسي الملكي', badge: '👑', priceCoins: 25000, highlightClass: 'from-amber-400 to-yellow-600' },
+  { id: 'vip_id_12345', number: '12345', title: 'التسلسل الفاخر', badge: '✨', priceCoins: 15000, highlightClass: 'from-emerald-400 to-teal-500' },
+  { id: 'vip_id_20000', number: '20000', title: 'عشرون ألفاً', badge: '🏅', priceCoins: 12000, highlightClass: 'from-amber-300 to-amber-500' },
+  { id: 'vip_id_22222', number: '22222', title: 'خماسي التاج', badge: '👑', priceCoins: 22000, highlightClass: 'from-rose-400 to-amber-400' },
+  { id: 'vip_id_33333', number: '33333', title: 'خماسي الجوهرة', badge: '💎', priceCoins: 22000, highlightClass: 'from-sky-400 to-indigo-500' },
+  { id: 'vip_id_44444', number: '44444', title: 'خماسي الفخامة', badge: '🏆', priceCoins: 22000, highlightClass: 'from-yellow-400 to-orange-500' },
+  { id: 'vip_id_55555', number: '55555', title: 'الخماسي الإمبراطوري', badge: '🦅', priceCoins: 25000, highlightClass: 'from-yellow-400 to-orange-500' },
+  { id: 'vip_id_66666', number: '66666', title: 'خماسي المجد', badge: '⚜️', priceCoins: 22000, highlightClass: 'from-purple-400 to-pink-500' },
+  { id: 'vip_id_77777', number: '77777', title: 'خماسي السلطان', badge: '👑', priceCoins: 25000, highlightClass: 'from-amber-400 to-yellow-600' },
+  { id: 'vip_id_88888', number: '88888', title: 'خماسي الحظ', badge: '💠', priceCoins: 25000, highlightClass: 'from-rose-400 to-amber-400' },
+  { id: 'vip_id_90000', number: '90000', title: 'الرقم الملكي الأخير', badge: '🌟', priceCoins: 18000, highlightClass: 'from-amber-300 to-amber-500' },
+  { id: 'vip_id_99999', number: '99999', title: 'الخماسي الأسطوري', badge: '🐉', priceCoins: 30000, highlightClass: 'from-purple-400 to-pink-500' },
+];
+
+export const SVIP_MEMBERSHIP_LEVELS = [
+  { level: 1 as const, label: 'SVIP 1 البرونزي', priceCoins: 10_000, color: 'from-amber-700 to-amber-400', glyph: '🥉' },
+  { level: 2 as const, label: 'SVIP 2 الفضي', priceCoins: 25_000, color: 'from-slate-400 to-slate-100', glyph: '🥈' },
+  { level: 3 as const, label: 'SVIP 3 الذهبي', priceCoins: 60_000, color: 'from-yellow-700 to-yellow-300', glyph: '🥇' },
+  { level: 4 as const, label: 'SVIP 4 الإمبراطوري', priceCoins: 150_000, color: 'from-amber-500 via-yellow-200 to-amber-600', glyph: '👑' },
 ];
 
 let cachedCustomVipIds: Record<string, string> = {};
@@ -428,8 +468,15 @@ export function getUserVipOverridesCache(): Record<string, VipTierKey> {
   return cachedUserVipOverrides;
 }
 
+type VipTierUser = Partial<
+  Pick<
+    User,
+    'id' | 'coins' | 'totalRecharged' | 'totalSpentCoins' | 'vipLevel' | 'svipLevel' | 'svipExpiresAt'
+  >
+>;
+
 export function getUserVipTierInfo(
-  user?: Partial<Pick<User, 'id' | 'coins' | 'totalRecharged' | 'totalSpentCoins' | 'vipLevel'>> | null
+  user?: VipTierUser | null
 ): VipTierInfo {
   if (!user) return getVipTierFromScore(0);
 
@@ -457,6 +504,18 @@ export function getUserVipTierInfo(
       nextTier,
       progressPct: overrideKey === 'svip' ? 100 : 50,
       coinsToNext: nextTier ? Math.max(0, nextTier.minScore - score) : 0,
+    };
+  }
+
+  const svipExpiry = user.svipExpiresAt ? new Date(user.svipExpiresAt).getTime() : 0;
+  if (user.svipLevel && Number.isFinite(svipExpiry) && svipExpiry > Date.now()) {
+    const svipConfig = getVipTierConfig('svip');
+    return {
+      ...svipConfig,
+      score: Math.max(getUserVipScore(user), svipConfig.minScore),
+      nextTier: null,
+      progressPct: 100,
+      coinsToNext: 0,
     };
   }
 
@@ -488,7 +547,7 @@ export function getUserVipTierInfo(
 
 export function parseVipTierKey(
   vipTierOrKey?: string | null,
-  fallbackUser?: Partial<Pick<User, 'coins' | 'totalRecharged' | 'totalSpentCoins' | 'vipLevel'>> | null
+  fallbackUser?: VipTierUser | null
 ): VipTierKey {
   if (vipTierOrKey) {
     const clean = vipTierOrKey.trim().toLowerCase();
