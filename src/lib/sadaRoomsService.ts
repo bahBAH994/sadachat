@@ -180,6 +180,56 @@ export function canManageRoom(
   );
 }
 
+async function hasAgencyRoomControlRole(
+  roomHostId: string,
+  userId: string,
+  deputyIds: string[]
+): Promise<boolean> {
+  if (userId === roomHostId || deputyIds.includes(userId)) return true;
+
+  const { data: hostUser, error: hostError } = await supabase
+    .from('sada_users')
+    .select('agency_id')
+    .eq('id', roomHostId)
+    .maybeSingle();
+  if (hostError) throw new Error(`تعذّر التحقق من وكالة الغرفة: ${hostError.message}`);
+  if (!hostUser?.agency_id) return false;
+
+  const { data: agency, error: agencyError } = await supabase
+    .from('sada_agencies')
+    .select('owner_id, host_ids')
+    .eq('id', hostUser.agency_id)
+    .maybeSingle();
+  if (agencyError) throw new Error(`تعذّر التحقق من صلاحيات الوكالة: ${agencyError.message}`);
+
+  return Boolean(
+    agency &&
+      (String(agency.owner_id) === userId ||
+        (Array.isArray(agency.host_ids) &&
+          agency.host_ids.some((hostId: unknown) => String(hostId) === userId)))
+  );
+}
+
+async function authorizeRoomControlAction(
+  roomId: string,
+  user: User,
+  denialMessage: string
+): Promise<{ host_id: string; title?: string }> {
+  const { data: room, error: roomError } = await supabase
+    .from('sada_rooms')
+    .select('host_id, title')
+    .eq('id', roomId)
+    .maybeSingle();
+  if (roomError) throw new Error(`تعذّر التحقق من الغرفة: ${roomError.message}`);
+  if (!room) throw new Error('الغرفة غير موجودة.');
+
+  const state = await getPlatformState({ forceRefresh: true });
+  const deputyIds = state.settings.roomConfigs?.[roomId]?.deputyIds || [];
+  const allowed = await hasAgencyRoomControlRole(String(room.host_id), user.id, deputyIds);
+  if (!allowed) throw new Error(denialMessage);
+  return room;
+}
+
 export async function listActiveRooms(): Promise<Room[]> {
   const [{ data: roomRows, error }, { data: msgRows }] = await Promise.all([
     supabase
@@ -249,7 +299,7 @@ export async function createRoomInSupabase(
     category: payload.category || 'حوار',
     description:
       (payload.description || '').trim().slice(0, 240) ||
-      'أهلاً بكم في الوكالة الملكية · شحن + دعم + مسابقات يومية على مدار الساعة!',
+      'أهلاً بكم في غرفتي الصوتية، نتمنى لكم وقتاً ممتعاً.',
     host_id: user.id,
     host_name: user.displayName,
     host_avatar: user.avatarUrl,
@@ -273,7 +323,7 @@ export async function createRoomInSupabase(
     vipTier: getVipTierLabel(user.level, user.is_admin),
     hostBadge: user.hostBadge || null,
     femaleVerifiedBadge: user.femaleVerifiedBadge || null,
-    text: `تم افتتاح الوكالة الصوتية "${row.title}"، أهلاً بالجميع!`,
+    text: `تم افتتاح الغرفة الصوتية "${row.title}"، أهلاً بالجميع!`,
     type: 'system',
     timestamp: now,
   };
@@ -372,14 +422,12 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
   };
 }
 
-export async function canClearRoomChatInSupabase(roomId: string): Promise<boolean> {
-  const { data, error } = await supabase.rpc('sada_can_clear_room_chat', {
-    p_room_id: roomId,
-  });
-  if (error) {
-    throw new Error(`تعذّر التحقق من صلاحية مسح الدردشة: ${error.message}`);
-  }
-  return data === true;
+export async function canClearRoomChatFromData(
+  room: Pick<Room, 'hostId'>,
+  user: Pick<User, 'id'>,
+  extras: Pick<RoomExtrasConfig, 'deputyIds'>
+): Promise<boolean> {
+  return hasAgencyRoomControlRole(room.hostId, user.id, extras.deputyIds);
 }
 
 export async function clearRoomChatInSupabase(roomId: string): Promise<RoomMessage> {
@@ -1767,15 +1815,11 @@ export async function startRoomContestInSupabase(
     agencyQuiz?: RoomLiveContest['agencyQuiz'];
   }
 ): Promise<RoomExtrasConfig> {
-  const { data: roomRow } = await supabase
-    .from('sada_rooms')
-    .select('host_id, title')
-    .eq('id', roomId)
-    .maybeSingle();
-  if (!roomRow) throw new Error('الغرفة غير موجودة.');
-  if (String(roomRow.host_id) !== actor.id) {
-    throw new Error('إنشاء المسابقات داخل الوكالة مخصص لصاحب الوكالة فقط.');
-  }
+  await authorizeRoomControlAction(
+    roomId,
+    actor,
+    'إطلاق المسابقات مخصص لمدير الغرفة أو نائبه أو مضيفيها.'
+  );
 
   const cleanTitle = (payload.title || '').trim().slice(0, 80);
   if (cleanTitle.length < 3) {
@@ -1817,7 +1861,7 @@ export async function startRoomContestInSupabase(
     vip_tier: null,
     host_badge: null,
     female_verified_badge: null,
-    text: `🏆 أطلق الوكيل ${actor.displayName} مسابقة مباشرة: "${cleanTitle}" · الجائزة: ${cleanPrize}`,
+    text: `🏆 أطلق ${actor.displayName} مسابقة مباشرة: "${cleanTitle}" · الجائزة: ${cleanPrize}`,
     type: 'system',
     timestamp: now,
   });
@@ -1890,15 +1934,11 @@ export async function finishRoomContestInSupabase(
   actor: User,
   winnerUserId?: string
 ): Promise<RoomExtrasConfig> {
-  const { data: roomRow } = await supabase
-    .from('sada_rooms')
-    .select('host_id')
-    .eq('id', roomId)
-    .maybeSingle();
-  if (!roomRow) throw new Error('الغرفة غير موجودة.');
-  if (String(roomRow.host_id) !== actor.id) {
-    throw new Error('إنهاء المسابقة مخصص لصاحب الوكالة فقط.');
-  }
+  await authorizeRoomControlAction(
+    roomId,
+    actor,
+    'إنهاء المسابقة مخصص لمدير الغرفة أو نائبه أو مضيفيها.'
+  );
 
   let chosenWinnerName: string | null = null;
   let contestTitle = '';
@@ -1938,7 +1978,7 @@ export async function finishRoomContestInSupabase(
       female_verified_badge: null,
       text: chosenWinnerName
         ? `🎉 انتهت مسابقة "${contestTitle}" — الفائز المعلن: 🏆 ${chosenWinnerName}!`
-        : `🏁 قام الوكيل ${actor.displayName} بإنهاء مسابقة "${contestTitle}".`,
+        : `🏁 أطلق ${actor.displayName} ختام مسابقة "${contestTitle}".`,
       type: 'system',
       timestamp: new Date().toISOString(),
     });
@@ -1951,15 +1991,11 @@ export async function clearRoomContestInSupabase(
   roomId: string,
   actor: User
 ): Promise<RoomExtrasConfig> {
-  const { data: roomRow } = await supabase
-    .from('sada_rooms')
-    .select('host_id')
-    .eq('id', roomId)
-    .maybeSingle();
-  if (!roomRow) throw new Error('الغرفة غير موجودة.');
-  if (String(roomRow.host_id) !== actor.id) {
-    throw new Error('إغلاق المسابقة مخصص لصاحب الوكالة فقط.');
-  }
+  await authorizeRoomControlAction(
+    roomId,
+    actor,
+    'إغلاق المسابقة مخصص لمدير الغرفة أو نائبه أو مضيفيها.'
+  );
 
   return saveRoomExtrasConfig(roomId, (cur) => ({
     ...cur,

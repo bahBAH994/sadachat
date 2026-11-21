@@ -9,7 +9,6 @@ import {
   Mic,
   MicOff,
   Plus,
-  Sparkles,
   Trophy,
   Volume2,
   VolumeX,
@@ -249,8 +248,10 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
     setMuted(next);
     setAudioMuted(next);
   };
+  const isCompactRoulette =
+    selectedGame.type === 'category' && selectedGame.category === 'roulette';
 
-  // ==================== STAGE 2: ACTIVE GAME (BOTTOM 52%, UPPER 48% COMPLETELY CLEAR) ====================
+  // ==================== STAGE 2: ACTIVE GAME ====================
   if (viewMode === 'playing') {
     return (
       <div className="fixed inset-0 z-50 pointer-events-none flex items-end justify-center">
@@ -259,7 +260,11 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 70 }}
           transition={{ type: 'spring', stiffness: 360, damping: 32 }}
-          className="pointer-events-auto w-full max-w-2xl h-[52vh] min-h-[375px] max-h-[56vh] rounded-t-[1.5rem] overflow-hidden shadow-[0_-12px_45px_rgba(0,0,0,0.85)]"
+          className={`pointer-events-auto w-full max-w-2xl rounded-t-[1.5rem] overflow-hidden shadow-[0_-12px_45px_rgba(0,0,0,0.85)] ${
+            isCompactRoulette
+              ? 'h-[82dvh] max-h-[82dvh] min-h-0'
+              : 'h-[52vh] min-h-[375px] max-h-[56vh]'
+          }`}
         >
           {selectedGame.type === 'slot' ? (
             <InRoomSlot5x3Player
@@ -354,7 +359,11 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto no-scrollbar p-2.5">
+              <div
+                className={`flex-1 min-h-0 p-2.5 ${
+                  isCompactRoulette ? 'overflow-hidden' : 'overflow-y-auto no-scrollbar'
+                }`}
+              >
                 {selectedGame.category === 'competitions' ? (
                   <CompetitionsPage embedded />
                 ) : (
@@ -718,8 +727,8 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                   ))}
                 </div>
 
-                {/* Featured Rock Paper Scissors 3D + Live Competitions Bottom Strip */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Featured Rock Paper Scissors 3D */}
+                <div className="grid grid-cols-1 gap-2.5">
                   <button
                     type="button"
                     onClick={() =>
@@ -747,26 +756,6 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                       </div>
                     </div>
                     <span className="text-[11px] font-bold text-[#FDE047]">العب ←</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleLaunchGame({
-                        type: 'category',
-                        category: 'competitions',
-                        title: 'المسابقات الملكية',
-                      })
-                    }
-                    className="w-full rounded-2xl border border-[#FACC15]/50 bg-[#071547]/90 hover:bg-[#0D216B] px-3.5 py-2.5 flex items-center justify-between cursor-pointer transition"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-[#FDE047]" />
-                      <span className="text-xs font-extrabold text-white">
-                        المسابقات والأسئلة التفاعلية
-                      </span>
-                    </div>
-                    <span className="text-[11px] font-bold text-[#FDE047]">دخول ←</span>
                   </button>
                 </div>
               </>

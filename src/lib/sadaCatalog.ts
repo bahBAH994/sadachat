@@ -231,28 +231,10 @@ export const ROOM_BACKGROUNDS: Array<{
     previewClass: 'bg-gradient-to-b from-[#17120A] via-[#2A1C08] to-[#080604]',
   },
   {
-    id: 'royal_stage',
-    name: 'الديوان الإمبراطوري',
-    description: 'قصر عربي فاخر بإضاءة ذهبية دافئة',
-    previewClass: 'bg-gradient-to-b from-[#161B33] via-[#2A1F0A] to-[#070913]',
-  },
-  {
     id: 'competition_crest',
     name: 'ساحة المسابقات الذهبية',
     description: 'إطلالة الساحة الملكية للكبار',
     previewClass: 'bg-gradient-to-b from-[#1F1235] via-[#2E1E0B] to-[#090B16]',
-  },
-  {
-    id: 'emerald_palace',
-    name: 'الزمرد الليلي',
-    description: 'أجواء زمردية عميقة مع بريق ذهبي هادئ',
-    previewClass: 'bg-gradient-to-b from-[#06221A] via-[#0B1922] to-[#050A0E]',
-  },
-  {
-    id: 'crimson_throne',
-    name: 'العرش الياقوتي',
-    description: 'فخامة عنابية داكنة مع هالة ذهبية',
-    previewClass: 'bg-gradient-to-b from-[#2A0B14] via-[#1B0C1C] to-[#09060A]',
   },
   ...STORE_LUXURY_BACKGROUNDS.map((b) => ({
     id: b.id,

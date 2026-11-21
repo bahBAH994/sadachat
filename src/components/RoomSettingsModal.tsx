@@ -11,6 +11,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  Store,
   Trophy,
   Upload,
   UserMinus,
@@ -33,7 +34,7 @@ interface RoomSettingsModalProps {
   isAgencyOwner?: boolean;
   initialTab?: 'agency' | 'members' | 'logs' | 'contests';
   ownedBackgrounds?: string[];
-  isAdmin?: boolean;
+  onOpenStore?: () => void;
   effectsMuted?: boolean;
   onToggleEffectsMuted?: (muted: boolean) => void;
   onUpdateSettings: (patch: {
@@ -81,7 +82,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   isAgencyOwner = false,
   initialTab = 'agency',
   ownedBackgrounds = [],
-  isAdmin = false,
+  onOpenStore,
   effectsMuted = false,
   onToggleEffectsMuted,
   onUpdateSettings,
@@ -250,10 +251,10 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-extrabold gold-gradient-text">
-                إعدادات وإدارة الوكالة
+                إعدادات الغرفة الصوتية
               </h3>
               <p className="text-[11px] text-slate-400">
-                تحكم كامل للوكيل ونائب الوكيل والمشرفين · متزامن للجميع
+                إدارة إعدادات الغرفة متزامنة للجميع
               </p>
             </div>
           </div>
@@ -651,7 +652,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-[#F3D37A] flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>تغيير خلفية الروم (ملكية أو من الهاتف)</span>
+                  <span>تغيير خلفية الغرفة</span>
                 </label>
                 <label className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-1 text-[11px] font-bold text-emerald-200 cursor-pointer hover:bg-emerald-500/30">
                   <Upload className="w-3 h-3" />
@@ -670,10 +671,9 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {ROOM_BACKGROUNDS.map((bg) => {
                   const locked =
-                    Boolean(bg.priceCoins) &&
-                    !isAdmin &&
-                    !ownedBackgrounds.includes(bg.id) &&
-                    room.coverImage !== bg.id;
+                    bg.id !== 'dragon_dark' &&
+                    bg.id !== 'competition_crest' &&
+                    !ownedBackgrounds.includes(bg.id);
                   return (
                     <button
                       key={bg.id}
@@ -708,6 +708,16 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                   );
                 })}
               </div>
+              {onOpenStore && (
+                <button
+                  type="button"
+                  onClick={onOpenStore}
+                  className="min-h-[44px] w-full rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 text-xs font-extrabold text-[#FCE9A6] cursor-pointer active:scale-95"
+                >
+                  <Store className="ml-1 inline h-4 w-4" />
+                  شراء خلفيات الغرفة من المتجر
+                </button>
+              )}
             </div>
 
             <button

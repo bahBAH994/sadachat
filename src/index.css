@@ -33,6 +33,19 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  button:not(:disabled),
+  [role="button"],
+  a[href] {
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+
+  button:not(:disabled):active,
+  [role="button"]:active,
+  a[href]:active {
+    transform: scale(0.95);
+  }
+
   [aria-hidden="true"] {
     pointer-events: none;
   }

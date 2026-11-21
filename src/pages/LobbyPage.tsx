@@ -612,7 +612,7 @@ export const LobbyPage: React.FC = () => {
       setShowCreate(false);
       navigate(`/room/${room.id}`);
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'تعذّر إنشاء الوكالة.');
+      setCreateError(err instanceof Error ? err.message : 'تعذّر إنشاء الغرفة.');
     } finally {
       setCreating(false);
     }
@@ -1222,7 +1222,7 @@ export const LobbyPage: React.FC = () => {
         <span>غرفتي / وكالتي</span>
       </button>
 
-      {/* Create Agency Room Modal */}
+      {/* Create Personal Room Modal */}
       {showCreate && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
@@ -1235,7 +1235,7 @@ export const LobbyPage: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-emerald-600" />
-                <span>افتتاح وكالة صوتية جديدة</span>
+                <span>إنشاء غرفتي الخاصة</span>
               </h3>
               <button
                 type="button"
@@ -1256,7 +1256,7 @@ export const LobbyPage: React.FC = () => {
             <form onSubmit={handleCreateRoom} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  عنوان الوكالة الصوتية
+                  عنوان الغرفة
                 </label>
                 <input
                   type="text"
@@ -1319,7 +1319,7 @@ export const LobbyPage: React.FC = () => {
 
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-slate-700">
-                  خصوصية الوكالة
+                  خصوصية الغرفة
                 </label>
                 <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-100">
                   <button
@@ -1330,7 +1330,7 @@ export const LobbyPage: React.FC = () => {
                     }`}
                   >
                     <Unlock className="w-3.5 h-3.5" />
-                    <span>وكالة عامة</span>
+                    <span>غرفة عامة</span>
                   </button>
                   <button
                     type="button"
@@ -1340,7 +1340,7 @@ export const LobbyPage: React.FC = () => {
                     }`}
                   >
                     <Lock className="w-3.5 h-3.5" />
-                    <span>محمية برمز PIN</span>
+                    <span>غرفة خاصة برمز PIN</span>
                   </button>
                 </div>
               </div>
@@ -1348,7 +1348,7 @@ export const LobbyPage: React.FC = () => {
               {newPrivate && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    الرمز السري للوكالة (PIN)
+                    الرمز السري للغرفة (PIN)
                   </label>
                   <input
                     type="text"
@@ -1386,7 +1386,7 @@ export const LobbyPage: React.FC = () => {
                 disabled={creating}
                 className="emerald-btn w-full min-h-[46px] rounded-2xl py-2.5 text-sm cursor-pointer disabled:opacity-60"
               >
-                {creating ? 'جارٍ افتتاح الوكالة...' : 'بدء البث الصوتي الآن'}
+                {creating ? 'جارٍ فتح الغرفة...' : 'فتح غرفتي الآن'}
               </button>
             </form>
           </div>

@@ -122,6 +122,7 @@ export const UserMiniProfileModal: React.FC = () => {
   const countryInfo = profile.country
     ? ARAB_COUNTRIES.find((c) => c.code === profile.country)
     : null;
+  const isInsideActiveRoom = Boolean(activeRoomId && !isMinimized);
 
   const handleToggleFollow = async () => {
     if (!currentUser || isSelf) return;
@@ -279,14 +280,16 @@ export const UserMiniProfileModal: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handlePrivateChat}
-              className="emerald-btn flex-1 min-h-[46px] rounded-2xl px-4 py-2.5 text-sm font-extrabold flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <MessageCircle className="w-4 h-4" />
-              <span>{isSelf ? 'فتح ملفي الشخصي' : 'مراسلة خاصة'}</span>
-            </button>
+            {!isInsideActiveRoom && (
+              <button
+                type="button"
+                onClick={handlePrivateChat}
+                className="emerald-btn flex-1 min-h-[46px] rounded-2xl px-4 py-2.5 text-sm font-extrabold flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>{isSelf ? 'فتح ملفي الشخصي' : 'مراسلة خاصة'}</span>
+              </button>
+            )}
             {!isSelf && currentUser && (
               <button
                 type="button"
@@ -318,14 +321,16 @@ export const UserMiniProfileModal: React.FC = () => {
                 )}
               </button>
             )}
-            <button
-              type="button"
-              onClick={handleGiftAction}
-              className="gold-btn min-h-[46px] rounded-2xl px-4 py-2.5 text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition shrink-0"
-            >
-              <Gift className="w-4 h-4" />
-              <span>هدية</span>
-            </button>
+            {!isInsideActiveRoom && (
+              <button
+                type="button"
+                onClick={handleGiftAction}
+                className="gold-btn min-h-[46px] rounded-2xl px-4 py-2.5 text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition shrink-0"
+              >
+                <Gift className="w-4 h-4" />
+                <span>هدية</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

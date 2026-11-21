@@ -5,7 +5,7 @@ import type { RoomLiveContest } from '../types';
 
 interface RoomContestModalProps {
   contest: RoomLiveContest | null;
-  isAgencyOwner: boolean;
+  canManageContest: boolean;
   currentUserId?: string;
   onStartContest: (payload: {
     title: string;
@@ -23,7 +23,7 @@ interface RoomContestModalProps {
 const MODE_LABELS: Record<RoomLiveContest['mode'], { title: string; subtitle: string }> = {
   open: {
     title: 'سباق التفاعل والانضمام',
-    subtitle: 'مفتوحة لجميع أعضاء الوكالة مع تصويت فوري',
+    subtitle: 'مفتوحة لجميع أعضاء الغرفة مع تصويت فوري',
   },
   mics: {
     title: 'تحدي المتحدثين على المايك',
@@ -37,7 +37,7 @@ const MODE_LABELS: Record<RoomLiveContest['mode'], { title: string; subtitle: st
 
 export const RoomContestModal: React.FC<RoomContestModalProps> = ({
   contest,
-  isAgencyOwner,
+  canManageContest,
   currentUserId,
   onStartContest,
   onJoinContest,
@@ -148,11 +148,11 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-extrabold gold-gradient-text">
-                مسابقة الوكالة المباشرة
+                مسابقات الغرفة المباشرة
               </h3>
               <p className="text-[11px] text-slate-400">
-                {isAgencyOwner
-                  ? 'إدارة وإطلاق المسابقات الحية داخل وكالتك'
+                {canManageContest
+                  ? 'إدارة وإطلاق المسابقات الحية داخل الغرفة'
                   : 'شارك وصوّت للمتسابقين مباشرة'}
               </p>
             </div>
@@ -175,7 +175,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
         )}
 
         {/* Create Form (Agency Owner Only) */}
-        {(showCreateForm || !contest) && isAgencyOwner ? (
+        {(showCreateForm || !contest) && canManageContest ? (
           <form onSubmit={handleLaunch} className="space-y-3.5">
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-[#FCE9A6]">
@@ -186,7 +186,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="مثال: تحدي أجمل صوت في الوكالة"
+                placeholder="مثال: تحدي أجمل صوت في الغرفة"
                 className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/30 px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#FCE9A6]"
               />
             </div>
@@ -255,10 +255,10 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
           <div className="rounded-2xl bg-[#070913]/70 border border-white/10 py-10 px-4 text-center space-y-2">
             <Trophy className="w-10 h-10 text-[#D4AF37]/60 mx-auto" />
             <p className="text-sm font-bold text-slate-200">
-              لا توجد مسابقة جارية حالياً داخل الوكالة
+              لا توجد مسابقة جارية حالياً داخل الغرفة
             </p>
             <p className="text-xs text-slate-400">
-              سيظهر إشعار فوري للجميع عند قيام صاحب الوكالة بإطلاق مسابقة جديدة.
+              سيظهر إشعار فوري للجميع عند إطلاق مسابقة جديدة في الغرفة.
             </p>
           </div>
         ) : (
@@ -395,7 +395,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                             <span>تصويت</span>
                           </button>
                         )}
-                        {isAgencyOwner && contest.status === 'active' && (
+                        {canManageContest && contest.status === 'active' && (
                           <button
                             type="button"
                             disabled={busy}
@@ -414,7 +414,7 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
             </div>
 
             {/* Agency Owner Actions */}
-            {isAgencyOwner && (
+            {canManageContest && (
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10">
                 {contest.status === 'active' ? (
                   <button

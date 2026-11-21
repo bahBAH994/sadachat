@@ -951,13 +951,15 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
     <div
       className={
         compactRoomMode
-          ? 'space-y-2.5'
+          ? category === 'roulette'
+            ? 'flex h-full min-h-0 flex-col'
+            : 'space-y-2.5'
           : embedded
           ? 'space-y-4 sm:space-y-5'
           : 'w-full max-w-7xl mx-auto px-4 sm:px-6 pt-5 space-y-6'
       }
     >
-      {/* Header + Live Wallet Sync Strip (Hidden in compact 45% room mode) */}
+      {/* Header + Live Wallet Sync Strip (Hidden in compact room mode) */}
       {!compactRoomMode && (
         embedded ? (
           <section className="rounded-2xl bg-[#070913]/75 border border-[#D4AF37]/25 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -1033,7 +1035,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         )
       )}
 
-      {/* Main Category Switcher (Hidden in compact 45% room mode) */}
+      {/* Main Category Switcher (Hidden in compact room mode) */}
       {!compactRoomMode && (
         <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {(
@@ -1981,10 +1983,10 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
       {/* ===================== CATEGORY 3: ROYAL ROULETTE ===================== */}
       {category === 'roulette' && (
-        <section className="royal-glass rounded-[2rem] border border-[#D4AF37]/35 p-5 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+        <section className="royal-glass flex max-h-[82vh] min-h-0 flex-1 flex-col justify-between gap-2 overflow-hidden rounded-[2rem] border border-[#D4AF37]/35 p-3">
           {/* Wheel Showcase */}
-          <div className="lg:col-span-5 flex flex-col items-center justify-center gap-4">
-            <div className="relative w-72 h-72 sm:w-80 sm:h-80 flex items-center justify-center">
+          <div className="flex min-h-0 flex-col items-center justify-center gap-2">
+            <div className="relative h-36 w-36 shrink-0 flex items-center justify-center">
               {/* Sculpted 3D Metallic Pointer with Ruby Jewel */}
               <div
                 className="absolute -top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none drop-shadow-[0_6px_12px_rgba(0,0,0,0.85)]"
@@ -2080,7 +2082,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
               {/* Center Fixed Outcome Display */}
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="w-20 h-20 rounded-full bg-[#070913]/95 border-2 border-[#FCE9A6] flex flex-col items-center justify-center shadow-[0_0_24px_rgba(212,175,55,0.6)]">
+                <div className="w-14 h-14 rounded-full bg-[#070913]/95 border-2 border-[#FCE9A6] flex flex-col items-center justify-center shadow-[0_0_24px_rgba(212,175,55,0.6)]">
                   {rouletteResult && !isRouletteSpinning ? (
                     <>
                       <span className="text-[10px] text-slate-400">الرقم</span>
@@ -2105,7 +2107,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
             {rouletteResult && !isRouletteSpinning && (
               <div
-                className={`w-full rounded-2xl border p-3.5 text-center ${
+                className={`w-full rounded-xl border p-2 text-center ${
                   rouletteResult.won
                     ? 'border-[#FCE9A6]/70 bg-gradient-to-r from-[#D4AF37]/25 via-emerald-950/50 to-[#D4AF37]/20'
                     : 'border-white/10 bg-[#070913]/80'
@@ -2126,15 +2128,15 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
           </div>
 
           {/* Betting Controls */}
-          <div className="lg:col-span-7 space-y-4">
+          <div className="w-full min-h-0 space-y-2">
             <div>
-              <h2 className="text-xl font-extrabold text-[#FCE9A6]">لوحة رهانات الروليت الملكية</h2>
-              <p className="text-xs text-slate-300 mt-0.5">
+              <h2 className="text-sm font-extrabold text-[#FCE9A6]">لوحة رهانات الروليت الملكية</h2>
+              <p className="text-[10px] text-slate-300 mt-0.5">
                 اختر اللون أو الفئة أو الرقم الدقيق لتدوير العجلة الذهبية بمضاعفات تصل إلى ×32
               </p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-4 gap-1">
               {(
                 [
                   { id: 'red', label: 'أحمر', mult: '×2', cls: 'bg-rose-950/75 border-rose-400/40' },
@@ -2152,7 +2154,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   type="button"
                   disabled={isRouletteSpinning}
                   onClick={() => setRouletteBetType(opt.id)}
-                  className={`rounded-2xl p-3 border text-center cursor-pointer transition ${
+                  className={`rounded-xl p-1.5 border text-center cursor-pointer transition ${
                     opt.cls
                   } ${
                     rouletteBetType === opt.id
@@ -2160,8 +2162,8 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                       : 'opacity-85 hover:opacity-100'
                   }`}
                 >
-                  <span className="block text-xs font-extrabold text-white">{opt.label}</span>
-                  <span className="block text-xs font-mono-num text-[#FCE9A6] mt-0.5">
+                  <span className="block text-[10px] font-extrabold text-white">{opt.label}</span>
+                  <span className="block text-[10px] font-mono-num text-[#FCE9A6]">
                     {opt.mult}
                   </span>
                 </button>
@@ -2169,13 +2171,13 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
             </div>
 
             {/* Optional Exact Straight Number Picker */}
-            <div className="rounded-2xl bg-[#070913]/80 border border-[#D4AF37]/25 p-3.5 space-y-2">
+            <div className="rounded-xl bg-[#070913]/80 border border-[#D4AF37]/25 p-2 space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <button
                   type="button"
                   disabled={isRouletteSpinning}
                   onClick={() => setRouletteBetType('straight')}
-                  className={`font-extrabold cursor-pointer ${
+                  className={`text-[10px] font-extrabold cursor-pointer ${
                     rouletteBetType === 'straight' ? 'text-[#FCE9A6]' : 'text-slate-300'
                   }`}
                 >
@@ -2183,7 +2185,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                 </button>
                 <span className="font-mono-num text-[#F3D37A]">الرقم #{rouletteStraightNum}</span>
               </div>
-              <div className="grid grid-cols-9 sm:grid-cols-12 gap-1.5" dir="ltr">
+              <div className="grid grid-cols-12 gap-1" dir="ltr">
                 {Array.from({ length: 36 }, (_, i) => i + 1).map((n) => {
                   const isRed = ROULETTE_REDS.has(n);
                   const isPicked = rouletteBetType === 'straight' && rouletteStraightNum === n;
@@ -2196,7 +2198,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                         setRouletteBetType('straight');
                         setRouletteStraightNum(n);
                       }}
-                      className={`h-8 rounded-lg text-[11px] font-extrabold font-mono-num border cursor-pointer transition ${
+                      className={`h-6 rounded-md text-[9px] font-extrabold font-mono-num border cursor-pointer transition ${
                         isRed ? 'bg-rose-900/75 border-rose-400/35' : 'bg-[#0B0F20] border-white/15'
                       } ${isPicked ? 'ring-2 ring-[#FCE9A6] text-[#FCE9A6] scale-105' : 'text-white'}`}
                     >
@@ -2207,15 +2209,15 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
               </div>
             </div>
 
-            <div className="sticky bottom-0 z-30 rounded-2xl border border-[#D4AF37]/35 bg-[#070913]/95 backdrop-blur-md p-2.5 space-y-2">
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            <div className="relative z-30 rounded-xl border border-[#D4AF37]/35 bg-[#14161f]/95 p-2 space-y-1.5">
+              <div className="grid grid-cols-6 gap-1">
               {BET_AMOUNTS.map((val) => (
                 <button
                   key={val}
                   type="button"
                   disabled={isRouletteSpinning}
                   onClick={() => setBet(val)}
-                  className={`min-h-[42px] rounded-xl text-xs font-extrabold font-mono-num border cursor-pointer transition ${
+                  className={`min-h-[32px] rounded-lg text-[10px] font-extrabold font-mono-num border cursor-pointer transition ${
                     bet === val
                       ? 'bg-[#D4AF37] text-[#070913] border-[#FCE9A6]'
                       : 'bg-white/5 border-white/15 text-slate-200 hover:border-[#D4AF37]/45'
@@ -2230,7 +2232,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
               type="button"
               disabled={isRouletteSpinning || user.coins < bet}
               onClick={handleSpinRoulette}
-              className="gold-btn w-full min-h-[54px] rounded-2xl text-base font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-45"
+              className="gold-btn w-full min-h-[42px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-45"
             >
               <Disc3 className={`w-5 h-5 ${isRouletteSpinning ? 'animate-spin' : ''}`} />
               <span>
@@ -2599,7 +2601,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         </section>
       )}
 
-      {/* Unified Live History Strip across Games (Hidden in compact 45% room mode) */}
+      {/* Unified Live History Strip across Games (Hidden in compact room mode) */}
       {!compactRoomMode && (
         <section className="royal-glass rounded-3xl p-5 space-y-3 border border-[#D4AF37]/20">
           <div className="flex items-center gap-2 text-[#F3D37A]">
