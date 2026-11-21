@@ -868,9 +868,8 @@ export const RoomPage: React.FC = () => {
     }
     if (total === 10) {
       return [
-        { seats: seats.slice(0, 2), cols: 2, isHero5: false },
-        { seats: seats.slice(2, 6), cols: 4, isHero5: false },
-        { seats: seats.slice(6, 10), cols: 4, isHero5: false },
+        { seats: seats.slice(0, 5), cols: 5, isHero5: false },
+        { seats: seats.slice(5, 10), cols: 5, isHero5: false },
       ];
     }
     const rows: Array<{ seats: RoomSeat[]; cols: number; isHero5: boolean }> = [];
@@ -1052,7 +1051,7 @@ export const RoomPage: React.FC = () => {
           {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
           <DragonStageBackdrop coverImage={room.coverImage} />
 
-      <div className="fixed inset-0 h-[100dvh] z-10 flex flex-col justify-between max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2 min-h-0">
+      <div className="fixed inset-0 h-[100dvh] z-10 flex flex-col gap-2 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2 min-h-0">
         {/* 1. ROOM TOP BAR */}
         <header className="flex items-center justify-between gap-1.5 shrink-0">
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
@@ -1410,14 +1409,14 @@ export const RoomPage: React.FC = () => {
           {micRows.map((row, rIdx) => (
             <div
               key={rIdx}
-              className={`flex items-start justify-center ${
+              className={`${
                 row.cols === 5
-                  ? 'grid grid-cols-5 gap-1.5 sm:gap-2'
+                  ? 'grid grid-cols-5 gap-y-2 gap-x-1'
                   : row.cols === 4
                   ? 'grid grid-cols-4 gap-2 sm:gap-3 max-w-md mx-auto'
                   : row.cols === 2
-                  ? 'gap-8 sm:gap-12'
-                  : ''
+                  ? 'flex items-start justify-center gap-8 sm:gap-12'
+                  : 'flex items-start justify-center'
               }`}
             >
               {row.seats.map((seat) => {
@@ -1453,7 +1452,7 @@ export const RoomPage: React.FC = () => {
         </section>
 
         {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
-        <section className="flex-1 min-h-[100px] max-h-[31dvh] sm:max-h-[34dvh] flex flex-col mt-1 overflow-hidden">
+        <section className="flex-1 min-h-0 flex flex-col mt-1 overflow-hidden">
           {/* Compact Chat Filter Tabs */}
           <div className="flex items-center gap-1.5 px-1 mb-1 shrink-0">
             <button
@@ -1482,7 +1481,7 @@ export const RoomPage: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto no-scrollbar space-y-1.5 px-1 py-0.5">
+          <div className="flex-1 min-h-0 overflow-y-auto mt-1 no-scrollbar space-y-1.5 px-1 py-0.5">
             {chatFilter === 'all' && (
               <div className="rounded-2xl bg-black/45 border border-[#D4AF37]/25 px-3 py-1.5 text-xs leading-relaxed">
                 <div className="flex items-center justify-between gap-2 mb-0.5">

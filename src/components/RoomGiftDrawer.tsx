@@ -49,7 +49,7 @@ const GiftGridItem = memo<GiftGridItemProps>(({ gift, active, onSelect }) => {
     <button
       type="button"
       onClick={() => onSelect(gift.id)}
-      className={`relative rounded-2xl p-2.5 flex flex-col items-center text-center transition cursor-pointer overflow-hidden ${
+      className={`relative rounded-2xl p-1.5 flex flex-col items-center text-center transition cursor-pointer overflow-hidden ${
         active
           ? 'bg-gradient-to-b from-[#3A280B] via-[#241807] to-[#120D05] border-2 border-[#FCE9A6] shadow-[0_0_22px_rgba(243,211,122,0.5)] scale-[1.03]'
           : isImperial
@@ -73,7 +73,7 @@ const GiftGridItem = memo<GiftGridItemProps>(({ gift, active, onSelect }) => {
         </span>
       )}
 
-      <div className="relative mt-1 mb-1.5 w-14 h-14 flex items-center justify-center">
+      <div className="relative mt-0.5 mb-0.5 w-10 h-10 flex items-center justify-center">
         <span
           aria-hidden="true"
           className={`absolute inset-0.5 rounded-full blur-[6px] transition duration-300 ${
@@ -99,19 +99,19 @@ const GiftGridItem = memo<GiftGridItemProps>(({ gift, active, onSelect }) => {
             glyph={gift.glyph}
             imageUrl={gift.imageUrl}
             alt={gift.name}
-            sizeClass="w-12 h-12"
-            fallbackTextClass="text-3xl"
+            sizeClass="w-9 h-9"
+            fallbackTextClass="text-2xl"
             priority={isFeatured || Boolean(gift.imageUrl)}
           />
         </div>
       </div>
 
-      <span className="text-[11px] font-extrabold text-white line-clamp-1 leading-tight">
+      <span className="text-[10px] font-extrabold text-white line-clamp-1 leading-tight">
         {gift.name}
       </span>
 
-      <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-mono-num font-extrabold text-[#FCE9A6]">
-        <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3.5 h-3.5" fallbackTextClass="text-[10px]" />
+      <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-mono-num font-extrabold text-[#FCE9A6]">
+        <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3 h-3" fallbackTextClass="text-[9px]" />
         <span>{gift.coinsCost.toLocaleString('en-US')}</span>
       </div>
     </button>
@@ -305,7 +305,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/30"
       onClick={onClose}
     >
       <motion.div
@@ -314,10 +314,10 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
         exit={{ y: 70, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-t-[28px] border-t border-x border-[#F3D37A]/45 bg-gradient-to-b from-[#1A140B]/98 via-[#110D08]/98 to-[#090704] shadow-[0_-18px_50px_rgba(0,0,0,0.85)] flex flex-col max-h-[48vh] overflow-hidden"
+        className="w-full max-w-2xl rounded-t-[28px] border-t border-x border-[#F3D37A]/45 bg-gradient-to-b from-[#1A140B]/98 via-[#110D08]/98 to-[#090704] shadow-[0_-18px_50px_rgba(0,0,0,0.85)] flex flex-col max-h-[62vh] overflow-hidden"
       >
         {/* Top Drawer Header */}
-        <div className="flex items-center justify-between px-4 pt-3.5 pb-2 border-b border-white/10 shrink-0">
+        <div className="flex items-center justify-between px-4 py-1.5 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#FDE047] via-[#D4AF37] to-[#9A6E13] flex items-center justify-center shadow-[0_0_16px_rgba(243,211,122,0.5)]">
               <Fluent3DAsset glyph="🎁" alt="الهدايا الملكية" sizeClass="w-7 h-7" priority />
@@ -356,8 +356,8 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
         </div>
 
         {/* Horizontal Seated Speakers Recipient Bar + "الكل" Toggle */}
-        <div className="px-4 py-2.5 bg-black/35 border-b border-white/10 shrink-0">
-          <div className="flex items-center justify-between mb-1.5">
+        <div className="px-4 py-1.5 bg-black/35 border-b border-white/10 shrink-0">
+          <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] font-bold text-amber-100/90">
               اختر المُرسَل إليه ({selectedTargetIds.length}):
             </span>
@@ -448,7 +448,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
         </div>
 
         {/* Gift Tabs */}
-        <div className="px-4 pt-2 pb-1.5 shrink-0">
+        <div className="px-4 py-1.5 shrink-0">
           <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-black/55 border border-[#D4AF37]/25">
             {[
               { id: 'fixed', label: `هدايا 3D (${fixedGifts.length})` },
@@ -479,7 +479,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
           </div>
 
           {giftTab !== 'history' && (
-            <div className="flex items-center gap-1.5 mt-1.5 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-1.5 mt-1 overflow-x-auto no-scrollbar">
               {[
                 { id: 'all', label: 'الكل' },
                 { id: 'light', label: 'خفيفة (<100)' },
@@ -506,7 +506,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
         </div>
 
         {/* Gifts Grid OR History */}
-        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 py-2">
+        <div className="flex-1 min-h-0 flex flex-col px-2 py-1">
           {giftTab === 'history' ? (
             <div className="space-y-2 py-2">
               {room.messages.filter((m) => m.type === 'gift').length === 0 ? (
@@ -533,7 +533,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
               لا توجد هدايا في هذه الفئة ضمن هذا التبويب.
             </p>
           ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 pb-2">
+            <div className="flex-1 min-h-[190px] overflow-y-auto grid grid-cols-4 gap-2 p-2">
               {visibleGifts.map((gift) => (
                 <GiftGridItem
                   key={gift.id}

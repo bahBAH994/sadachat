@@ -619,7 +619,7 @@ export const LobbyPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto overscroll-y-contain">
+    <div className="min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto touch-pan-y">
       {/* Top App Header matching screenshot */}
       <header className="sticky top-0 z-30 bg-white/95 border-b border-slate-100">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-2">

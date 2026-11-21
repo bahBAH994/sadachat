@@ -521,7 +521,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const comboCircumference = 2 * Math.PI * comboCircleRadius;
 
   return (
-    <div className={embedded ? 'flex flex-col h-full bg-[#F5F6FA]' : 'min-h-screen bg-[#F5F6FA] pb-28'}>
+    <div className={embedded ? 'flex flex-col h-full bg-[#F5F6FA]' : 'min-h-screen bg-[#F5F6FA] pb-28 overflow-y-auto touch-pan-y'}>
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 pt-[env(safe-area-inset-top)] shrink-0">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
