@@ -1986,7 +1986,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         <section className="royal-glass flex max-h-[82vh] min-h-0 flex-1 flex-col justify-between gap-2 overflow-hidden rounded-[2rem] border border-[#D4AF37]/35 p-3">
           {/* Wheel Showcase */}
           <div className="flex min-h-0 flex-col items-center justify-center gap-2">
-            <div className="relative h-36 w-36 shrink-0 flex items-center justify-center">
+            <div className="relative h-44 w-44 shrink-0 flex items-center justify-center">
               {/* Sculpted 3D Metallic Pointer with Ruby Jewel */}
               <div
                 className="absolute -top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none drop-shadow-[0_6px_12px_rgba(0,0,0,0.85)]"
@@ -2035,7 +2035,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                       const x2 = 100 + 98 * Math.cos(endAngle);
                       const y2 = 100 + 98 * Math.sin(endAngle);
                       const fill =
-                        num === 0 ? '#047857' : ROULETTE_REDS.has(num) ? '#991B1B' : '#0B0F20';
+                        num === 0 ? '#059669' : ROULETTE_REDS.has(num) ? '#EF4444' : '#171923';
                       const textAngle = idx * sliceDeg;
                       return (
                         <g key={num}>
@@ -2043,13 +2043,13 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                             d={`M 100 100 L ${x1} ${y1} A 98 98 0 0 1 ${x2} ${y2} Z`}
                             fill={fill}
                             stroke="#D4AF37"
-                            strokeWidth="0.6"
+                            strokeWidth="1.3"
                           />
                           <text
                             x="100"
                             y="17"
-                            fill="#FCE9A6"
-                            fontSize="5.4"
+                            fill="#FFFFFF"
+                            fontSize="7"
                             fontWeight="bold"
                             textAnchor="middle"
                             transform={`rotate(${textAngle} 100 100)`}

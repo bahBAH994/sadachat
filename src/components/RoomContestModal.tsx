@@ -133,12 +133,12 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-md p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#0d111e] p-0 sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="royal-glass w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 space-y-3 max-h-[85vh] overflow-y-auto touch-pan-y pb-10 no-scrollbar border border-[#F3D37A]/40"
+        className="royal-glass room-modal-panel w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 space-y-3 max-h-[85vh] overflow-y-auto touch-pan-y pb-10 no-scrollbar border border-[#F3D37A]/40"
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-2">

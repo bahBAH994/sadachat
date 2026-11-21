@@ -410,7 +410,7 @@ export const StorePage: React.FC = () => {
               return (
                 <article
                   key={item.id}
-                  className="light-card rounded-3xl overflow-hidden flex flex-col justify-between border border-slate-200"
+                  className="light-card rounded-3xl flex flex-col justify-between border border-slate-200"
                 >
                   <div
                     className={`bg-gradient-to-br ${item.previewGradient} p-5 text-white flex items-center gap-4 relative`}
@@ -419,7 +419,8 @@ export const StorePage: React.FC = () => {
                       src={user.avatarUrl}
                       alt={item.name}
                       frameId={item.id}
-                      size="lg"
+                      size="xl"
+                      customSizeClass="w-28 h-28"
                     />
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -503,7 +504,7 @@ export const StorePage: React.FC = () => {
               return (
                 <article
                   key={item.id}
-                  className="light-card rounded-3xl overflow-hidden flex flex-col justify-between border border-slate-200"
+                  className="light-card rounded-3xl flex flex-col justify-between border border-slate-200"
                 >
                   <div
                     className={`bg-gradient-to-br ${item.previewGradient} p-5 text-white flex items-center gap-4 relative`}
@@ -512,7 +513,8 @@ export const StorePage: React.FC = () => {
                       src={user.avatarUrl}
                       alt={item.name}
                       frameId={item.id}
-                      size="lg"
+                      size="xl"
+                      customSizeClass="w-28 h-28"
                     />
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center gap-1.5 flex-wrap">

@@ -418,7 +418,7 @@ export const ProfilePage: React.FC = () => {
   };
 
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#F5F6FA]">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-gradient-to-b from-emerald-50/90 via-slate-50 to-slate-50">
       <input
         ref={fileInputRef}
         type="file"
@@ -427,8 +427,7 @@ export const ProfilePage: React.FC = () => {
         className="hidden"
       />
 
-      {/* Dark Royal Profile Top Header */}
-      <section className="relative shrink-0 bg-gradient-to-b from-[#090D16] via-[#12192B] to-[#1A2438] text-white pt-4 pb-12 px-4 overflow-hidden">
+      <section className="relative shrink-0 bg-gradient-to-b from-emerald-50/90 via-slate-50 to-slate-50 text-slate-900 pt-[max(env(safe-area-inset-top),32px)] pb-12 px-4 overflow-visible">
         <div className="max-w-3xl mx-auto space-y-5 relative z-10">
           {/* Top utility row */}
           <div className="flex items-center justify-between text-xs">
@@ -442,7 +441,7 @@ export const ProfilePage: React.FC = () => {
                 setIsHost(Boolean(user.isHost));
                 setShowEditModal(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-3 py-1.5 font-bold text-slate-200 cursor-pointer transition"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/90 hover:bg-white px-3 py-1.5 font-bold text-slate-700 border border-slate-200 cursor-pointer transition"
             >
               <Settings className="w-3.5 h-3.5 text-[#FCE9A6]" />
               <span>تعديل الحساب</span>
@@ -453,13 +452,13 @@ export const ProfilePage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => navigate('/admin')}
-                  className="inline-flex items-center gap-1 rounded-full bg-[#D4AF37]/25 border border-[#D4AF37]/50 px-3 py-1 text-[11px] font-bold text-[#FCE9A6] cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-[11px] font-bold text-amber-800 cursor-pointer"
                 >
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>الإدارة العليا</span>
                 </button>
               )}
-              <span className="inline-flex items-center gap-1 text-slate-300 font-semibold">
+              <span className="inline-flex items-center gap-1 text-slate-600 font-semibold">
                 <MapPin className="w-3.5 h-3.5 text-emerald-400" />
                 <span>
                   {userCountry ? `${userCountry.flag} ${userCountry.label}` : 'صَدَى - SADA'}
@@ -479,13 +478,14 @@ export const ProfilePage: React.FC = () => {
                   frameId={user.frameId}
                   vipTier={vipInfo.key}
                   size="xl"
+                  customSizeClass="w-28 h-28"
                 />
                 <button
                   type="button"
                   disabled={uploadingAvatar}
                   onClick={() => fileInputRef.current?.click()}
                   title="معاينة صورة جديدة (يُحفظ بعد الضغط على حفظ التعديلات)"
-                  className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-gradient-to-br from-[#FCE9A6] via-[#D4AF37] to-[#A67C1E] text-[#070913] border-2 border-[#0B0F1A] shadow-[0_0_16px_rgba(212,175,55,0.75)] flex items-center justify-center cursor-pointer hover:scale-105 transition disabled:opacity-60 z-20"
+                  className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-gradient-to-br from-[#FCE9A6] via-[#D4AF37] to-[#A67C1E] text-[#070913] border-2 border-white shadow-[0_0_16px_rgba(212,175,55,0.75)] flex items-center justify-center cursor-pointer hover:scale-105 transition disabled:opacity-60 z-20"
                 >
                   <Camera className="w-4 h-4" />
                 </button>
@@ -493,7 +493,7 @@ export const ProfilePage: React.FC = () => {
 
               <div className="min-w-0 space-y-1.5">
                 <div className="flex items-center flex-wrap gap-1.5">
-                  <h1 className="text-xl sm:text-2xl font-extrabold text-white truncate">
+                  <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 truncate">
                     <VipUserName name={user.displayName} vipTier={vipInfo.key} />
                   </h1>
                   <VipTierBadge vipTier={vipInfo.key} />
@@ -508,7 +508,7 @@ export const ProfilePage: React.FC = () => {
                             .getElementById('female-voice-verification-card')
                             ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         }}
-                        className="inline-flex items-center gap-1 rounded-full bg-pink-500/25 hover:bg-pink-500/35 border border-pink-300/60 px-2.5 py-0.5 text-[11px] font-extrabold text-pink-100 cursor-pointer transition"
+                        className="inline-flex items-center gap-1 rounded-full bg-pink-50 hover:bg-pink-100 border border-pink-200 px-2.5 py-0.5 text-[11px] font-extrabold text-pink-800 cursor-pointer transition"
                       >
                         <Mic2 className="w-3 h-3 text-pink-200" />
                         <span>توثيق الحساب</span>
@@ -521,20 +521,20 @@ export const ProfilePage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleCopyId}
-                    className="inline-flex items-center gap-1 rounded-full bg-white/10 hover:bg-white/15 px-2.5 py-0.5 text-xs font-mono-num text-slate-200 cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-full bg-white/90 hover:bg-white border border-slate-200 px-2.5 py-0.5 text-xs font-mono-num text-slate-700 cursor-pointer"
                   >
                     <span>ID: {numericId}</span>
                     {copiedId ? (
                       <Check className="w-3 h-3 text-emerald-400" />
                     ) : (
-                      <Copy className="w-3 h-3 text-slate-300" />
+                      <Copy className="w-3 h-3 text-slate-500" />
                     )}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => navigate('/my-level')}
-                    className="inline-flex items-center gap-1 rounded-full bg-amber-500/25 border border-amber-300/50 px-2.5 py-0.5 text-[11px] font-extrabold text-[#FCE9A6] font-mono-num cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800 font-mono-num cursor-pointer"
                   >
                     <Gift className="w-3 h-3 text-amber-300" />
                     <span>داعم Lv.{giftLevels.sendLevel}</span>
@@ -543,14 +543,14 @@ export const ProfilePage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => navigate('/my-level')}
-                    className="inline-flex items-center gap-1 rounded-full bg-sky-500/25 border border-sky-300/50 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-100 font-mono-num cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-full bg-sky-50 border border-sky-200 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-800 font-mono-num cursor-pointer"
                   >
                     <Crown className="w-3 h-3 text-sky-300" />
                     <span>مضيف Lv.{giftLevels.receiveLevel}</span>
                   </button>
                 </div>
 
-                <p className="text-[11px] text-slate-300 line-clamp-1">{user.bio}</p>
+                <p className="text-[11px] text-slate-600 line-clamp-1">{user.bio}</p>
               </div>
             </div>
           </div>
@@ -558,7 +558,7 @@ export const ProfilePage: React.FC = () => {
           {/* Pending Avatar Explicit Save / Cancel Bar */}
           {pendingAvatarUrl && (
             <div className="rounded-2xl bg-amber-500/15 border border-amber-300/50 p-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-[#FCE9A6]">
+              <span className="text-xs font-bold text-amber-900">
                 معاينة الصورة الجديدة جاهزة — اضغط "حفظ التعديلات" لاعتمادها على حسابك والمايكات:
               </span>
               <div className="flex items-center gap-2">
@@ -574,7 +574,7 @@ export const ProfilePage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleCancelPendingAvatar}
-                  className="rounded-xl bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-bold text-slate-200 cursor-pointer"
+                  className="rounded-xl bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 cursor-pointer"
                 >
                   إلغاء
                 </button>
@@ -588,42 +588,42 @@ export const ProfilePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleOpenSocialModal('friends')}
-                className="space-y-0.5 rounded-xl py-1 hover:bg-white/10 transition cursor-pointer"
+                className="space-y-0.5 rounded-xl py-1 hover:bg-white/70 transition cursor-pointer"
               >
                 <span className="block text-base sm:text-lg font-extrabold font-mono-num">
                   {socialCounts.friends}
                 </span>
-                <span className="block text-[11px] text-slate-300">الأصدقاء</span>
+                <span className="block text-[11px] text-slate-600">الأصدقاء</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleOpenSocialModal('followers')}
-                className="space-y-0.5 rounded-xl py-1 hover:bg-white/10 transition cursor-pointer"
+                className="space-y-0.5 rounded-xl py-1 hover:bg-white/70 transition cursor-pointer"
               >
                 <span className="block text-base sm:text-lg font-extrabold font-mono-num">
                   {socialCounts.followers}
                 </span>
-                <span className="block text-[11px] text-slate-300">المتابِعون</span>
+                <span className="block text-[11px] text-slate-600">المتابِعون</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleOpenSocialModal('following')}
-                className="space-y-0.5 rounded-xl py-1 hover:bg-white/10 transition cursor-pointer"
+                className="space-y-0.5 rounded-xl py-1 hover:bg-white/70 transition cursor-pointer"
               >
                 <span className="block text-base sm:text-lg font-extrabold font-mono-num">
                   {socialCounts.following}
                 </span>
-                <span className="block text-[11px] text-slate-300">أتابع</span>
+                <span className="block text-[11px] text-slate-600">أتابع</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleOpenSocialModal('visitors')}
-                className="space-y-0.5 rounded-xl py-1 hover:bg-white/10 transition cursor-pointer"
+                className="space-y-0.5 rounded-xl py-1 hover:bg-white/70 transition cursor-pointer"
               >
                 <span className="block text-base sm:text-lg font-extrabold font-mono-num">
                   {socialCounts.visitors}
                 </span>
-                <span className="block text-[11px] text-slate-300">زائر</span>
+                <span className="block text-[11px] text-slate-600">زائر</span>
               </button>
             </div>
 
@@ -631,7 +631,7 @@ export const ProfilePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => navigate('/svip')}
-                className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 px-3.5 py-2.5 flex items-center gap-1.5 text-xs font-extrabold text-[#FCE9A6] cursor-pointer transition shadow-md"
+                className="rounded-2xl bg-white/90 hover:bg-white border border-amber-200 px-3.5 py-2.5 flex items-center gap-1.5 text-xs font-extrabold text-amber-800 cursor-pointer transition shadow-md"
               >
                 <span className="text-base">{active3D.badgeGlyph}</span>
                 <span>احصل على SVIP</span>
@@ -642,7 +642,7 @@ export const ProfilePage: React.FC = () => {
         </div>
       </section>
 
-      <div className="w-full max-w-3xl mx-auto -mt-6 relative z-20 shrink-0 rounded-t-[28px] bg-[#F5F6FA] px-4 pt-5 pb-3 space-y-3">
+      <div className="w-full max-w-3xl mx-auto -mt-6 relative z-20 shrink-0 rounded-t-[28px] bg-slate-50/90 px-4 pt-5 pb-3 space-y-3">
         <section className="light-card rounded-3xl p-3 grid grid-cols-4 gap-1.5 text-center">
           <button type="button" onClick={() => navigate('/my-level')} className="flex flex-col items-center gap-1 cursor-pointer">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 border border-amber-300/70 flex items-center justify-center text-amber-700"><Crown className="w-5 h-5" /></div>
@@ -689,22 +689,22 @@ export const ProfilePage: React.FC = () => {
         )}
 
         {/* Automatic VIP Level & Next-Tier Progress Card */}
-        <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#1B223C] to-[#0A0E1A] border border-[#D4AF37]/40 p-4 sm:p-5 text-white shadow-[0_14px_34px_-12px_rgba(15,23,42,0.45)] space-y-3">
+        <section className="light-card rounded-3xl border border-amber-200/80 p-4 sm:p-5 text-slate-900 shadow-sm space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#FCE9A6]/20 to-[#D4AF37]/20 border border-[#D4AF37]/50 flex items-center justify-center text-lg">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 border border-amber-300/70 flex items-center justify-center text-lg">
                 {vipInfo.badgeGlyph}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-extrabold text-[#FCE9A6]">
+                  <h2 className="text-sm font-extrabold text-amber-900">
                     مستوى الـ VIP التلقائي
                   </h2>
                   <VipTierBadge vipTier={vipInfo.key} />
                 </div>
-                <p className="text-[11px] text-slate-300 mt-0.5">
+                <p className="text-[11px] text-slate-600 mt-0.5">
                   {vipInfo.arabicTitle} · رصيد التأهل:{' '}
-                  <span className="font-mono-num font-extrabold text-white">
+                  <span className="font-mono-num font-extrabold text-slate-900">
                     {vipInfo.score.toLocaleString('en-US')}
                   </span>{' '}
                   عملة
@@ -723,27 +723,27 @@ export const ProfilePage: React.FC = () => {
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[11px] font-bold">
-              <span className="text-slate-300">
+              <span className="text-slate-600">
                 {vipInfo.nextTier ? (
                   <>
                     المتبقي للوصول إلى{' '}
-                    <span className="text-[#FCE9A6] font-extrabold">{vipInfo.nextTier.label}</span>:{' '}
-                    <span className="font-mono-num text-emerald-300 font-extrabold">
+                    <span className="text-amber-800 font-extrabold">{vipInfo.nextTier.label}</span>:{' '}
+                    <span className="font-mono-num text-emerald-700 font-extrabold">
                       {vipInfo.coinsToNext.toLocaleString('en-US')} عملة
                     </span>
                   </>
                 ) : (
-                  <span className="text-[#FEF08A] font-extrabold">
+                  <span className="text-amber-800 font-extrabold">
                     👑 لقد وصلت إلى القمة — SVIP الإمبراطوري!
                   </span>
                 )}
               </span>
-              <span className="font-mono-num text-[#FCE9A6] font-black">
+              <span className="font-mono-num text-amber-800 font-black">
                 {vipInfo.progressPct}%
               </span>
             </div>
 
-            <div className="h-3 w-full rounded-full bg-white/10 p-0.5 overflow-hidden border border-white/10">
+            <div className="h-3 w-full rounded-full bg-slate-100 p-0.5 overflow-hidden border border-slate-200">
               <div
                 className={`h-full rounded-full bg-gradient-to-r ${vipInfo.progressBarClass} transition-all duration-500`}
                 style={{ width: `${Math.max(vipInfo.key === 'none' && vipInfo.score === 0 ? 4 : vipInfo.progressPct, 4)}%` }}
@@ -758,8 +758,8 @@ export const ProfilePage: React.FC = () => {
                     key={tier.key}
                     className={`rounded-xl px-2 py-1.5 text-center border transition ${
                       unlocked
-                        ? 'bg-[#D4AF37]/20 border-[#D4AF37]/60 text-[#FCE9A6]'
-                        : 'bg-white/5 border-white/10 text-slate-400'
+                        ? 'bg-amber-50 border-amber-300 text-amber-800'
+                        : 'bg-slate-50 border-slate-200 text-slate-400'
                     }`}
                   >
                     <p className="text-[10px] font-black truncate">
@@ -787,10 +787,10 @@ export const ProfilePage: React.FC = () => {
           {canViewMyAgency && (
             <button
               type="button"
-              onClick={() => navigate('/agency?tab=my-agency')}
+              onClick={() => navigate('/?enterMyRoom=1')}
               className="rounded-2xl bg-emerald-50/90 hover:bg-emerald-100/80 border border-emerald-100 p-4 flex items-center justify-between cursor-pointer transition"
             >
-              <span className="text-sm font-extrabold text-emerald-950">وكالتي</span>
+              <span className="text-sm font-extrabold text-emerald-950">غرفتي / وكالتي</span>
               <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-emerald-600 shadow-sm">
                 <Building2 className="w-5 h-5" />
               </div>

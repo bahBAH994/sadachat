@@ -80,6 +80,12 @@ const SIZE_MAP = {
   xl: 'w-24 h-24',
 };
 
+const ORNAMENT_SIZE = {
+  md: { crown: '-top-3 text-lg', wing: 'text-xl', dragon: 'text-2xl', tail: 'text-xl' },
+  lg: { crown: '-top-5 text-2xl', wing: 'text-2xl', dragon: 'text-3xl', tail: 'text-2xl' },
+  xl: { crown: '-top-7 text-3xl', wing: 'text-4xl', dragon: 'text-4xl', tail: 'text-3xl' },
+};
+
 export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   src,
   alt,
@@ -94,6 +100,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   const activeFrameId = frameId || 'frame_obsidian';
   const frameClass = FRAME_CLASSES[activeFrameId] || FRAME_CLASSES.frame_obsidian;
   const frame3D = FRAME_3D_BADGE[activeFrameId];
+  const ornaments = ORNAMENT_SIZE[size === 'xl' ? 'xl' : size === 'lg' ? 'lg' : 'md'];
   const resolved = resolveAsset(src);
 
   const resolvedVip: VipTierKey = vipTier ? parseVipTierKey(vipTier) : 'none';
@@ -254,21 +261,64 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
         </>
       )}
 
-      {/* Store 3D Orbit Ring when no higher VIP ring overrides */}
+      {/* Store 3D frames retain their ornaments outside the circular portrait. */}
       {frame3D && resolvedVip === 'none' && (
         <>
           <span
             aria-hidden="true"
-            className="absolute -inset-[3px] rounded-full animate-frame-orbit pointer-events-none opacity-90"
+            className={`absolute -inset-[5px] rounded-full pointer-events-none opacity-95 ${
+              activeFrameId === 'frame_galaxy_sovereign'
+                ? 'animate-frame-galaxy-ring'
+                : activeFrameId === 'frame_imperial_dragon'
+                ? 'animate-dragon-aura'
+                : activeFrameId === 'frame_royal_phoenix'
+                ? 'animate-frame-phoenix-ring'
+                : 'animate-frame-orbit'
+            }`}
             style={{ background: frame3D.ringBg }}
           />
-          {frame3D.topGlyph && size !== 'xs' && size !== 'sm' && (
-            <span
-              aria-hidden="true"
-              className={`absolute left-1/2 -translate-x-1/2 -top-2 z-20 pointer-events-none text-sm leading-none ${activeFrameId === 'frame_galaxy_sovereign' ? 'frame-ornament-galaxy' : activeFrameId === 'frame_royal_phoenix' ? 'frame-ornament-phoenix' : activeFrameId === 'frame_imperial_dragon' ? 'frame-ornament-dragon' : 'frame-ornament-emerald'}`}
-            >
-              {frame3D.topGlyph}
-            </span>
+
+          {activeFrameId === 'frame_emerald_aura' && (
+            <>
+              <span aria-hidden="true" className="absolute -inset-2 rounded-full border border-emerald-200/90 shadow-[0_0_22px_rgba(16,185,129,0.95)] pointer-events-none z-0" />
+              {size !== 'xs' && size !== 'sm' && (
+                <>
+                  <span aria-hidden="true" className="absolute -left-4 top-1/2 -translate-y-1/2 -rotate-[38deg] text-xl leading-none drop-shadow-[0_2px_5px_rgba(212,175,55,0.95)] pointer-events-none z-20">🌿</span>
+                  <span aria-hidden="true" className="absolute -right-4 top-1/2 -translate-y-1/2 rotate-[38deg] scale-x-[-1] text-xl leading-none drop-shadow-[0_2px_5px_rgba(212,175,55,0.95)] pointer-events-none z-20">🌿</span>
+                  <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 z-30 leading-none frame-ornament-emerald ${ornaments.crown} pointer-events-none`}>👑</span>
+                </>
+              )}
+            </>
+          )}
+
+          {activeFrameId === 'frame_royal_phoenix' && size !== 'xs' && size !== 'sm' && (
+            <>
+              <span aria-hidden="true" className={`absolute -left-7 top-1/2 -translate-y-1/2 -rotate-[28deg] leading-none frame-ornament-phoenix ${ornaments.wing} pointer-events-none z-20`}>🪽</span>
+              <span aria-hidden="true" className={`absolute -right-7 top-1/2 -translate-y-1/2 rotate-[28deg] scale-x-[-1] leading-none frame-ornament-phoenix ${ornaments.wing} pointer-events-none z-20`}>🪽</span>
+              <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 z-30 leading-none frame-ornament-phoenix ${ornaments.crown} pointer-events-none`}>🔥</span>
+              <span aria-hidden="true" className="absolute -left-2 top-1/4 text-sm animate-frame-spark pointer-events-none z-20">✦</span>
+              <span aria-hidden="true" className="absolute -right-2 bottom-1/4 text-xs animate-frame-spark pointer-events-none z-20">✧</span>
+            </>
+          )}
+
+          {activeFrameId === 'frame_galaxy_sovereign' && size !== 'xs' && size !== 'sm' && (
+            <>
+              <span aria-hidden="true" className="absolute -inset-[9px] rounded-full border-2 border-violet-300/90 shadow-[0_0_12px_rgba(168,85,247,0.8)] animate-frame-galaxy-ring pointer-events-none z-0" />
+              <span aria-hidden="true" className="absolute -inset-[13px] rounded-full border border-amber-200/90 shadow-[0_0_14px_rgba(212,175,55,0.85)] animate-frame-galaxy-ring-reverse pointer-events-none z-0" />
+              <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 z-30 leading-none frame-ornament-galaxy ${ornaments.crown} pointer-events-none`}>👑</span>
+              <span aria-hidden="true" className="absolute -left-3 top-1/4 text-sm animate-frame-spark pointer-events-none z-20">✦</span>
+              <span aria-hidden="true" className="absolute -right-3 bottom-1/4 text-xs animate-frame-spark pointer-events-none z-20">✧</span>
+              <span aria-hidden="true" className="absolute -right-2 top-0 text-[10px] pointer-events-none z-20">🪐</span>
+            </>
+          )}
+
+          {activeFrameId === 'frame_imperial_dragon' && size !== 'xs' && size !== 'sm' && (
+            <>
+              <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 z-30 leading-none frame-ornament-dragon ${ornaments.crown} pointer-events-none`}>🐉</span>
+              <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 -bottom-5 leading-none animate-frame-dragon-tail ${ornaments.tail} pointer-events-none z-20`}>〰️</span>
+              <span aria-hidden="true" className="absolute -left-2 top-1/3 text-xs frame-ornament-dragon pointer-events-none z-20">✦</span>
+              <span aria-hidden="true" className="absolute -right-2 bottom-1/3 text-xs frame-ornament-dragon pointer-events-none z-20">✦</span>
+            </>
           )}
         </>
       )}
@@ -281,11 +331,11 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
           decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setFailed(true)}
-          className={`relative ${dimClass} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
+          className={`relative z-10 ${dimClass} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
         />
       ) : (
         <div
-          className={`relative ${dimClass} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${vipRingVisualClass}`}
+          className={`relative z-10 ${dimClass} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${vipRingVisualClass}`}
         >
           <User className="w-1/2 h-1/2" />
         </div>

@@ -11,7 +11,8 @@
     margin: 0;
     padding: 0;
     font-family: 'Cairo', system-ui, -apple-system, sans-serif;
-    background: #F5F6FA;
+    background-color: #0b0e17 !important;
+    min-height: 100dvh;
     color: #111827;
     width: 100%;
     height: 100%;
@@ -121,6 +122,12 @@
   box-shadow:
     0 12px 36px -10px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 0 rgba(247, 224, 151, 0.14);
+}
+
+.room-modal-panel {
+  background: #0d111e !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .royal-glass-hover {
@@ -365,6 +372,75 @@
 
 .animate-frame-orbit {
   animation: frame-orbit 6s linear infinite;
+}
+
+@keyframes frame-phoenix-ring {
+  0%, 100% {
+    filter: drop-shadow(0 0 7px rgba(245, 158, 11, 0.9));
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 15px rgba(251, 191, 36, 1));
+    transform: rotate(180deg) scale(1.04);
+  }
+}
+
+@keyframes frame-galaxy-ring {
+  from {
+    transform: rotateX(62deg) rotateZ(0deg);
+  }
+  to {
+    transform: rotateX(62deg) rotateZ(360deg);
+  }
+}
+
+@keyframes frame-galaxy-ring-reverse {
+  from {
+    transform: rotateX(68deg) rotateZ(360deg);
+  }
+  to {
+    transform: rotateX(68deg) rotateZ(0deg);
+  }
+}
+
+@keyframes frame-spark {
+  0%, 100% {
+    transform: translateY(3px) scale(0.7);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translateY(-4px) scale(1.2);
+    opacity: 1;
+  }
+}
+
+@keyframes frame-dragon-tail {
+  0%, 100% {
+    transform: translateX(-50%) rotate(-8deg) scaleX(0.9);
+  }
+  50% {
+    transform: translateX(-50%) rotate(8deg) scaleX(1.12);
+  }
+}
+
+.animate-frame-phoenix-ring {
+  animation: frame-phoenix-ring 2.2s ease-in-out infinite;
+}
+
+.animate-frame-galaxy-ring {
+  animation: frame-galaxy-ring 7s linear infinite;
+}
+
+.animate-frame-galaxy-ring-reverse {
+  animation: frame-galaxy-ring-reverse 9s linear infinite;
+}
+
+.animate-frame-spark {
+  animation: frame-spark 1.4s ease-in-out infinite;
+}
+
+.animate-frame-dragon-tail {
+  animation: frame-dragon-tail 2s ease-in-out infinite;
 }
 
 .animate-spin-slow {

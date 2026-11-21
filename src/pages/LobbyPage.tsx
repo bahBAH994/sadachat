@@ -1,10 +1,9 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Check,
   ChevronDown,
   Flame,
-  Gamepad2,
   Headphones,
   Heart,
   Gift,
@@ -177,6 +176,7 @@ export const LobbyPage: React.FC = () => {
   const { activeRoomId, isMinimized } = useActiveRoom();
   const { openMiniProfile } = useMiniProfile();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [exitToastVisible, setExitToastVisible] = useState(false);
   const lastBackPressRef = useRef<number>(0);
@@ -227,6 +227,8 @@ export const LobbyPage: React.FC = () => {
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingAgencyMap, setLoadingAgencyMap] = useState(true);
+  const [pendingMyRoomEntry, setPendingMyRoomEntry] = useState(false);
   const [mainTab, setMainTab] = useState<'party' | 'mine'>('party');
   const [activeChip, setActiveChip] = useState<FilterChip>('أكثر شعبية');
   const [showSearch, setShowSearch] = useState(false);
@@ -287,7 +289,10 @@ export const LobbyPage: React.FC = () => {
 
   const loadDirectory = useCallback(
     async (forceRefresh = false) => {
-      if (!user?.id) return;
+      if (!user?.id) {
+        setLoadingAgencyMap(false);
+        return;
+      }
       try {
         const [dir, platState, agenciesRes] = await Promise.all([
           getDiscoveryDirectoryFromSupabase(user.id),
@@ -316,6 +321,8 @@ export const LobbyPage: React.FC = () => {
         setAgencyOwnerMap(ownerLookup);
       } catch {
         // ignore transient error
+      } finally {
+        setLoadingAgencyMap(false);
       }
     },
     [user?.id]
@@ -548,6 +555,10 @@ export const LobbyPage: React.FC = () => {
 
   const handleGoToAgencyChat = () => {
     if (!user) return;
+    if (loading || loadingAgencyMap) {
+      setPendingMyRoomEntry(true);
+      return;
+    }
     if (user.agencyId) {
       const ownerId = agencyOwnerMap[user.agencyId];
       const agencyRoom =
@@ -565,6 +576,20 @@ export const LobbyPage: React.FC = () => {
     }
     setShowCreate(true);
   };
+
+  useEffect(() => {
+    if (searchParams.get('enterMyRoom') !== '1') return;
+    setPendingMyRoomEntry(true);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('enterMyRoom');
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingMyRoomEntry || loading || loadingAgencyMap) return;
+    setPendingMyRoomEntry(false);
+    handleGoToAgencyChat();
+  }, [pendingMyRoomEntry, loading, loadingAgencyMap, rooms, agencyOwnerMap, user]);
 
   const enterRoom = useCallback(
     (room: Room) => {
@@ -621,7 +646,7 @@ export const LobbyPage: React.FC = () => {
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#F5F6FA]">
       {/* Top App Header matching screenshot */}
-      <header className="sticky top-0 z-30 shrink-0 bg-white/95 border-b border-slate-100">
+      <header className="sticky top-0 z-30 shrink-0 bg-white/95 border-b border-slate-100 pt-[max(env(safe-area-inset-top),32px)]">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
           {/* Right Brand + Tabs (حفلة / الخاص بي) */}
           <div className="flex items-center gap-3.5 sm:gap-5">
@@ -860,7 +885,7 @@ export const LobbyPage: React.FC = () => {
 
       {mainTab === 'party' && (
         <div className="w-full max-w-3xl mx-auto shrink-0 px-3.5 sm:px-4 pt-3 space-y-3">
-          <section className="grid grid-cols-4 gap-2">
+          <section className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => navigate('/agency')}
@@ -890,28 +915,15 @@ export const LobbyPage: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/games')}
-              className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-amber-300 transition shadow-sm"
-            >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-sm">
-                <Gamepad2 className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">مركز الألعاب</span>
-                <span className="block text-[10px] text-slate-400 font-semibold">سلوتس ونرد</span>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/competitions')}
+              onClick={() => navigate('/grand-competition')}
               className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-sky-300 transition shadow-sm"
             >
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white shadow-sm">
                 <Trophy className="w-5 h-5" />
               </div>
               <div>
-                <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">المسابقات الثقافية</span>
-                <span className="block text-[10px] text-slate-400 font-semibold">تحديات ودولاب الدعوات</span>
+                <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">مسابقة صدى الكبرى</span>
+                <span className="block text-[10px] text-slate-400 font-semibold">الجوائز وشروط المشاركة</span>
               </div>
             </button>
           </section>

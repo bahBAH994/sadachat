@@ -14,6 +14,7 @@ import {
   Plus,
   Search,
   Send,
+  Smile,
   ShieldCheck,
   Sparkles,
   UserCheck,
@@ -173,6 +174,14 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
   const [selectedPeerId, setSelectedPeerId] = useState<string>(initialPeerId || '');
   const [mobileChatOpen, setMobileChatOpen] = useState(Boolean(initialPeerId));
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isSmallViewport, setIsSmallViewport] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+  );
+  const [visualViewportRect, setVisualViewportRect] = useState(() => ({
+    top: typeof window !== 'undefined' ? window.visualViewport?.offsetTop || 0 : 0,
+    height: typeof window !== 'undefined' ? window.visualViewport?.height || window.innerHeight : 0,
+  }));
   const [inboxFilter, setInboxFilter] = useState<InboxFilter>('كامل');
   const [showNotifBar, setShowNotifBar] = useState(!embedded);
   const [showRulesModal, setShowRulesModal] = useState(false);
@@ -208,6 +217,36 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   userRef.current = user;
   const queryTarget = !embedded ? searchParams.get('to') : null;
   const wantGift = !embedded && searchParams.get('gift') === '1';
+
+  useEffect(() => {
+    if (embedded) return;
+    if (queryTarget && queryTarget !== user?.id) {
+      setSelectedPeerId(queryTarget);
+      setMobileChatOpen(true);
+    } else {
+      setMobileChatOpen(false);
+    }
+  }, [embedded, queryTarget, user?.id]);
+
+  useEffect(() => {
+    const updateViewport = () => {
+      const viewport = window.visualViewport;
+      setIsSmallViewport(window.matchMedia('(max-width: 1023px)').matches);
+      setVisualViewportRect({
+        top: viewport?.offsetTop || 0,
+        height: viewport?.height || window.innerHeight,
+      });
+    };
+    updateViewport();
+    window.visualViewport?.addEventListener('resize', updateViewport);
+    window.visualViewport?.addEventListener('scroll', updateViewport);
+    window.addEventListener('resize', updateViewport);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateViewport);
+      window.visualViewport?.removeEventListener('scroll', updateViewport);
+      window.removeEventListener('resize', updateViewport);
+    };
+  }, []);
 
   const loadOverview = useCallback(async () => {
     const currentUser = userRef.current;
@@ -523,7 +562,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#F5F6FA]">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-white border-b border-slate-100 pt-[env(safe-area-inset-top)] shrink-0">
+      <header className="sticky top-0 z-30 bg-white border-b border-slate-100 pt-[max(env(safe-area-inset-top),32px)] shrink-0">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             {embedded && onCloseEmbedded && (
@@ -800,16 +839,32 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             className={`light-card min-h-0 overflow-hidden rounded-3xl px-3 pt-3 sm:px-5 sm:pt-4 flex flex-col relative ${
               embedded
                 ? 'lg:col-span-7 h-[72dvh] max-h-[580px] pb-2.5 sm:pb-3'
-                : 'fixed inset-x-0 top-0 bottom-[76px] z-30 bg-slate-50 lg:static lg:inset-auto lg:z-auto lg:col-span-7'
+                : 'fixed inset-x-0 top-0 z-[60] h-[100dvh] bg-slate-50 lg:static lg:inset-auto lg:z-auto lg:h-auto lg:col-span-7'
             } ${mobileChatOpen ? 'flex' : 'hidden lg:flex'}`}
+            style={
+              !embedded && isSmallViewport
+                ? { top: `${visualViewportRect.top}px`, height: `${visualViewportRect.height}px` }
+                : undefined
+            }
           >
             {activePeer ? (
               <>
-                <div className="pb-2.5 mb-2.5 border-b border-slate-100 flex items-center justify-between gap-2 shrink-0">
+                <div className="pt-[max(env(safe-area-inset-top),32px)] pb-2.5 mb-2.5 border-b border-slate-100 flex items-center justify-between gap-2 shrink-0">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <button
                       type="button"
-                      onClick={() => setMobileChatOpen(false)}
+                      onClick={() => {
+                        setMobileChatOpen(false);
+                        setShowEmojiPicker(false);
+                        if (!embedded) {
+                          setSearchParams((current) => {
+                            const next = new URLSearchParams(current);
+                            next.delete('to');
+                            next.delete('gift');
+                            return next;
+                          }, { replace: true });
+                        }
+                      }}
                       className="lg:hidden w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 cursor-pointer shrink-0"
                     >
                       <ArrowRight className="w-4 h-4" />
@@ -1087,22 +1142,43 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                   )}
                 </AnimatePresence>
 
-                {/* Lowered Chat Input Bar with Adjacent Gift Icon & Dark Green Send Button */}
+                {showEmojiPicker && (
+                  <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar border-t border-slate-100 bg-white px-3 pt-2">
+                    {['😊', '😂', '😍', '🥰', '👍', '👏', '❤️', '🔥'].map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => setText((current) => `${current}${emoji}`)}
+                        className="w-9 h-9 rounded-xl hover:bg-slate-100 text-xl cursor-pointer shrink-0"
+                        aria-label={`إضافة ${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Private message composer */}
                 <form
                   onSubmit={(e) => handleSend(e)}
-                  className="shrink-0 p-3 bg-white border-t border-slate-200 flex items-center gap-1.5"
+                  className="shrink-0 p-3 pb-[max(env(safe-area-inset-bottom),12px)] bg-white border-t border-slate-200 flex items-center gap-1.5"
                 >
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker((current) => !current)}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer shrink-0 ${
+                      showEmojiPicker ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                    }`}
+                    aria-label="اختيار سمايل"
+                    aria-expanded={showEmojiPicker}
+                  >
+                    <Smile className="w-5 h-5" />
+                  </button>
                   <input
                     type="text"
                     value={text}
                     onChange={(e) => setText(e.target.value)}
-                    placeholder={
-                      isPmFreeNow
-                        ? 'اكتب رسالتك المجانية الآن...'
-                        : isFreeReply
-                        ? 'أرسل ردك الآن لإضافة الألماس تلقائياً...'
-                        : `اكتب رسالة خاصة (${pmCost} كوينز)...`
-                    }
+                    placeholder="اكتب رسالة..."
                     className="flex-1 min-w-0 rounded-2xl bg-slate-100 border border-slate-200 px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-700"
                   />
 
@@ -1112,13 +1188,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                     className="min-h-[40px] rounded-2xl bg-emerald-800 hover:bg-emerald-900 border border-emerald-700 text-white px-4 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-sm transition"
                   >
                     <Send className="w-4 h-4" />
-                    <span>
-                      {isPmFreeNow
-                        ? 'إرسال مجاني'
-                        : isFreeReply
-                        ? 'رد واستلم 💎'
-                        : `إرسال (${pmCost})`}
-                    </span>
+                    <span>إرسال</span>
                   </button>
                 </form>
 

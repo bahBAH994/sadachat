@@ -386,14 +386,14 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
   // ==================== STAGE 1: ROYAL BLUE-GOLD GAME CENTER DRAWER ====================
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/45"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[#0d111e]"
       onClick={onClose}
     >
       <motion.div
         initial={{ opacity: 0, y: 90 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 90 }}
-        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        transition={{ duration: 0.15, ease: 'easeOut' }}
         className="relative w-full max-w-2xl h-[78vh] max-h-[84vh] flex flex-col overflow-visible"
         onClick={(e) => e.stopPropagation()}
       >
@@ -413,9 +413,9 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
         </div>
 
         {/* MAIN ROYAL BLUE & GOLD METALLIC SHEET */}
-        <div className="relative flex-1 rounded-t-[1.75rem] border-t-[3px] border-x-[2px] border-[#FACC15]/80 bg-gradient-to-b from-[#1642B8] via-[#0B1E66] to-[#050C2E] shadow-[0_-10px_45px_rgba(37,99,235,0.45)] flex flex-col overflow-hidden">
+        <div className="relative flex-1 rounded-t-[1.75rem] border-t-[3px] border-x-[2px] border-[#FACC15]/80 bg-[#0d111e] shadow-[0_-10px_45px_rgba(37,99,235,0.45)] flex flex-col overflow-hidden">
           {/* Ornate Gold Metallic "GAME CENTER" Header Bar */}
-          <div className="relative px-4 pt-3 pb-2.5 border-b border-[#FDE047]/35 bg-gradient-to-b from-[#1D4ED8] via-[#133399] to-[#0D216B] flex items-center justify-between shrink-0 shadow-[0_6px_18px_rgba(0,0,0,0.4)]">
+          <div className="relative px-4 pt-3 pb-2.5 border-b border-[#FDE047]/35 bg-[#0d111e] flex items-center justify-between shrink-0 shadow-[0_6px_18px_rgba(0,0,0,0.4)]">
             <div className="w-8" />
             <h2
               dir="ltr"

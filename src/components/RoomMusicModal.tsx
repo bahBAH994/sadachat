@@ -70,11 +70,11 @@ export const RoomMusicModal: React.FC<RoomMusicModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-md p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#0d111e] p-0 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="royal-glass w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
+        className="royal-glass room-modal-panel w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">

@@ -15,7 +15,6 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { resolveAsset } from '../lib/assets';
 import { ARAB_COUNTRIES } from '../lib/sadaCatalog';
-import { PWAInstallButton } from '../components/PWAInstallButton';
 
 export const LoginPage: React.FC = () => {
   const { loginOrRegister, deviceUuid } = useAuth();
@@ -60,7 +59,7 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full min-h-full bg-slate-950 text-white flex items-center justify-center p-4 sm:p-6">
+    <div className="relative w-full min-h-[100dvh] bg-[#0b0e17] text-white flex items-center justify-center p-4 sm:p-6">
       <div
         className="absolute inset-0 bg-cover bg-center opacity-20 pointer-events-none"
         style={{ backgroundImage: `url(${resolveAsset('royal_stage')})` }}
@@ -342,10 +341,6 @@ export const LoginPage: React.FC = () => {
               <span className="font-mono-num text-[11px] text-slate-500" dir="ltr">
                 {deviceUuid.slice(0, 8)}…
               </span>
-            </div>
-
-            <div className="flex justify-center">
-              <PWAInstallButton variant="full" />
             </div>
           </div>
         </div>

@@ -40,6 +40,7 @@ import { AgencyPage } from './pages/AgencyPage';
 import { GamesCenterPage } from './pages/GamesCenterPage';
 import { AdminPage } from './pages/AdminPage';
 import { SvipPage } from './pages/SvipPage';
+import { GrandCompetitionPage } from './pages/GrandCompetitionPage';
 
 class AppErrorBoundary extends Component<
   { children: React.ReactNode },
@@ -171,7 +172,7 @@ const LoginRoute: React.FC = () => {
   }
   if (loading) {
     return (
-      <div className="h-full bg-[#F5F6FA] flex items-center justify-center">
+      <div className="h-full bg-[#0b0e17] flex items-center justify-center">
         <div className="light-card rounded-2xl px-6 py-4 text-sm font-extrabold text-emerald-700">
           جارٍ التحقق من الجلسة...
         </div>
@@ -193,6 +194,8 @@ const AuthenticatedAppShell: React.FC = () => {
     leaveActiveRoom,
   } = useActiveRoom();
   const location = useLocation();
+  const isPrivateChatOpen =
+    location.pathname === '/messages' && Boolean(new URLSearchParams(location.search).get('to'));
   const minimizeRoomRef = useRef(minimizeRoom);
   const leaveActiveRoomRef = useRef(leaveActiveRoom);
   const setExitModalOpenRef = useRef(setExitModalOpen);
@@ -220,7 +223,7 @@ const AuthenticatedAppShell: React.FC = () => {
 
   if (loading && !user) {
     return (
-      <div className="h-full bg-[#F5F6FA] flex items-center justify-center">
+      <div className="h-full bg-[#0b0e17] flex items-center justify-center">
         <div className="light-card rounded-2xl px-6 py-4 text-sm font-extrabold text-emerald-700">
           جارٍ تجهيز الوكالة الصوتية...
         </div>
@@ -231,7 +234,7 @@ const AuthenticatedAppShell: React.FC = () => {
   if (location.pathname === '/login') {
     return (
       <div className="flex h-[100dvh] w-full flex-col overflow-hidden">
-        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden touch-pan-y pb-28">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden touch-pan-y">
           <LoginRoute />
         </main>
       </div>
@@ -256,6 +259,8 @@ const AuthenticatedAppShell: React.FC = () => {
             ? 'hidden'
             : isFullScreenSvip
             ? 'flex-1 min-h-0 w-full overflow-hidden focus:outline-none'
+            : isPrivateChatOpen
+            ? 'flex-1 min-h-0 w-full overflow-hidden focus:outline-none'
             : 'flex-1 min-h-0 w-full overflow-hidden pb-[76px] focus:outline-none'
         }
       >
@@ -265,6 +270,7 @@ const AuthenticatedAppShell: React.FC = () => {
             <Route path="/meet" element={<MeetPage />} />
             <Route path="/room/:id" element={<RoomRouteBridge />} />
             <Route path="/competitions" element={<CompetitionsPage />} />
+            <Route path="/grand-competition" element={<GrandCompetitionPage />} />
             <Route path="/games" element={<GamesCenterPage />} />
             <Route path="/store" element={<StorePage />} />
             <Route path="/bag" element={<BagPage />} />
@@ -285,7 +291,7 @@ const AuthenticatedAppShell: React.FC = () => {
           </Routes>
         </div>
       </main>
-      {!isFullScreenRoom && !isFullScreenSvip && <BottomNav />}
+      {!isFullScreenRoom && !isFullScreenSvip && !isPrivateChatOpen && <BottomNav />}
       {shouldKeepRoomMounted && (
         <div style={{ display: isRoomMinimized ? 'none' : 'contents' }}>
           <RoomPage />

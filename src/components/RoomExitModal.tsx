@@ -19,7 +19,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
   const modalContent = (
     <div
       style={{ zIndex: 999999 }}
-      className="fixed inset-0 z-[999999] pointer-events-auto flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[999999] pointer-events-auto flex items-center justify-center bg-[#0d111e] p-4"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -31,7 +31,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="royal-glass pointer-events-auto relative z-10 w-full max-w-xs rounded-3xl p-5 text-center space-y-4 border border-[#F3D37A]/50 shadow-[0_18px_50px_rgba(0,0,0,0.7)]"
+        className="royal-glass room-modal-panel pointer-events-auto relative z-10 w-full max-w-xs rounded-3xl p-5 text-center space-y-4 border border-[#F3D37A]/50 shadow-[0_18px_50px_rgba(0,0,0,0.7)]"
       >
         <div className="flex justify-end -mb-2">
           <button

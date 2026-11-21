@@ -1157,7 +1157,7 @@ export const RoomPage: React.FC = () => {
       <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-2 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2">
         {/* 1. ROOM TOP BAR */}
         <header
-          className={`flex items-center justify-between gap-1.5 shrink-0 ${
+          className={`pt-[max(env(safe-area-inset-top),32px)] flex items-center justify-between gap-1.5 shrink-0 ${
             isKeyboardOpen ? 'sticky top-0 z-20 scale-90 origin-top' : ''
           }`}
         >
@@ -2050,15 +2050,16 @@ export const RoomPage: React.FC = () => {
       <AnimatePresence>
         {seatActionTarget && seatActionTarget.userId && (
           <div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-[#0d111e] p-0 sm:p-4"
             onClick={() => setSeatActionTarget(null)}
           >
             <motion.div
               initial={{ y: 40, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 40, opacity: 0 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
               onClick={(e) => e.stopPropagation()}
-              className="royal-glass w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
+              className="royal-glass room-modal-panel w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
             >
               <div className="flex items-center justify-between">
                 {(() => {
@@ -2288,16 +2289,16 @@ export const RoomPage: React.FC = () => {
       <AnimatePresence>
         {showInboxOverlay && (
           <div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-[#0d111e]"
             onClick={() => setShowInboxOverlay(false)}
           >
             <motion.div
               initial={{ y: 70, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 70, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-4xl h-[86dvh] rounded-t-[28px] overflow-hidden shadow-2xl border-t border-x border-[#D4AF37]/40 bg-[#F5F6FA]"
+              className="w-full max-w-4xl h-[86dvh] rounded-t-[28px] overflow-hidden shadow-2xl border-t border-x border-[#D4AF37]/40 bg-[#0d111e]"
             >
               <MessagesPage
                 embedded
@@ -2358,15 +2359,16 @@ export const RoomPage: React.FC = () => {
       <AnimatePresence>
         {showLeaderboardModal && (
           <div
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-0 sm:p-4"
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#0d111e] p-0 sm:p-4"
             onClick={() => setShowLeaderboardModal(false)}
           >
             <motion.div
               initial={{ y: 40, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 40, opacity: 0 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
               onClick={(e) => e.stopPropagation()}
-              className="royal-glass w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-4 space-y-3 max-h-[82vh] flex flex-col"
+              className="royal-glass room-modal-panel w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-4 space-y-3 max-h-[82vh] flex flex-col"
             >
               <div className="flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">

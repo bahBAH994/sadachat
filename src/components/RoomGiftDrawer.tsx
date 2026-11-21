@@ -305,16 +305,16 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/25"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[#0d111e]"
       onClick={onClose}
     >
       <motion.div
         initial={{ y: 70, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 70, opacity: 0 }}
-        transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+        transition={{ duration: 0.15, ease: 'easeOut' }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-t-[28px] border-t border-x border-[#F3D37A]/45 bg-gradient-to-b from-[#1A140B]/98 via-[#110D08]/98 to-[#090704] shadow-[0_-18px_50px_rgba(0,0,0,0.85)] flex flex-col max-h-[58vh] overflow-hidden"
+        className="w-full max-w-2xl rounded-t-[28px] border-t border-x border-[#F3D37A]/45 bg-[#0d111e] shadow-[0_-18px_50px_rgba(0,0,0,0.85)] flex flex-col max-h-[58vh] overflow-hidden"
       >
         {/* Top Drawer Header */}
         <div className="flex items-center justify-between px-4 py-1.5 border-b border-white/10 shrink-0">
@@ -574,7 +574,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
                     canAfford ? 'text-[#FCE9A6]' : 'text-rose-400'
                   }`}
                 >
-                  <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3.5 h-3.5" priority />
+                  <Coins className="w-3.5 h-3.5 text-[#FCE9A6]" aria-label="كوينز" />
                   <span>{totalCost.toLocaleString('en-US')}</span>
                 </div>
               </div>
@@ -623,7 +623,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
                 className="flex items-center gap-1.5 rounded-2xl bg-[#1A1308] border border-[#F3D37A]/50 px-2.5 py-1.5 shadow-[0_0_12px_rgba(212,175,55,0.22)] shrink-0 cursor-pointer hover:border-[#FCE9A6]"
                 title="رصيدك الحالي · اضغط للشحن السريع"
               >
-                <Fluent3DAsset glyph="🪙" alt="رصيد الكوينز" sizeClass="w-4 h-4" priority />
+                <Coins className="w-4 h-4 text-[#FCE9A6]" aria-label="رصيد الكوينز" />
                 <span className="text-xs sm:text-sm font-mono-num font-black text-[#FCE9A6]">
                   {userCoins.toLocaleString('en-US')}
                 </span>
