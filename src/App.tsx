@@ -63,7 +63,7 @@ class AppErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#F5F6FA] flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <div className="h-full bg-[#F5F6FA] flex flex-col items-center justify-center p-6 text-center space-y-4">
           <div className="light-card rounded-3xl p-6 max-w-md w-full space-y-3">
             <h2 className="text-base font-extrabold text-slate-900">
               حدث خطأ غير متوقع في العرض
@@ -170,7 +170,7 @@ const LoginRoute: React.FC = () => {
   }
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F5F6FA] flex items-center justify-center">
+      <div className="h-full bg-[#F5F6FA] flex items-center justify-center">
         <div className="light-card rounded-2xl px-6 py-4 text-sm font-extrabold text-emerald-700">
           جارٍ التحقق من الجلسة...
         </div>
@@ -219,7 +219,7 @@ const AuthenticatedAppShell: React.FC = () => {
 
   if (loading && !user) {
     return (
-      <div className="min-h-screen bg-[#F5F6FA] flex items-center justify-center">
+      <div className="h-full bg-[#F5F6FA] flex items-center justify-center">
         <div className="light-card rounded-2xl px-6 py-4 text-sm font-extrabold text-emerald-700">
           جارٍ تجهيز الوكالة الصوتية...
         </div>
@@ -228,7 +228,13 @@ const AuthenticatedAppShell: React.FC = () => {
   }
 
   if (location.pathname === '/login') {
-    return <LoginRoute />;
+    return (
+      <div className="flex h-[100dvh] w-full flex-col overflow-hidden">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden touch-pan-y pb-28">
+          <LoginRoute />
+        </main>
+      </div>
+    );
   }
 
   if (!user) {
@@ -239,14 +245,14 @@ const AuthenticatedAppShell: React.FC = () => {
   const shouldKeepRoomMounted = Boolean(activeRoomId || room || roomLoading);
 
   return (
-    <div className="w-full min-h-screen flex flex-col">
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden">
       {!isFullScreenRoom && <TopBar />}
       <main
         tabIndex={0}
         className={
           isFullScreenRoom
             ? 'hidden'
-            : 'flex-1 w-full touch-pan-y focus:outline-none'
+            : 'flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y pb-28 focus:outline-none'
         }
       >
         <Routes>
@@ -274,10 +280,7 @@ const AuthenticatedAppShell: React.FC = () => {
       </main>
       {!isFullScreenRoom && <BottomNav />}
       {shouldKeepRoomMounted && (
-        <div
-          style={{ display: isRoomMinimized ? 'none' : 'flex' }}
-          className="fixed inset-0 z-40 flex-col overflow-hidden bg-[#0A0805] text-white"
-        >
+        <div style={{ display: isRoomMinimized ? 'none' : 'contents' }}>
           <RoomPage />
         </div>
       )}

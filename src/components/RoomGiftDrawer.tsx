@@ -305,7 +305,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/30"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/25"
       onClick={onClose}
     >
       <motion.div
@@ -314,7 +314,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
         exit={{ y: 70, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-t-[28px] border-t border-x border-[#F3D37A]/45 bg-gradient-to-b from-[#1A140B]/98 via-[#110D08]/98 to-[#090704] shadow-[0_-18px_50px_rgba(0,0,0,0.85)] flex flex-col max-h-[62vh] overflow-hidden"
+        className="w-full max-w-2xl rounded-t-[28px] border-t border-x border-[#F3D37A]/45 bg-gradient-to-b from-[#1A140B]/98 via-[#110D08]/98 to-[#090704] shadow-[0_-18px_50px_rgba(0,0,0,0.85)] flex flex-col max-h-[58vh] overflow-hidden"
       >
         {/* Top Drawer Header */}
         <div className="flex items-center justify-between px-4 py-1.5 border-b border-white/10 shrink-0">
@@ -533,7 +533,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
               لا توجد هدايا في هذه الفئة ضمن هذا التبويب.
             </p>
           ) : (
-            <div className="flex-1 min-h-[190px] max-h-[240px] overflow-y-auto grid grid-cols-4 gap-2 p-2">
+            <div className="flex-1 min-h-[200px] overflow-y-auto grid grid-cols-4 gap-2 p-2">
               {visibleGifts.map((gift) => (
                 <GiftGridItem
                   key={gift.id}

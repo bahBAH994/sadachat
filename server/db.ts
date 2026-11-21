@@ -13,7 +13,6 @@ import type {
   PrivateMessage,
   RechargeRewardTierSetting,
   Room,
-  RoomSeat,
   SecurityLog,
   Transaction,
   UsdtDepositRequest,
@@ -410,7 +409,7 @@ export function isUserEligibleForWithdrawal(
 
 export const LUCKY_WHEEL_COST = 200;
 
-export const INITIAL_APP_PRIZE_POOL_COINS = 250000;
+export const INITIAL_APP_PRIZE_POOL_COINS = 0;
 
 export const REFERRAL_WHEEL_SEGMENTS = [
   {
@@ -479,116 +478,7 @@ export const REFERRAL_WHEEL_SEGMENTS = [
   },
 ];
 
-export const CULTURAL_QUESTIONS: CulturalQuestionItem[] = [
-  {
-    id: 'cq_1',
-    category: 'الأدب والشعر العربي',
-    question: 'من الشاعر العربي الذي لُقّب بـ "شاعر النيل"؟',
-    options: ['أحمد شوقي', 'حافظ إبراهيم', 'المتنبي', 'أبو تمام'],
-    correctIndex: 1,
-    xpReward: 140,
-    coinsReward: 250,
-  },
-  {
-    id: 'cq_2',
-    category: 'التاريخ والحضارة',
-    question: 'في أي مدينة أُسّست جامعة القرويين، أقدم جامعة مستمرة في العالم؟',
-    options: ['قرطبة', 'القاهرة', 'فاس', 'بغداد'],
-    correctIndex: 2,
-    xpReward: 140,
-    coinsReward: 250,
-  },
-  {
-    id: 'cq_3',
-    category: 'اللغة والبلاغة',
-    question: 'ما اسم المعجم اللغوي الشهير الذي ألّفه ابن منظور؟',
-    options: ['لسان العرب', 'تاج العروس', 'الصحاح', 'المحيط'],
-    correctIndex: 0,
-    xpReward: 130,
-    coinsReward: 220,
-  },
-  {
-    id: 'cq_4',
-    category: 'العلوم الإسلامية والعربية',
-    question: 'من العالم العربي الذي يُعد مؤسس علم البصريات الحديث ومؤلف كتاب "المناظر"؟',
-    options: ['جابر بن حيان', 'الخوارزمي', 'الحسن بن الهيثم', 'ابن سينا'],
-    correctIndex: 2,
-    xpReward: 150,
-    coinsReward: 300,
-  },
-  {
-    id: 'cq_5',
-    category: 'الشعر الجاهلي',
-    question: 'كم عدد المعلقات السبع المشهورة في الشعر الجاهلي على الأشهر؟',
-    options: ['خمس معلقات', 'سبع معلقات', 'تسع معلقات', 'إحدى عشرة معلقة'],
-    correctIndex: 1,
-    xpReward: 120,
-    coinsReward: 200,
-  },
-  {
-    id: 'cq_6',
-    category: 'الجغرافيا العربية',
-    question: 'ما المضيق البحري الذي يربط بين البحر الأحمر وخليج عدن؟',
-    options: ['مضيق هرمز', 'مضيق جبل طارق', 'مضيق باب المندب', 'قناة السويس'],
-    correctIndex: 2,
-    xpReward: 130,
-    coinsReward: 220,
-  },
-  {
-    id: 'cq_7',
-    category: 'الأدب والتراث',
-    question: 'من مؤلف كتاب "مقدمة ابن خلدون" الذي أسّس علم الاجتماع؟',
-    options: ['عبد الرحمن بن خلدون', 'أبو حامد الغزالي', 'ابن رشد', 'المسعودي'],
-    correctIndex: 0,
-    xpReward: 120,
-    coinsReward: 200,
-  },
-  {
-    id: 'cq_8',
-    category: 'الفنون والموسيقى',
-    question: 'ما المقام الموسيقي العربي المشهور بطابعه الروحاني والدافئ في الموشحات؟',
-    options: ['مقام الحجاز', 'مقام الجاز', 'مقام البلوز', 'مقام السوبرانو'],
-    correctIndex: 0,
-    xpReward: 140,
-    coinsReward: 250,
-  },
-  {
-    id: 'cq_9',
-    category: 'التاريخ والأندلس',
-    question: 'ما القصر الأندلسي الشهير في غرناطة الذي يُعد تحفة العمارة الإسلامية؟',
-    options: ['قصر الحمراء', 'قصر الشوق', 'قصر المصمك', 'قصر العظم'],
-    correctIndex: 0,
-    xpReward: 130,
-    coinsReward: 220,
-  },
-  {
-    id: 'cq_10',
-    category: 'العلوم والرياضيات',
-    question: 'من العالم المسلم الذي استمدت منه كلمة "الخوارزمية" في علوم الحاسوب؟',
-    options: ['البيروني', 'محمد بن موسى الخوارزمي', 'عمر الخيام', 'الكندي'],
-    correctIndex: 1,
-    xpReward: 150,
-    coinsReward: 300,
-  },
-  {
-    id: 'cq_11',
-    category: 'الشعر الفصيح',
-    question: 'قائل البيت الشهير: "على قدر أهل العزم تأتي العزائم" هو:',
-    options: ['أبو الطيب المتنبي', 'البحتري', 'امرؤ القيس', 'نزار قباني'],
-    correctIndex: 0,
-    xpReward: 140,
-    coinsReward: 250,
-  },
-  {
-    id: 'cq_12',
-    category: 'التراث العربي',
-    question: 'بماذا تُعرف مدينة البتراء الأثرية في الأردن؟',
-    options: ['المدينة البيضاء', 'المدينة الوردية', 'مدينة النخيل', 'مدينة اللؤلؤ'],
-    correctIndex: 1,
-    xpReward: 130,
-    coinsReward: 220,
-  },
-];
+export const CULTURAL_QUESTIONS: CulturalQuestionItem[] = [];
 
 export const LUCKY_WHEEL_SEGMENTS = [
   {
@@ -710,421 +600,28 @@ export function hashPassword(password: string): string {
   return crypto.scryptSync(password, salt, 32).toString('hex');
 }
 
-function makeEmptySeats(count: number, host?: StoredUser): RoomSeat[] {
-  const seats: RoomSeat[] = [];
-  for (let i = 0; i < count; i++) {
-    if (i === 0 && host) {
-      seats.push({
-        seatIndex: 0,
-        userId: host.id,
-        displayName: host.displayName,
-        avatarUrl: host.avatarUrl,
-        frameId: host.frameId,
-        level: host.level,
-        isMuted: false,
-        isLocked: false,
-        isSpeaking: false,
-        receivedDiamonds: 420,
-      });
-    } else {
-      seats.push({
-        seatIndex: i,
-        userId: null,
-        displayName: null,
-        avatarUrl: null,
-        frameId: null,
-        level: null,
-        isMuted: false,
-        isLocked: false,
-        isSpeaking: false,
-        receivedDiamonds: 0,
-      });
-    }
-  }
-  return seats;
-}
-
 function createInitialDb(): SadaDatabase {
-  const now = new Date().toISOString();
-
-  const hostTariq: StoredUser = {
-    id: 'user_host_tariq',
-    email: 'tariq@sada.vip',
-    passwordHash: hashPassword('SadaHost2026!'),
-    displayName: 'طارق المنصور',
-    bio: 'مقدّم أمسيات الشعر الفصيح والحوارات الثقافية في صَدَى.',
-    avatarUrl: 'host_male',
-    gender: 'male',
-    isHost: true,
-    isAgent: true,
-    agencyId: 'agency_royal_divan',
-    hostBadge: 'وكيل معتمد ✦',
-    hostAgencyName: 'وكالة الديوان الملكي',
-    hostDiamondsEarned: 4250,
-    referralCode: 'REF-TARIQ1',
-    referredBy: null,
-    referralCount: 3,
-    referralSpins: 2,
-    frameId: 'frame_imperial',
-    unlockedFrames: ['frame_obsidian', 'frame_crescent', 'frame_imperial'],
-    coins: 8400,
-    diamonds: 4250,
-    level: 14,
-    xp: 6800,
-    is_admin: false,
-    is_banned: false,
-    device_uuid: 'seed-device-tariq-01',
-    createdAt: now,
-    lastSeen: now,
-  };
-
-  const hostLayan: StoredUser = {
-    id: 'user_host_layan',
-    email: 'layan@sada.vip',
-    passwordHash: hashPassword('SadaHost2026!'),
-    displayName: 'ليان العتيبي',
-    bio: 'صوت المساء والطرب الأصيل — بطلة موسم صَدَى الذهبي.',
-    avatarUrl: 'host_female',
-    gender: 'female',
-    femaleVoiceStatus: 'verified',
-    femaleVerified: true,
-    femaleVerifiedBadge: 'موثّقة ✦',
-    isHost: true,
-    isAgent: false,
-    agencyId: 'agency_royal_divan',
-    hostBadge: 'مضيف رسمي ✦',
-    hostAgencyName: 'وكالة الديوان الملكي',
-    hostDiamondsEarned: 6180,
-    referralCode: 'REF-LAYAN2',
-    referredBy: null,
-    referralCount: 5,
-    referralSpins: 3,
-    frameId: 'frame_crescent',
-    unlockedFrames: ['frame_obsidian', 'frame_crescent'],
-    coins: 5200,
-    diamonds: 6180,
-    level: 11,
-    xp: 5100,
-    is_admin: false,
-    is_banned: false,
-    device_uuid: 'seed-device-layan-02',
-    createdAt: now,
-    lastSeen: now,
-  };
-
-  const hostFaisal: StoredUser = {
-    id: 'user_host_faisal',
-    email: 'faisal@sada.vip',
-    passwordHash: hashPassword('SadaHost2026!'),
-    displayName: 'فيصل الهاشمي',
-    bio: 'حكم مسابقات الإلقاء والتحديات الصوتية المباشرة.',
-    avatarUrl: 'host_male',
-    gender: 'male',
-    isHost: true,
-    isAgent: false,
-    agencyId: 'agency_royal_divan',
-    hostBadge: 'مضيف رسمي ✦',
-    hostAgencyName: 'وكالة الديوان الملكي',
-    hostDiamondsEarned: 2100,
-    referralCode: 'REF-FAISAL',
-    referredBy: null,
-    referralCount: 1,
-    referralSpins: 1,
-    frameId: 'frame_sapphire',
-    unlockedFrames: ['frame_obsidian', 'frame_sapphire'],
-    coins: 3900,
-    diamonds: 2100,
-    level: 8,
-    xp: 3400,
-    is_admin: false,
-    is_banned: false,
-    device_uuid: 'seed-device-faisal-03',
-    createdAt: now,
-    lastSeen: now,
-  };
-
-  const seatsRoom1 = makeEmptySeats(8, hostTariq);
-  seatsRoom1[1] = {
-    seatIndex: 1,
-    userId: hostLayan.id,
-    displayName: hostLayan.displayName,
-    avatarUrl: hostLayan.avatarUrl,
-    frameId: hostLayan.frameId,
-    level: hostLayan.level,
-    isMuted: false,
-    isLocked: false,
-    isSpeaking: true,
-    receivedDiamonds: 890,
-  };
-
-  const seatsRoom2 = makeEmptySeats(6, hostLayan);
-  const seatsRoom3 = makeEmptySeats(8, hostFaisal);
-  const seatsRoom4 = makeEmptySeats(6, hostTariq);
-
-  const rooms: StoredRoom[] = [
-    {
-      id: 'room_royal_majlis',
-      title: 'مجلس القصر الملكي · ليلة السمر الذهبية',
-      category: 'حوار',
-      description: 'نقاشات راقية وتعارف بين نخبة أعضاء صَدَى مع بث صوتي فائق النقاء.',
-      hostId: hostTariq.id,
-      hostName: hostTariq.displayName,
-      hostAvatar: hostTariq.avatarUrl,
-      coverImage: 'royal_stage',
-      isPrivate: false,
-      maxSeats: 8,
-      seats: seatsRoom1,
-      listenersCount: 48,
-      isActive: true,
-      totalGiftsCoins: 14500,
-      createdAt: now,
-      messages: [
-        {
-          id: 'msg_seed_1',
-          userId: hostTariq.id,
-          displayName: hostTariq.displayName,
-          level: hostTariq.level,
-          isAdmin: false,
-          text: 'أهلاً بكم في مجلس القصر الملكي، المايك متاح للمشاركين المبدعين.',
-          type: 'chat',
-          timestamp: now,
-        },
-        {
-          id: 'msg_seed_2',
-          userId: hostLayan.id,
-          displayName: hostLayan.displayName,
-          level: hostLayan.level,
-          isAdmin: false,
-          text: 'مساء النور والذهب على جميع الحضور في صَدَى.',
-          type: 'chat',
-          timestamp: now,
-        },
-      ],
-    },
-    {
-      id: 'room_golden_voice',
-      title: 'بطولة الصوت الذهبي · التصفيات المباشرة',
-      category: 'مسابقات',
-      description: 'منافسة مباشرة أمام لجنة التحكيم والجمهور لاختيار أجمل أداء صوتي.',
-      hostId: hostLayan.id,
-      hostName: hostLayan.displayName,
-      hostAvatar: hostLayan.avatarUrl,
-      coverImage: 'competition_crest',
-      isPrivate: false,
-      maxSeats: 6,
-      seats: seatsRoom2,
-      listenersCount: 92,
-      isActive: true,
-      totalGiftsCoins: 32800,
-      createdAt: now,
-      messages: [
-        {
-          id: 'msg_seed_3',
-          userId: hostLayan.id,
-          displayName: hostLayan.displayName,
-          level: hostLayan.level,
-          isAdmin: false,
-          text: 'التصويت مفتوح الآن في ساحة المسابقات، صوّتوا لمتسابقكم المفضل!',
-          type: 'chat',
-          timestamp: now,
-        },
-      ],
-    },
-    {
-      id: 'room_poetry_night',
-      title: 'أمسية الشعر الفصيح والبيان العربي',
-      category: 'شعر وأدب',
-      description: 'قراءات شعرية ونبطية ومساجلات أدبية هادئة على أضواء المساء.',
-      hostId: hostFaisal.id,
-      hostName: hostFaisal.displayName,
-      hostAvatar: hostFaisal.avatarUrl,
-      coverImage: 'royal_stage',
-      isPrivate: false,
-      maxSeats: 8,
-      seats: seatsRoom3,
-      listenersCount: 31,
-      isActive: true,
-      totalGiftsCoins: 6400,
-      createdAt: now,
-      messages: [
-        {
-          id: 'msg_seed_4',
-          userId: hostFaisal.id,
-          displayName: hostFaisal.displayName,
-          level: hostFaisal.level,
-          isAdmin: false,
-          text: 'مرحبًا بعشاق القوافي، من يفتتح الأمسية بأبيات من اختياره؟',
-          type: 'chat',
-          timestamp: now,
-        },
-      ],
-    },
-    {
-      id: 'room_tarab_evening',
-      title: 'ديوانية الطرب الأصيل والعود الشرقي',
-      category: 'طرب',
-      description: 'جلسات عزف وغناء حي بأجواء مخملية أصيلة.',
-      hostId: hostTariq.id,
-      hostName: hostTariq.displayName,
-      hostAvatar: hostTariq.avatarUrl,
-      coverImage: 'competition_crest',
-      isPrivate: false,
-      maxSeats: 6,
-      seats: seatsRoom4,
-      listenersCount: 64,
-      isActive: true,
-      totalGiftsCoins: 19200,
-      createdAt: now,
-      messages: [],
-    },
-  ];
-
-  const competitions: Competition[] = [
-    {
-      id: 'comp_golden_voice_2026',
-      title: 'بطولة الصوت الذهبي الكبرى',
-      subtitle: 'المنافسة الرسمية لاختيار أفخم خامة صوتية وإلقاء عربي في صَدَى',
-      category: 'الغناء والإلقاء',
-      status: 'live',
-      prizeCoins: 50000,
-      prizeDiamonds: 25000,
-      bannerImage: 'competition_crest',
-      endsAt: new Date(Date.now() + 1000 * 60 * 60 * 72).toISOString(),
-      winnerId: null,
-      contestants: [
-        {
-          id: 'cont_1',
-          userId: hostLayan.id,
-          displayName: hostLayan.displayName,
-          avatarUrl: hostLayan.avatarUrl,
-          level: hostLayan.level,
-          performanceTitle: 'موشّح ليالي الأندلس',
-          votes: 342,
-          giftScore: 12400,
-        },
-        {
-          id: 'cont_2',
-          userId: hostTariq.id,
-          displayName: hostTariq.displayName,
-          avatarUrl: hostTariq.avatarUrl,
-          level: hostTariq.level,
-          performanceTitle: 'قصيدة المعلّقة الذهبية',
-          votes: 298,
-          giftScore: 9800,
-        },
-        {
-          id: 'cont_3',
-          userId: hostFaisal.id,
-          displayName: hostFaisal.displayName,
-          avatarUrl: hostFaisal.avatarUrl,
-          level: hostFaisal.level,
-          performanceTitle: 'مقام الحجاز المرتجل',
-          votes: 215,
-          giftScore: 6300,
-        },
-      ],
-    },
-    {
-      id: 'comp_emir_bayan',
-      title: 'تحدي أمير البيان والشعر',
-      subtitle: 'مساجلة شعرية مباشرة أمام الجمهور لتتويج شاعر الموسم',
-      category: 'الشعر والأدب',
-      status: 'live',
-      prizeCoins: 30000,
-      prizeDiamonds: 15000,
-      bannerImage: 'royal_stage',
-      endsAt: new Date(Date.now() + 1000 * 60 * 60 * 48).toISOString(),
-      winnerId: null,
-      contestants: [
-        {
-          id: 'cont_4',
-          userId: hostFaisal.id,
-          displayName: hostFaisal.displayName,
-          avatarUrl: hostFaisal.avatarUrl,
-          level: hostFaisal.level,
-          performanceTitle: 'قافية الفجر الملكي',
-          votes: 184,
-          giftScore: 4100,
-        },
-        {
-          id: 'cont_5',
-          userId: hostLayan.id,
-          displayName: hostLayan.displayName,
-          avatarUrl: hostLayan.avatarUrl,
-          level: hostLayan.level,
-          performanceTitle: 'أرجوزة النجوم',
-          votes: 162,
-          giftScore: 3900,
-        },
-      ],
-    },
-  ];
-
   return {
-    users: [hostTariq, hostLayan, hostFaisal],
-    deviceLocks: {
-      [hostTariq.device_uuid]: {
-        device_uuid: hostTariq.device_uuid,
-        boundUserId: hostTariq.id,
-        boundEmail: hostTariq.email,
-        isBlocked: false,
-        blockedReason: null,
-        createdAt: now,
-        lastAttemptAt: now,
-      },
-      [hostLayan.device_uuid]: {
-        device_uuid: hostLayan.device_uuid,
-        boundUserId: hostLayan.id,
-        boundEmail: hostLayan.email,
-        isBlocked: false,
-        blockedReason: null,
-        createdAt: now,
-        lastAttemptAt: now,
-      },
-      [hostFaisal.device_uuid]: {
-        device_uuid: hostFaisal.device_uuid,
-        boundUserId: hostFaisal.id,
-        boundEmail: hostFaisal.email,
-        isBlocked: false,
-        blockedReason: null,
-        createdAt: now,
-        lastAttemptAt: now,
-      },
-    },
+    users: [],
+    deviceLocks: {},
     securityLogs: [],
-    rooms,
-    competitions,
+    rooms: [],
+    competitions: [],
     transactions: [],
     privateMessages: [],
-    agencies: [
-      {
-        id: 'agency_royal_divan',
-        name: 'وكالة الديوان الملكي',
-        description: 'الوكالة الرسمية الأولى في صَدَى لرعاية الأصوات الراقية والمضيفين المعتمدين.',
-        code: 'SADA-1000',
-        ownerId: hostTariq.id,
-        ownerName: hostTariq.displayName,
-        ownerAvatar: hostTariq.avatarUrl,
-        commissionRate: 0.15,
-        totalCommissionDiamonds: 1242,
-        totalHostDiamonds: 8280,
-        hostIds: [hostLayan.id, hostFaisal.id],
-        status: 'approved',
-        createdAt: now,
-      },
-    ],
+    agencies: [],
     appPrizePoolCoins: INITIAL_APP_PRIZE_POOL_COINS,
     quizSessions: {},
-    culturalQuestions: CULTURAL_QUESTIONS.map((q) => ({ ...q })),
+    culturalQuestions: [],
     settings: createDefaultPlatformSettings(),
     usdtDeposits: [],
     usdtWithdrawals: [],
     sessions: {},
     votedKeys: {},
     femaleVoiceRequests: [],
+    ladderSessions: {},
   };
 }
-
 let dbCache: SadaDatabase | null = null;
 
 export function getDb(): SadaDatabase {
@@ -1148,8 +645,8 @@ export function getDb(): SadaDatabase {
       if (!dbCache.quizSessions || typeof dbCache.quizSessions !== 'object') {
         dbCache.quizSessions = {};
       }
-      if (!Array.isArray(dbCache.culturalQuestions) || dbCache.culturalQuestions.length === 0) {
-        dbCache.culturalQuestions = CULTURAL_QUESTIONS.map((q) => ({ ...q }));
+      if (!Array.isArray(dbCache.culturalQuestions)) {
+        dbCache.culturalQuestions = [];
       }
       if (!dbCache.settings || typeof dbCache.settings !== 'object') {
         dbCache.settings = createDefaultPlatformSettings();
@@ -1201,7 +698,7 @@ export async function initDatabase(): Promise<SadaDatabase> {
   const localDb = getDb();
   const remoteDb = await loadDatabaseFromSupabase({
     defaultSettings: createDefaultPlatformSettings(),
-    defaultQuestions: CULTURAL_QUESTIONS,
+    defaultQuestions: [],
     initialPoolCoins: INITIAL_APP_PRIZE_POOL_COINS,
   });
   if (remoteDb) {
@@ -1222,7 +719,7 @@ export async function initDatabase(): Promise<SadaDatabase> {
 export async function syncNowWithSupabase() {
   const remoteDb = await loadDatabaseFromSupabase({
     defaultSettings: createDefaultPlatformSettings(),
-    defaultQuestions: CULTURAL_QUESTIONS,
+    defaultQuestions: [],
     initialPoolCoins: INITIAL_APP_PRIZE_POOL_COINS,
   });
   if (remoteDb) {

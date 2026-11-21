@@ -15,7 +15,6 @@ import type {
 import {
   computeGiftLevelStats,
   computeLevelFromXp,
-  CULTURAL_QUESTIONS,
   findGiftById,
   formatShortNumericId,
   genId,
@@ -167,13 +166,17 @@ export async function voteCompetitionInSupabase(
 export async function startCulturalQuizInSupabase(
   user: User
 ): Promise<CulturalQuizRound> {
-  const [{ data: qRows }, state] = await Promise.all([
+  const [{ data: qRows, error: questionsError }, state] = await Promise.all([
     supabase.from('sada_cultural_questions').select(QUESTION_COLUMNS),
     getPlatformState(),
   ]);
-
-  const bank =
-    qRows && qRows.length > 0 ? qRows.map(rowToQuestion) : CULTURAL_QUESTIONS;
+  if (questionsError) {
+    throw new Error(`تعذّر تحميل بنك الأسئلة: ${questionsError.message}`);
+  }
+  const bank = (qRows || []).map(rowToQuestion);
+  if (bank.length === 0) {
+    throw new Error('لا توجد أسئلة ثقافية منشورة حالياً.');
+  }
   const q = bank[Math.floor(Math.random() * bank.length)];
   const roundId = genId('quiz');
   const expiresAt = Date.now() + 8000;

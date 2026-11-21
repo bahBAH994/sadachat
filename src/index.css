@@ -8,18 +8,25 @@
   html,
   body,
   #root {
+    margin: 0;
+    padding: 0;
     font-family: 'Cairo', system-ui, -apple-system, sans-serif;
     background: #F5F6FA;
     color: #111827;
-    min-height: 100dvh;
     width: 100%;
-    height: auto !important;
-    overflow-x: hidden;
-    overflow-y: auto !important;
-    scroll-behavior: smooth;
-    -webkit-overflow-scrolling: touch;
-    touch-action: manipulation;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
     -webkit-text-size-adjust: 100%;
+  }
+
+  input,
+  textarea {
+    user-select: text;
+    -webkit-user-select: text;
   }
 
   * {

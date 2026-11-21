@@ -22,6 +22,7 @@ import {
   Smile,
   Sparkles,
   Trophy,
+  Trash2,
   UserMinus,
   Users,
   Volume2,
@@ -42,6 +43,7 @@ import {
 } from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
 import { toggleFollowAgencyInSupabase } from '../lib/sadaSocialService';
+import { canClearRoomChatInSupabase } from '../lib/sadaRoomsService';
 import type { GiftItem, RoomMessage, RoomSeat, User, VipTierKey } from '../types';
 import type {
   RoomSeatEmojiEvent,
@@ -532,6 +534,7 @@ export const RoomPage: React.FC = () => {
     updateRoomFromWheel,
     updateSettings,
     runAdminAction,
+    clearRoomChat,
     playUploadedMusic,
     toggleMusicPlayPause,
     stopRoomMusic,
@@ -548,6 +551,8 @@ export const RoomPage: React.FC = () => {
   const [chatText, setChatText] = useState('');
   const [chatFilter, setChatFilter] = useState<'all' | 'chat'>('all');
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [canClearRoomChat, setCanClearRoomChat] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [giftInitialTargets, setGiftInitialTargets] = useState<string[] | undefined>(
@@ -578,30 +583,34 @@ export const RoomPage: React.FC = () => {
 
   useEffect(() => {
     const viewport = window.visualViewport;
-    if (!viewport) return;
-
-    let maxViewportHeight = Math.max(window.innerHeight, viewport.height);
+    let maxViewportHeight = Math.max(window.innerHeight, viewport?.height || 0);
     let orientationTimer: number | undefined;
     const updateKeyboardState = () => {
-      maxViewportHeight = Math.max(maxViewportHeight, viewport.height);
-      setIsKeyboardOpen(maxViewportHeight - viewport.height > 120);
+      const height = viewport?.height ?? window.innerHeight;
+      maxViewportHeight = Math.max(maxViewportHeight, height);
+      setViewportHeight(height);
+      setIsKeyboardOpen(maxViewportHeight - height > 120);
     };
     const resetAfterOrientationChange = () => {
       window.clearTimeout(orientationTimer);
       orientationTimer = window.setTimeout(() => {
-        maxViewportHeight = viewport.height;
+        const height = viewport?.height ?? window.innerHeight;
+        maxViewportHeight = height;
         setIsKeyboardOpen(false);
+        setViewportHeight(height);
       }, 350);
     };
 
-    viewport.addEventListener('resize', updateKeyboardState);
-    viewport.addEventListener('scroll', updateKeyboardState);
+    viewport?.addEventListener('resize', updateKeyboardState);
+    viewport?.addEventListener('scroll', updateKeyboardState);
+    window.addEventListener('resize', updateKeyboardState);
     window.addEventListener('orientationchange', resetAfterOrientationChange);
     updateKeyboardState();
 
     return () => {
-      viewport.removeEventListener('resize', updateKeyboardState);
-      viewport.removeEventListener('scroll', updateKeyboardState);
+      viewport?.removeEventListener('resize', updateKeyboardState);
+      viewport?.removeEventListener('scroll', updateKeyboardState);
+      window.removeEventListener('resize', updateKeyboardState);
       window.removeEventListener('orientationchange', resetAfterOrientationChange);
       window.clearTimeout(orientationTimer);
     };
@@ -616,6 +625,29 @@ export const RoomPage: React.FC = () => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 2600);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setCanClearRoomChat(false);
+    if (!room || !user) return;
+
+    void canClearRoomChatInSupabase(room.id)
+      .then((allowed) => {
+        if (active) setCanClearRoomChat(allowed);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        showToast(
+          err instanceof Error
+            ? err.message
+            : 'تعذّر التحقق من صلاحية مسح الدردشة.'
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [extras.deputyIds, room?.id, showToast, user?.id]);
 
   const registerSeatRef = useCallback((seatIndex: number, el: HTMLDivElement | null) => {
     seatRefs.current[seatIndex] = el;
@@ -1053,7 +1085,8 @@ export const RoomPage: React.FC = () => {
 
   return (
     <div
-      className={`flex-1 flex flex-col overflow-hidden bg-[#0A0805] text-white ${
+      style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh' }}
+      className={`fixed inset-x-0 top-0 z-50 flex flex-col overflow-hidden bg-[#0A0805] text-white ${
         fullscreenGift ? 'animate-dragon-shake' : ''
       }`}
     >
@@ -1083,11 +1116,11 @@ export const RoomPage: React.FC = () => {
           {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
           <DragonStageBackdrop coverImage={room.coverImage} />
 
-      <div className="fixed inset-0 h-[100dvh] z-10 flex flex-col gap-2 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2 min-h-0">
+      <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-2 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2">
         {/* 1. ROOM TOP BAR */}
         <header
           className={`flex items-center justify-between gap-1.5 shrink-0 ${
-            isKeyboardOpen ? 'sticky top-0 z-20 scale-95 origin-top' : ''
+            isKeyboardOpen ? 'sticky top-0 z-20 scale-90 origin-top' : ''
           }`}
         >
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
@@ -1315,6 +1348,31 @@ export const RoomPage: React.FC = () => {
               )}
               <span>{roomAudioMuted ? 'صوت مكتوم' : 'كتم الروم'}</span>
             </button>
+            {canClearRoomChat && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm('هل تريد مسح جميع رسائل الدردشة في هذه الغرفة؟')) {
+                    return;
+                  }
+                  try {
+                    await clearRoomChat();
+                    showToast('تم مسح الدردشة بواسطة الإدارة');
+                  } catch (err) {
+                    showToast(
+                      err instanceof Error
+                        ? err.message
+                        : 'تعذّر مسح دردشة الغرفة.'
+                    );
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-xl border border-rose-400/60 bg-rose-950/50 px-2 py-1 text-[10px] font-extrabold text-rose-100 transition hover:bg-rose-900/70 cursor-pointer"
+                title="مسح رسائل الدردشة"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>مسح الشات</span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -1440,7 +1498,7 @@ export const RoomPage: React.FC = () => {
         <section
           className={`shrink-0 ${
             isKeyboardOpen
-              ? 'sticky top-0 z-20 scale-95 origin-top max-h-none'
+              ? 'sticky top-0 z-20 scale-90 origin-top max-h-none'
               : showGamesOverlay
               ? 'max-h-[34dvh]'
               : 'max-h-[50dvh]'
@@ -1451,7 +1509,7 @@ export const RoomPage: React.FC = () => {
               key={rIdx}
               className={`${
                 row.cols === 5
-                  ? 'grid grid-cols-5 gap-2'
+                  ? 'grid grid-cols-5 gap-1.5 px-2'
                   : row.cols === 4
                   ? 'grid grid-cols-4 gap-2 sm:gap-3 max-w-md mx-auto'
                   : row.cols === 2

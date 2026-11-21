@@ -323,7 +323,7 @@ export const WalletPage: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-32 space-y-6 overflow-y-auto touch-pan-y">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-5 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">

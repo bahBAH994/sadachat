@@ -233,7 +233,7 @@ export const AgencyPage: React.FC = () => {
 
   if (loading || !data) {
     return (
-      <div className="min-h-screen bg-[#F5F6FA] overflow-y-auto touch-pan-y pb-32 pt-10 px-4 text-center text-sm font-bold text-slate-600">
+      <div className="min-h-full bg-[#F5F6FA] pt-10 px-4 text-center text-sm font-bold text-slate-600">
         جارٍ تحميل منظومة الوكالات والمضيفين...
       </div>
     );
@@ -256,7 +256,7 @@ export const AgencyPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-32 overflow-y-auto touch-pan-y">
+    <div className="min-h-full bg-[#F5F6FA]">
       <div className="max-w-5xl mx-auto p-4 space-y-3">
         {/* Crisp Dark Royal Top Banner */}
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#17253D] to-[#064E3B] p-5 sm:p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">

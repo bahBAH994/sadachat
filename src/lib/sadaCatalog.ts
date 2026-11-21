@@ -15,19 +15,14 @@ import type {
 import { safeGetItem, safeSetItem } from './safeStorage';
 
 export const SUPER_ADMIN_EMAIL = 'bahaa.f36@gmail.com';
-export const SUPER_ADMIN_EMAILS = ['bahaa.f36@gmail.com', 'bahaafrge@gmail.com'];
+export const SUPER_ADMIN_EMAILS = [SUPER_ADMIN_EMAIL];
 
 export function isSuperAdminUser(
   user: Pick<User, 'email' | 'role'> | null | undefined
 ): boolean {
   if (!user) return false;
   const email = String(user.email || '').trim().toLowerCase();
-  const role = String(user.role || '').trim().toLowerCase();
-  return (
-    SUPER_ADMIN_EMAILS.includes(email) ||
-    email.startsWith('bahaa') ||
-    role === 'admin'
-  );
+  return SUPER_ADMIN_EMAILS.includes(email);
 }
 
 export const ADMIN_USDT_TRC20_ADDRESS = 'TFXPytN94bSAUzD893hjpSwp6DGWqGkGSa';
@@ -38,7 +33,7 @@ export const MIN_WITHDRAW_USDT = 5;
 export const PM_MESSAGE_COST = 50;
 export const PM_REPLY_DIAMONDS = 38;
 export const LUCKY_WHEEL_COST = 200;
-export const INITIAL_APP_PRIZE_POOL_COINS = 250000;
+export const INITIAL_APP_PRIZE_POOL_COINS = 0;
 
 export const ARAB_COUNTRIES: Array<{ code: string; label: string; flag: string }> = [
   { code: 'SA', label: 'السعودية', flag: '🇸🇦' },
@@ -1144,116 +1139,7 @@ export const LUCKY_WHEEL_SEGMENTS: LuckyWheelSegment[] = [
   },
 ];
 
-export const CULTURAL_QUESTIONS: CulturalQuestionItem[] = [
-  {
-    id: 'cq_1',
-    category: 'الأدب والشعر العربي',
-    question: 'من الشاعر العربي الذي لُقّب بـ "شاعر النيل"؟',
-    options: ['أحمد شوقي', 'حافظ إبراهيم', 'المتنبي', 'أبو تمام'],
-    correctIndex: 1,
-    xpReward: 140,
-    coinsReward: 250,
-  },
-  {
-    id: 'cq_2',
-    category: 'التاريخ والحضارة',
-    question: 'في أي مدينة أُسّست جامعة القرويين، أقدم جامعة مستمرة في العالم؟',
-    options: ['قرطبة', 'القاهرة', 'فاس', 'بغداد'],
-    correctIndex: 2,
-    xpReward: 140,
-    coinsReward: 250,
-  },
-  {
-    id: 'cq_3',
-    category: 'اللغة والبلاغة',
-    question: 'ما اسم المعجم اللغوي الشهير الذي ألّفه ابن منظور؟',
-    options: ['لسان العرب', 'تاج العروس', 'الصحاح', 'المحيط'],
-    correctIndex: 0,
-    xpReward: 130,
-    coinsReward: 220,
-  },
-  {
-    id: 'cq_4',
-    category: 'العلوم الإسلامية والعربية',
-    question: 'من العالم العربي الذي يُعد مؤسس علم البصريات الحديث ومؤلف كتاب "المناظر"؟',
-    options: ['جابر بن حيان', 'الخوارزمي', 'الحسن بن الهيثم', 'ابن سينا'],
-    correctIndex: 2,
-    xpReward: 150,
-    coinsReward: 300,
-  },
-  {
-    id: 'cq_5',
-    category: 'الشعر الجاهلي',
-    question: 'كم عدد المعلقات السبع المشهورة في الشعر الجاهلي على الأشهر؟',
-    options: ['خمس معلقات', 'سبع معلقات', 'تسع معلقات', 'إحدى عشرة معلقة'],
-    correctIndex: 1,
-    xpReward: 120,
-    coinsReward: 200,
-  },
-  {
-    id: 'cq_6',
-    category: 'الجغرافيا العربية',
-    question: 'ما المضيق البحري الذي يربط بين البحر الأحمر وخليج عدن؟',
-    options: ['مضيق هرمز', 'مضيق جبل طارق', 'مضيق باب المندب', 'قناة السويس'],
-    correctIndex: 2,
-    xpReward: 130,
-    coinsReward: 220,
-  },
-  {
-    id: 'cq_7',
-    category: 'الأدب والتراث',
-    question: 'من مؤلف كتاب "مقدمة ابن خلدون" الذي أسّس علم الاجتماع؟',
-    options: ['عبد الرحمن بن خلدون', 'أبو حامد الغزالي', 'ابن رشد', 'المسعودي'],
-    correctIndex: 0,
-    xpReward: 120,
-    coinsReward: 200,
-  },
-  {
-    id: 'cq_8',
-    category: 'الفنون والموسيقى',
-    question: 'ما المقام الموسيقي العربي المشهور بطابعه الروحاني والدافئ في الموشحات؟',
-    options: ['مقام الحجاز', 'مقام الجاز', 'مقام البلوز', 'مقام السوبرانو'],
-    correctIndex: 0,
-    xpReward: 140,
-    coinsReward: 250,
-  },
-  {
-    id: 'cq_9',
-    category: 'التاريخ والأندلس',
-    question: 'ما القصر الأندلسي الشهير في غرناطة الذي يُعد تحفة العمارة الإسلامية؟',
-    options: ['قصر الحمراء', 'قصر الشوق', 'قصر المصمك', 'قصر العظم'],
-    correctIndex: 0,
-    xpReward: 130,
-    coinsReward: 220,
-  },
-  {
-    id: 'cq_10',
-    category: 'العلوم والرياضيات',
-    question: 'من العالم المسلم الذي استمدت منه كلمة "الخوارزمية" في علوم الحاسوب؟',
-    options: ['البيروني', 'محمد بن موسى الخوارزمي', 'عمر الخيام', 'الكندي'],
-    correctIndex: 1,
-    xpReward: 150,
-    coinsReward: 300,
-  },
-  {
-    id: 'cq_11',
-    category: 'الشعر الفصيح',
-    question: 'قائل البيت الشهير: "على قدر أهل العزم تأتي العزائم" هو:',
-    options: ['أبو الطيب المتنبي', 'البحتري', 'امرؤ القيس', 'نزار قباني'],
-    correctIndex: 0,
-    xpReward: 140,
-    coinsReward: 250,
-  },
-  {
-    id: 'cq_12',
-    category: 'التراث العربي',
-    question: 'بماذا تُعرف مدينة البتراء الأثرية في الأردن؟',
-    options: ['المدينة البيضاء', 'المدينة الوردية', 'مدينة النخيل', 'مدينة اللؤلؤ'],
-    correctIndex: 1,
-    xpReward: 130,
-    coinsReward: 220,
-  },
-];
+export const CULTURAL_QUESTIONS: CulturalQuestionItem[] = [];
 
 export function createDefaultPlatformSettings(): PlatformSettings {
   const defaultWeights = [20, 14, 16, 16, 10, 8, 11, 5];

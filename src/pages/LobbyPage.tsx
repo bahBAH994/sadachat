@@ -619,7 +619,7 @@ export const LobbyPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-32 overflow-y-auto touch-pan-y">
+    <div className="min-h-full bg-[#F5F6FA]">
       {/* Top App Header matching screenshot */}
       <header className="sticky top-0 z-30 bg-white/95 border-b border-slate-100">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
@@ -924,7 +924,7 @@ export const LobbyPage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => navigate('/competitions?tab=voice')}
+            onClick={() => navigate('/competitions')}
             className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-sky-300 transition shadow-sm"
           >
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white shadow-sm">
@@ -932,9 +932,9 @@ export const LobbyPage: React.FC = () => {
             </div>
             <div>
               <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">
-                مسابقة صدى الكبرى
+                المسابقات الثقافية
               </span>
-              <span className="block text-[10px] text-slate-400 font-semibold">التفاصيل والجوائز</span>
+              <span className="block text-[10px] text-slate-400 font-semibold">تحديات ودولاب الدعوات</span>
             </div>
           </button>
         </section>

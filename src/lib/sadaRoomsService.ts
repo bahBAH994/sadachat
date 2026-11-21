@@ -372,6 +372,29 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
   };
 }
 
+export async function canClearRoomChatInSupabase(roomId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('sada_can_clear_room_chat', {
+    p_room_id: roomId,
+  });
+  if (error) {
+    throw new Error(`تعذّر التحقق من صلاحية مسح الدردشة: ${error.message}`);
+  }
+  return data === true;
+}
+
+export async function clearRoomChatInSupabase(roomId: string): Promise<RoomMessage> {
+  const { data, error } = await supabase.rpc('sada_clear_room_chat', {
+    p_room_id: roomId,
+  });
+  if (error) {
+    throw new Error(`تعذّر مسح دردشة الغرفة: ${error.message}`);
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('لم تُرجع قاعدة البيانات إشعار مسح الدردشة.');
+  }
+  return rowToRoomMessage(data as Record<string, unknown>);
+}
+
 export async function joinRoomInSupabase(
   roomId: string,
   user: User

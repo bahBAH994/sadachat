@@ -59,6 +59,7 @@ import {
   rejectUsdtDepositInSupabase,
   rejectUsdtWithdrawalInSupabase,
   reviewHostJoinApplicationInSupabase,
+  resetApplicationDataInSupabase,
   savePlatformSettingsInSupabase,
   sendGlobalAdminAnnouncementInSupabase,
   togglePinRoomInSupabase,
@@ -131,6 +132,8 @@ export const AdminPage: React.FC = () => {
   const [voiceFilter, setVoiceFilter] = useState<'pending' | 'all'>('pending');
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [previewProof, setPreviewProof] = useState<string | null>(null);
+  const [resetPhrase, setResetPhrase] = useState('');
+  const [resettingApplication, setResettingApplication] = useState(false);
   const adminScrollRef = useRef<HTMLDivElement | null>(null);
   const navScrollRef = useRef<HTMLElement | null>(null);
   const loadingOverviewRef = useRef(false);
@@ -232,6 +235,47 @@ export const AdminPage: React.FC = () => {
       type: 'err',
       text: err instanceof Error ? err.message : fallback,
     });
+
+  const handleApplicationReset = async () => {
+    const confirmationPhrase = 'تصفير شامل للتطبيق';
+    if (resetPhrase.trim() !== confirmationPhrase) {
+      showErr(new Error(`اكتب «${confirmationPhrase}» لتأكيد العملية.`), '');
+      return;
+    }
+    if (
+      !window.confirm(
+        'تحذير نهائي: سيُحذف كل مستخدمي وبيانات التطبيق من Supabase مع الإبقاء على حساب الإدارة فقط. لا يمكن التراجع عن ذلك.'
+      )
+    ) {
+      return;
+    }
+
+    setResettingApplication(true);
+    setNotice(null);
+    try {
+      await resetApplicationDataInSupabase();
+    } catch (err) {
+      showErr(err, 'تعذّر تصفير بيانات التطبيق.');
+      setResettingApplication(false);
+      return;
+    }
+
+    try {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    } catch {
+      showErr(
+        new Error('تم تصفير Supabase، لكن تعذّر مسح التخزين المحلي لهذا المتصفح.'),
+        ''
+      );
+      setResettingApplication(false);
+      return;
+    }
+
+    window.location.assign(
+      `${window.location.origin}${window.location.pathname}#/login`
+    );
+  };
 
   // --- USERS & DEVICES ---
   const handleCoinsAdjust = async (targetId: string, delta: number) => {
@@ -819,46 +863,29 @@ export const AdminPage: React.FC = () => {
 
     const stepY = 120;
     const stepX = 120;
-    const scroller = adminScrollRef.current;
-    const mainScroller = scroller?.closest('main') as HTMLElement | null;
+    const mainScroller = adminScrollRef.current?.closest('main') as HTMLElement | null;
 
     if (e.key === 'ArrowDown' || e.key === 'PageDown') {
       const amount = e.key === 'PageDown' ? 380 : stepY;
-      if (mainScroller && mainScroller.scrollHeight > mainScroller.clientHeight) {
+      if (mainScroller) {
         mainScroller.scrollBy({ top: amount, behavior: 'smooth' });
       }
-      if (scroller && scroller.scrollHeight > scroller.clientHeight) {
-        scroller.scrollBy({ top: amount, behavior: 'smooth' });
-      }
-      window.scrollBy({ top: amount, behavior: 'smooth' });
       e.preventDefault();
     } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
       const amount = e.key === 'PageUp' ? -380 : -stepY;
-      if (mainScroller && mainScroller.scrollHeight > mainScroller.clientHeight) {
+      if (mainScroller) {
         mainScroller.scrollBy({ top: amount, behavior: 'smooth' });
       }
-      if (scroller && scroller.scrollHeight > scroller.clientHeight) {
-        scroller.scrollBy({ top: amount, behavior: 'smooth' });
-      }
-      window.scrollBy({ top: amount, behavior: 'smooth' });
       e.preventDefault();
     } else if (e.key === 'ArrowRight') {
-      if (mainScroller && mainScroller.scrollWidth > mainScroller.clientWidth) {
-        mainScroller.scrollBy({ left: stepX, behavior: 'smooth' });
-      }
       if (navScrollRef.current && navScrollRef.current.scrollWidth > navScrollRef.current.clientWidth) {
         navScrollRef.current.scrollBy({ left: stepX, behavior: 'smooth' });
       }
-      window.scrollBy({ left: stepX, behavior: 'smooth' });
       e.preventDefault();
     } else if (e.key === 'ArrowLeft') {
-      if (mainScroller && mainScroller.scrollWidth > mainScroller.clientWidth) {
-        mainScroller.scrollBy({ left: -stepX, behavior: 'smooth' });
-      }
       if (navScrollRef.current && navScrollRef.current.scrollWidth > navScrollRef.current.clientWidth) {
         navScrollRef.current.scrollBy({ left: -stepX, behavior: 'smooth' });
       }
-      window.scrollBy({ left: -stepX, behavior: 'smooth' });
       e.preventDefault();
     }
   };
@@ -868,7 +895,7 @@ export const AdminPage: React.FC = () => {
       ref={adminScrollRef}
       tabIndex={0}
       onKeyDown={handleAdminKeyDown}
-      className="w-full min-h-screen overflow-y-auto touch-pan-y pb-32 focus:outline-none"
+      className="w-full min-h-full focus:outline-none"
     >
       {/* Top Sticky Responsive Header & Organized Tabs */}
       <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-[#070913]/92 backdrop-blur-md">
@@ -1220,6 +1247,45 @@ export const AdminPage: React.FC = () => {
                     </div>
                   )}
                 </div>
+
+                <section className="rounded-3xl border border-rose-500/45 bg-rose-950/25 p-5 sm:p-6 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <ShieldAlert className="w-5 h-5 mt-0.5 shrink-0 text-rose-300" />
+                    <div className="space-y-1">
+                      <h2 className="text-base font-extrabold text-rose-200">
+                        منطقة التصفير الشامل
+                      </h2>
+                      <p className="text-xs leading-relaxed text-rose-100/80">
+                        يحذف الحسابات غير الإدارية وكل الغرف والرسائل والوكالات
+                        والمعاملات والمسابقات وبيانات المستخدمين من Supabase.
+                        يبقى حساب الإدارة وكتالوج الهدايا الأساسي فقط. ستُمسح
+                        بيانات التخزين المحلي وسيُطلب تسجيل الدخول مجدداً.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-bold text-rose-100">
+                      اكتب «تصفير شامل للتطبيق» لتفعيل الزر
+                    </span>
+                    <input
+                      value={resetPhrase}
+                      onChange={(event) => setResetPhrase(event.target.value)}
+                      autoComplete="off"
+                      className="w-full min-h-[44px] rounded-xl border border-rose-400/40 bg-black/35 px-3 text-sm text-white focus:outline-none focus:border-rose-300"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={
+                      resettingApplication ||
+                      resetPhrase.trim() !== 'تصفير شامل للتطبيق'
+                    }
+                    onClick={() => void handleApplicationReset()}
+                    className="min-h-[46px] rounded-xl bg-rose-700 px-5 text-sm font-extrabold text-white shadow-lg transition hover:bg-rose-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {resettingApplication ? 'جارٍ تصفير البيانات...' : 'تصفير شامل للتطبيق'}
+                  </button>
+                </section>
               </section>
             )}
 

@@ -10,7 +10,6 @@ import {
   COINS_PER_USDT_WITHDRAW,
   computeLevelFromXp,
   createDefaultPlatformSettings,
-  CULTURAL_QUESTIONS,
   DIAMONDS_PER_USDT,
   FRAME_CATALOG,
   getDb,
@@ -1193,10 +1192,10 @@ async function startServer() {
     if (!auth) return res.status(401).json({ error: 'غير مصرح.' });
     const db = getDb();
 
-    const bank =
-      db.culturalQuestions && db.culturalQuestions.length > 0
-        ? db.culturalQuestions
-        : CULTURAL_QUESTIONS;
+    const bank = db.culturalQuestions || [];
+    if (bank.length === 0) {
+      return res.status(404).json({ error: 'لا توجد أسئلة ثقافية منشورة حالياً.' });
+    }
     const q = bank[Math.floor(Math.random() * bank.length)];
     const roundId = `quiz_${crypto.randomUUID().slice(0, 10)}`;
     const expiresAt = Date.now() + 8000;
@@ -3163,7 +3162,6 @@ async function startServer() {
       ownerAvatar: a.ownerAvatar,
       commissionRate: a.commissionRate,
       hostCount: a.hostIds.length,
-      sampleCode: a.id === 'agency_royal_divan' ? a.code : undefined,
     }));
 
     return res.json({

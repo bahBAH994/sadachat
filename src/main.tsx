@@ -30,7 +30,7 @@ class RootErrorBoundary extends Component<{ children: React.ReactNode }, RootErr
       return (
         <div
           dir="rtl"
-          className="min-h-screen w-full bg-[#070913] text-white flex flex-col items-center justify-center p-6 text-center"
+          className="h-full w-full bg-[#070913] text-white flex flex-col items-center justify-center p-6 text-center"
         >
           <div className="max-w-md w-full rounded-3xl border border-[#D4AF37]/40 bg-[#10162B] p-6 space-y-4 shadow-2xl">
             <h1 className="text-xl font-extrabold text-[#FCE9A6]">صَدَى - SADA</h1>

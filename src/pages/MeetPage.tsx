@@ -250,7 +250,7 @@ export const MeetPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-32 overflow-y-auto touch-pan-y">
+    <div className="min-h-full bg-[#F5F6FA]">
       <div className="max-w-3xl mx-auto px-4 pt-4 space-y-5">
         {/* Fast Search Bar by Name or Numeric ID */}
         <section className="light-card rounded-2xl p-3 space-y-2.5">

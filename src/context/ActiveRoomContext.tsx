@@ -22,6 +22,7 @@ import {
 } from '../lib/sadaCatalog';
 import {
   adminControlRoomInSupabase,
+  clearRoomChatInSupabase,
   canManageRoom,
   clearRoomContestInSupabase,
   createEmptyRoomExtras,
@@ -228,6 +229,7 @@ interface ActiveRoomContextValue {
       | { type: 'toggle_deputy'; targetUserId: string; targetName?: string }
       | { type: 'toggle_moderator'; targetUserId: string; targetName?: string }
   ) => Promise<void>;
+  clearRoomChat: () => Promise<void>;
   playUploadedMusic: (trackName: string, dataUrl: string) => Promise<void>;
   toggleMusicPlayPause: () => Promise<void>;
   stopRoomMusic: () => Promise<void>;
@@ -765,6 +767,25 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 if (msgs.some((m) => m.id === mapped.id)) return prev;
                 return { ...prev, messages: [...msgs, mapped].slice(-80) };
               });
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'DELETE',
+              schema: 'public',
+              table: 'sada_room_messages',
+            },
+            (payload) => {
+              const deleted = payload.old as Record<string, unknown> | undefined;
+              if (!deleted || String(deleted.room_id || '') !== roomId) return;
+              const deletedId = String(deleted.id || '');
+              if (!deletedId) return;
+              setRoom((prev) =>
+                prev
+                  ? { ...prev, messages: prev.messages.filter((message) => message.id !== deletedId) }
+                  : prev
+              );
             }
           )
           .on(
@@ -1332,6 +1353,14 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     [room, user]
   );
 
+  const clearRoomChat = useCallback(async () => {
+    if (!room || !user) {
+      throw new Error('يجب دخول الغرفة قبل مسح الدردشة.');
+    }
+    const notice = await clearRoomChatInSupabase(room.id);
+    setRoom((prev) => (prev ? { ...prev, messages: [notice] } : prev));
+  }, [room, user]);
+
   const sendGift = useCallback(
     async (giftId: string, targetUserId?: string) => {
       if (!room || !user) return;
@@ -1812,6 +1841,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         updateRoomFromWheel,
         updateSettings,
         runAdminAction,
+        clearRoomChat,
         playUploadedMusic,
         toggleMusicPlayPause,
         stopRoomMusic,

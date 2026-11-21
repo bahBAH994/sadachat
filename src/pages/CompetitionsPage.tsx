@@ -2,45 +2,31 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  Award,
   Brain,
   Check,
-  Coins,
   Copy,
   Crown,
-  Gem,
   Gift,
   Lock,
-  Plus,
   Sparkles,
   Timer,
-  Trophy,
-  Vote,
-  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useMiniProfile } from '../context/MiniProfileContext';
-import { resolveAsset } from '../lib/assets';
 import {
   answerCulturalQuizInSupabase,
-  getCompetitionsFromSupabase,
   getReferralWheelOverviewFromSupabase,
-  joinCompetitionInSupabase,
   spinReferralWheelInSupabase,
   startCulturalQuizInSupabase,
-  voteCompetitionInSupabase,
 } from '../lib/sadaSocialService';
 import { supabase } from '../lib/supabase';
 import type {
-  Competition,
   CulturalQuizResult,
   CulturalQuizRound,
   ReferralWheelSegment,
 } from '../types';
-import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import { Fluent3DAsset } from '../components/Fluent3DAsset';
 
-type CompTab = 'cultural' | 'referral' | 'voice';
+type CompTab = 'cultural' | 'referral';
 
 const WHEEL_COLORS = [
   '#1A2242',
@@ -65,30 +51,23 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
   initialTab = 'cultural',
 }) => {
   const { user, updateLocalUser } = useAuth();
-  const { openMiniProfile } = useMiniProfile();
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const resolvedInitialTab: CompTab =
-    !embedded && (tabParam === 'referral' || tabParam === 'voice' || tabParam === 'cultural')
+    !embedded && (tabParam === 'referral' || tabParam === 'cultural')
       ? tabParam
       : initialTab;
   const [activeTab, setActiveTab] = useState<CompTab>(resolvedInitialTab);
 
   useEffect(() => {
-    if (!embedded && (tabParam === 'referral' || tabParam === 'voice' || tabParam === 'cultural')) {
+    if (!embedded && (tabParam === 'referral' || tabParam === 'cultural')) {
       setActiveTab(tabParam);
     }
   }, [embedded, tabParam]);
 
-  // Voice competitions state
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
   );
-  const [joinTarget, setJoinTarget] = useState<Competition | null>(null);
-  const [performanceTitle, setPerformanceTitle] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   // Cultural Quiz Championship state (8-second anti-cheat timer)
   const [quizRound, setQuizRound] = useState<CulturalQuizRound | null>(null);
@@ -110,15 +89,6 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
   const [refWinBanner, setRefWinBanner] = useState<ReferralWheelSegment | null>(null);
   const [copiedRef, setCopiedRef] = useState<boolean>(false);
 
-  const loadCompetitions = useCallback(async () => {
-    try {
-      const list = await getCompetitionsFromSupabase();
-      setCompetitions(list);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   const loadReferralOverview = useCallback(async () => {
     if (!user) return;
     try {
@@ -133,18 +103,10 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
   }, [user]);
 
   useEffect(() => {
-    void loadCompetitions();
     void loadReferralOverview();
 
     const channel = supabase
       .channel(`sada-competitions-${user?.id || 'guest'}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'sada_competitions' },
-        () => {
-          void loadCompetitions();
-        }
-      )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'sada_platform_state' },
@@ -157,7 +119,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [loadCompetitions, loadReferralOverview, user?.id]);
+  }, [loadReferralOverview, user?.id]);
 
   // 8-second live countdown & automatic anti-cheat lock
   useEffect(() => {
@@ -263,63 +225,6 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
     setTimeout(() => setCopiedRef(false), 2000);
   };
 
-  const handleVote = async (
-    compId: string,
-    contestantId: string,
-    boost: boolean
-  ) => {
-    if (!user) return;
-    setFeedback(null);
-    try {
-      const data = await voteCompetitionInSupabase(user, compId, contestantId, boost);
-      updateLocalUser(data.user);
-      setCompetitions((prev) =>
-        prev.map((c) => (c.id === data.competition.id ? data.competition : c))
-      );
-      setFeedback({
-        type: 'ok',
-        text: boost
-          ? 'تم إرسال التصويت الملكي بنجاح (+10 أصوات)!'
-          : 'تم احتساب صوتك المجاني بنجاح!',
-      });
-    } catch (err) {
-      setFeedback({
-        type: 'err',
-        text: err instanceof Error ? err.message : 'تعذّر إرسال التصويت.',
-      });
-    }
-  };
-
-  const handleJoinCompetition = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !joinTarget) return;
-    setSubmitting(true);
-    setFeedback(null);
-    try {
-      const updated = await joinCompetitionInSupabase(
-        user,
-        joinTarget.id,
-        performanceTitle
-      );
-      setCompetitions((prev) =>
-        prev.map((c) => (c.id === updated.id ? updated : c))
-      );
-      setJoinTarget(null);
-      setPerformanceTitle('');
-      setFeedback({
-        type: 'ok',
-        text: 'تم تسجيلك كمتسابق في البطولة! يمكنك الآن استقبال تصويت الجمهور.',
-      });
-    } catch (err) {
-      setFeedback({
-        type: 'err',
-        text: err instanceof Error ? err.message : 'تعذّر التسجيل.',
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const xpNextLevel = Math.pow(user?.level || 1, 2) * 120;
   const xpProgress = Math.min(
     100,
@@ -374,7 +279,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
       className={
         embedded
           ? 'space-y-4 sm:space-y-5'
-          : 'min-h-screen max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-32 space-y-6 overflow-y-auto touch-pan-y'
+          : 'w-full max-w-7xl mx-auto px-4 sm:px-6 pt-5 space-y-6'
       }
     >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -384,7 +289,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
               ساحة المسابقات والبطولات الثقافية
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1">
-              تحديات ثقافية حية بمؤقت 8 ثوانٍ لرفع مستواك (XP)، دولاب حظ الدعوات، والبطولات الصوتية
+              تحديات ثقافية حية بمؤقت 8 ثوانٍ لرفع مستواك (XP)، ودولاب حظ الدعوات
             </p>
           </div>
         )}
@@ -414,18 +319,6 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
           >
             <Gift className="w-4 h-4" />
             <span>دولاب حظ الدعوات ({referralSpins})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('voice')}
-            className={`min-h-[40px] rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'voice'
-                ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
-                : 'text-slate-300 hover:text-white'
-            }`}
-          >
-            <Trophy className="w-4 h-4" />
-            <span>البطولات الصوتية</span>
           </button>
         </div>
       </div>
@@ -911,251 +804,6 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
         </div>
       )}
 
-      {/* TAB 3: LIVE VOICE COMPETITIONS */}
-      {activeTab === 'voice' && (
-        <>
-          {loading ? (
-            <div className="space-y-4">
-              {[1, 2].map((n) => (
-                <div key={n} className="royal-glass rounded-3xl h-72 animate-pulse opacity-60" />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {competitions.map((comp) => {
-                const sorted = [...comp.contestants].sort(
-                  (a, b) => b.votes * 100 + b.giftScore - (a.votes * 100 + a.giftScore)
-                );
-                const isJoined = comp.contestants.some((c) => c.userId === user?.id);
-
-                return (
-                  <motion.section
-                    key={comp.id}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="royal-glass rounded-3xl overflow-hidden"
-                  >
-                    <div className="relative h-44 sm:h-52">
-                      <img
-                        src={resolveAsset(comp.bannerImage)}
-                        alt={comp.title}
-                        loading="lazy"
-                        decoding="async"
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
-                      />
-                      <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-[#0B0F20] via-[#0B0F20]/70 to-transparent pointer-events-none" />
-                      <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-2 text-xs text-[#F3D37A] font-semibold">
-                            <span>{comp.category}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>{comp.status === 'live' ? 'مفتوحة للتصويت' : 'منتهية'}</span>
-                          </div>
-                          <h2 className="text-xl sm:text-2xl font-extrabold text-white mt-0.5">
-                            {comp.title}
-                          </h2>
-                          <p className="text-xs text-slate-300 mt-1">{comp.subtitle}</p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-                          <div className="royal-capsule rounded-xl px-3 py-2 flex items-center gap-2 text-xs font-mono-num">
-                            <Coins className="w-4 h-4 text-[#D4AF37]" />
-                            <span className="text-[#FCE9A6] font-bold">
-                              {comp.prizeCoins.toLocaleString('en-US')}
-                            </span>
-                            <span className="text-slate-600">|</span>
-                            <Gem className="w-4 h-4 text-sky-400" />
-                            <span className="text-sky-200 font-bold">
-                              {comp.prizeDiamonds.toLocaleString('en-US')}
-                            </span>
-                          </div>
-
-                          {comp.status === 'live' && !isJoined && (
-                            <button
-                              type="button"
-                              onClick={() => setJoinTarget(comp)}
-                              className="gold-btn min-h-[40px] rounded-xl px-4 py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Plus className="w-4 h-4" />
-                              <span>شارك كمتسابق</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-5 sm:p-6 space-y-3">
-                      {sorted.length === 0 ? (
-                        <p className="text-sm text-slate-400 text-center py-6">
-                          لم ينضم متسابقون بعد — كن أول المشاركين في هذه البطولة!
-                        </p>
-                      ) : (
-                        sorted.map((c, idx) => {
-                          const isWinner = comp.winnerId === c.userId;
-                          return (
-                            <div
-                              key={c.id}
-                              className={`rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border transition ${
-                                isWinner
-                                  ? 'bg-[#D4AF37]/15 border-[#F3D37A]/60'
-                                  : 'bg-[#070913]/65 border-[#D4AF37]/15'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <span
-                                  className={`w-8 h-8 rounded-xl flex items-center justify-center font-mono-num text-sm font-extrabold shrink-0 ${
-                                    idx === 0
-                                      ? 'bg-[#D4AF37] text-[#070913]'
-                                      : idx === 1
-                                      ? 'bg-slate-300 text-[#070913]'
-                                      : idx === 2
-                                      ? 'bg-amber-700 text-white'
-                                      : 'bg-white/5 text-slate-300'
-                                  }`}
-                                >
-                                  {idx + 1}
-                                </span>
-
-                                <AvatarWithFrame
-                                  src={c.avatarUrl}
-                                  alt={c.displayName}
-                                  size="md"
-                                  frameId={idx === 0 ? 'frame_imperial' : 'frame_obsidian'}
-                                  onClick={() =>
-                                    openMiniProfile(c.userId, {
-                                      displayName: c.displayName,
-                                      avatarUrl: c.avatarUrl,
-                                      level: c.level,
-                                    })
-                                  }
-                                />
-
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        openMiniProfile(c.userId, {
-                                          displayName: c.displayName,
-                                          avatarUrl: c.avatarUrl,
-                                          level: c.level,
-                                        })
-                                      }
-                                      className="text-sm font-bold text-white hover:text-[#FCE9A6] truncate cursor-pointer text-right"
-                                    >
-                                      {c.displayName}
-                                    </button>
-                                    {isWinner && (
-                                      <span className="inline-flex items-center gap-1 text-xs font-bold text-[#FCE9A6]">
-                                        <Crown className="w-3.5 h-3.5" />
-                                        بطل المسابقة
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-slate-400 truncate">
-                                    {c.performanceTitle} · Lv.{c.level}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                                <div className="text-left sm:text-right font-mono-num">
-                                  <div className="text-sm font-extrabold text-[#F3D37A]">
-                                    {c.votes.toLocaleString('en-US')} صوت
-                                  </div>
-                                  <div className="text-[11px] text-slate-400">
-                                    دعم: {c.giftScore.toLocaleString('en-US')}
-                                  </div>
-                                </div>
-
-                                {comp.status === 'live' && (
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleVote(comp.id, c.id, false)}
-                                      className="min-h-[40px] rounded-xl px-3 py-1.5 text-xs font-bold bg-white/5 hover:bg-white/10 border border-[#D4AF37]/30 text-white flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                                    >
-                                      <Vote className="w-3.5 h-3.5 text-[#D4AF37]" />
-                                      <span>تصويت</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleVote(comp.id, c.id, true)}
-                                      className="gold-btn min-h-[40px] rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                                      title="تصويت ملكي بـ 100 كوينز (+10 أصوات)"
-                                    >
-                                      <Sparkles className="w-3.5 h-3.5" />
-                                      <span>+10 (100)</span>
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </motion.section>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-
-      {joinTarget && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
-          onClick={() => setJoinTarget(null)}
-        >
-          <div
-            className="royal-glass w-full max-w-md rounded-3xl p-6 space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[#F3D37A]">
-                <Trophy className="w-5 h-5" />
-                <h3 className="text-lg font-extrabold">التسجيل في المسابقة</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setJoinTarget(null)}
-                className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full text-slate-400 hover:text-white cursor-pointer"
-                aria-label="إغلاق"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-xs text-slate-300">{joinTarget.title}</p>
-
-            <form onSubmit={handleJoinCompetition} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  عنوان مشاركتك / فقرتك الصوتية
-                </label>
-                <input
-                  type="text"
-                  required
-                  minLength={3}
-                  value={performanceTitle}
-                  onChange={(e) => setPerformanceTitle(e.target.value)}
-                  placeholder="مثال: قصيدة في مدح الأصالة"
-                  className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-3 text-sm text-white focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="gold-btn w-full min-h-[46px] rounded-xl py-2.5 text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-              >
-                <Award className="w-4 h-4" />
-                <span>{submitting ? 'جارٍ التسجيل...' : 'تأكيد المشاركة الآن'}</span>
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

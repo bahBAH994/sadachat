@@ -303,6 +303,222 @@ BEGIN
   END LOOP;
 END $$;
 
+DROP POLICY IF EXISTS "sada_full_access_sada_users" ON public.sada_users;
+DROP POLICY IF EXISTS "sada_users_read" ON public.sada_users;
+DROP POLICY IF EXISTS "sada_users_insert" ON public.sada_users;
+DROP POLICY IF EXISTS "sada_users_update" ON public.sada_users;
+DROP POLICY IF EXISTS "sada_users_admin_delete" ON public.sada_users;
+CREATE POLICY "sada_users_read" ON public.sada_users
+  FOR SELECT TO anon, authenticated, service_role USING (TRUE);
+CREATE POLICY "sada_users_insert" ON public.sada_users
+  FOR INSERT TO anon, authenticated, service_role WITH CHECK (TRUE);
+CREATE POLICY "sada_users_update" ON public.sada_users
+  FOR UPDATE TO anon, authenticated, service_role USING (TRUE) WITH CHECK (TRUE);
+CREATE POLICY "sada_users_admin_delete" ON public.sada_users
+  FOR DELETE TO authenticated
+  USING (lower(coalesce(auth.jwt() ->> 'email', '')) = 'bahaa.f36@gmail.com');
+
+DROP POLICY IF EXISTS "sada_full_access_sada_room_messages" ON public.sada_room_messages;
+DROP POLICY IF EXISTS "sada_room_messages_read" ON public.sada_room_messages;
+DROP POLICY IF EXISTS "sada_room_messages_insert" ON public.sada_room_messages;
+DROP POLICY IF EXISTS "sada_room_messages_update" ON public.sada_room_messages;
+DROP POLICY IF EXISTS "sada_room_messages_admin_delete" ON public.sada_room_messages;
+CREATE POLICY "sada_room_messages_read" ON public.sada_room_messages
+  FOR SELECT TO anon, authenticated, service_role USING (TRUE);
+CREATE POLICY "sada_room_messages_insert" ON public.sada_room_messages
+  FOR INSERT TO anon, authenticated, service_role WITH CHECK (TRUE);
+CREATE POLICY "sada_room_messages_update" ON public.sada_room_messages
+  FOR UPDATE TO anon, authenticated, service_role USING (TRUE) WITH CHECK (TRUE);
+CREATE POLICY "sada_room_messages_admin_delete" ON public.sada_room_messages
+  FOR DELETE TO authenticated
+  USING (lower(coalesce(auth.jwt() ->> 'email', '')) = 'bahaa.f36@gmail.com');
+
+ALTER TABLE public.sada_room_messages REPLICA IDENTITY FULL;
+
+CREATE OR REPLACE FUNCTION public.sada_can_clear_room_chat(p_room_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_email TEXT := lower(coalesce(auth.jwt() ->> 'email', ''));
+  caller_id TEXT;
+  room_host_id TEXT;
+  host_agency_id TEXT;
+  deputy_ids JSONB;
+BEGIN
+  IF caller_email = '' THEN
+    RETURN FALSE;
+  END IF;
+
+  SELECT id INTO caller_id
+  FROM public.sada_users
+  WHERE lower(email) = caller_email;
+  IF caller_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  SELECT host_id INTO room_host_id
+  FROM public.sada_rooms
+  WHERE id = p_room_id AND is_active = TRUE;
+  IF room_host_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  IF caller_id = room_host_id THEN
+    RETURN TRUE;
+  END IF;
+
+  SELECT settings -> 'roomConfigs' -> p_room_id -> 'deputyIds'
+  INTO deputy_ids
+  FROM public.sada_platform_state
+  WHERE id = 'global';
+  IF coalesce(deputy_ids, '[]'::jsonb) ? caller_id THEN
+    RETURN TRUE;
+  END IF;
+
+  SELECT agency_id INTO host_agency_id
+  FROM public.sada_users
+  WHERE id = room_host_id;
+  IF host_agency_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.sada_agencies
+    WHERE id = host_agency_id
+      AND (
+        owner_id = caller_id
+        OR coalesce(host_ids, '[]'::jsonb) ? caller_id
+      )
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_clear_room_chat(p_room_id TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_email TEXT := lower(coalesce(auth.jwt() ->> 'email', ''));
+  caller_id TEXT;
+  caller_name TEXT;
+  caller_level INTEGER;
+  notice public.sada_room_messages%ROWTYPE;
+BEGIN
+  IF NOT public.sada_can_clear_room_chat(p_room_id) THEN
+    RAISE EXCEPTION 'لا تملك صلاحية مسح دردشة هذه الغرفة.';
+  END IF;
+
+  SELECT id, display_name, level
+  INTO caller_id, caller_name, caller_level
+  FROM public.sada_users
+  WHERE lower(email) = caller_email;
+
+  DELETE FROM public.sada_room_messages
+  WHERE room_id = p_room_id;
+
+  INSERT INTO public.sada_room_messages (
+    id,
+    room_id,
+    user_id,
+    display_name,
+    level,
+    is_admin,
+    text,
+    type,
+    timestamp
+  )
+  VALUES (
+    'msg_' || replace(gen_random_uuid()::TEXT, '-', ''),
+    p_room_id,
+    caller_id,
+    caller_name,
+    caller_level,
+    FALSE,
+    'تم مسح الدردشة بواسطة الإدارة',
+    'system',
+    NOW()
+  )
+  RETURNING * INTO notice;
+
+  RETURN to_jsonb(notice);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_admin_reset_all_except_super_admin()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_email TEXT := lower(coalesce(auth.jwt() ->> 'email', ''));
+  admin_id TEXT;
+  app_user_ids TEXT[];
+BEGIN
+  IF caller_email <> 'bahaa.f36@gmail.com' THEN
+    RAISE EXCEPTION 'هذه العملية مخصصة لحساب الإدارة العليا فقط.';
+  END IF;
+
+  SELECT id INTO admin_id
+  FROM public.sada_users
+  WHERE lower(email) = 'bahaa.f36@gmail.com';
+  IF admin_id IS NULL THEN
+    RAISE EXCEPTION 'تعذّر العثور على حساب الإدارة المطلوب الإبقاء عليه.';
+  END IF;
+
+  SELECT coalesce(array_agg(id), ARRAY[]::TEXT[])
+  INTO app_user_ids
+  FROM public.sada_users
+  WHERE id <> admin_id;
+
+  DELETE FROM public.sada_private_messages;
+  DELETE FROM public.sada_room_messages;
+  DELETE FROM public.sada_sessions WHERE user_id <> admin_id;
+  DELETE FROM public.sada_device_locks WHERE bound_user_id <> admin_id;
+  DELETE FROM public.sada_security_logs;
+  DELETE FROM public.sada_transactions;
+  DELETE FROM public.sada_rooms;
+  DELETE FROM public.sada_agencies;
+  DELETE FROM public.sada_competitions;
+  DELETE FROM public.sada_cultural_questions;
+  DELETE FROM public.sada_usdt_deposits;
+  DELETE FROM public.sada_usdt_withdrawals;
+  DELETE FROM public.sada_female_voice_requests;
+  DELETE FROM public.sada_platform_state;
+  INSERT INTO public.sada_platform_state (
+    id,
+    app_prize_pool_coins,
+    settings,
+    quiz_sessions,
+    voted_keys,
+    ladder_sessions,
+    updated_at
+  )
+  VALUES ('global', 0, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, NOW());
+  DELETE FROM public.sada_gifts
+  WHERE id NOT SIMILAR TO 'gift_[0-9][0-9]'
+    AND id NOT SIMILAR TO 'lucky_[0-9][0-9]';
+  DELETE FROM public.sada_users WHERE id <> admin_id;
+  DELETE FROM auth.users
+  WHERE id::TEXT = ANY(app_user_ids)
+    AND lower(email) IS DISTINCT FROM 'bahaa.f36@gmail.com';
+
+  RETURN jsonb_build_object('status', 'reset', 'admin_id', admin_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.sada_can_clear_room_chat(TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_clear_room_chat(TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_admin_reset_all_except_super_admin() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.sada_can_clear_room_chat(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_clear_room_chat(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_admin_reset_all_except_super_admin() TO authenticated;
+
 -- ============================================================================
 -- تفعيل المزامنة الفورية (Supabase Realtime) للجداول التفاعلية
 -- ============================================================================

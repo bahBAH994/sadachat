@@ -954,7 +954,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
           ? 'space-y-2.5'
           : embedded
           ? 'space-y-4 sm:space-y-5'
-          : 'min-h-screen max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-32 space-y-6 overflow-y-auto touch-pan-y'
+          : 'w-full max-w-7xl mx-auto px-4 sm:px-6 pt-5 space-y-6'
       }
     >
       {/* Header + Live Wallet Sync Strip (Hidden in compact 45% room mode) */}

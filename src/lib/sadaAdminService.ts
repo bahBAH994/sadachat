@@ -76,6 +76,21 @@ export interface AdminOverviewPayload {
   };
 }
 
+export async function resetApplicationDataInSupabase(): Promise<void> {
+  const { data, error } = await supabase.rpc(
+    'sada_admin_reset_all_except_super_admin'
+  );
+  if (error) {
+    throw new Error(`تعذّر تصفير بيانات التطبيق في Supabase: ${error.message}`);
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('لم تُرجع قاعدة البيانات تأكيداً لعملية التصفير.');
+  }
+  if ((data as Record<string, unknown>).status !== 'reset') {
+    throw new Error('لم تؤكد قاعدة البيانات اكتمال عملية التصفير.');
+  }
+}
+
 export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPayload> {
   const [
     usersRes,

@@ -456,7 +456,7 @@ export const ProfilePage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA] pb-32 overflow-y-auto touch-pan-y">
+    <div className="min-h-full bg-[#F5F6FA]">
       <input
         ref={fileInputRef}
         type="file"
