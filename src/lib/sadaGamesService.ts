@@ -33,6 +33,38 @@ export type RouletteBetType =
   | 'zero'
   | 'straight';
 
+export type RoomGameKind = 'roulette' | 'dice';
+export type RoomStandardDiceGameId = 'double_dice' | 'prediction_dice' | 'speed_dice';
+export type RoomGameBetSelection =
+  | { betType: RouletteBetType; targetNumber?: number }
+  | { gameId: RoomStandardDiceGameId; pick: string };
+
+export interface RoomGameRoundBet {
+  userId: string;
+  displayName: string;
+  amount: number;
+  selection: Record<string, string | number>;
+  isWinner: boolean;
+  multiplier: number;
+  payout: number;
+}
+
+export type RoomGameRoundOutcome =
+  | { number: number; color: 'red' | 'black' | 'green'; wheelIndex: number }
+  | { dice: number[]; sum: number };
+
+export interface RoomGameRoundState {
+  roundId: string;
+  roundNumber: number;
+  startedAt: string;
+  bettingEndsAt: string;
+  roundEndsAt: string;
+  serverNow: string;
+  phase: 'betting' | 'revealing';
+  result: RoomGameRoundOutcome | null;
+  bets: RoomGameRoundBet[];
+}
+
 export interface LightningStrike {
   row: number;
   col: number;
@@ -560,6 +592,135 @@ async function fetchFreshUser(userId: string): Promise<User> {
     .maybeSingle();
   if (error || !data) throw new Error('تعذّر تحميل رصيد العضو من Supabase.');
   return rowToUser(data);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseRoomGameRoundState(value: unknown): RoomGameRoundState {
+  if (!isRecord(value) || !Array.isArray(value.bets)) {
+    throw new Error('استجابة الجولة المشتركة غير صالحة.');
+  }
+
+  const isFiniteNumber = (item: unknown): item is number =>
+    typeof item === 'number' && Number.isFinite(item);
+  const resultValue = value.result;
+  let result: RoomGameRoundOutcome | null = null;
+  if (resultValue !== null) {
+    if (
+      isRecord(resultValue) &&
+      isFiniteNumber(resultValue.number) &&
+      (resultValue.color === 'red' || resultValue.color === 'black' || resultValue.color === 'green') &&
+      isFiniteNumber(resultValue.wheel_index)
+    ) {
+      result = {
+        number: resultValue.number,
+        color: resultValue.color,
+        wheelIndex: resultValue.wheel_index,
+      };
+    } else if (
+      isRecord(resultValue) &&
+      Array.isArray(resultValue.dice) &&
+      resultValue.dice.every(isFiniteNumber) &&
+      isFiniteNumber(resultValue.sum)
+    ) {
+      result = { dice: resultValue.dice, sum: resultValue.sum };
+    } else {
+      throw new Error('نتيجة الجولة المشتركة غير صالحة.');
+    }
+  }
+
+  const bets = value.bets.map((betValue): RoomGameRoundBet => {
+    if (!isRecord(betValue) || !isRecord(betValue.selection)) {
+      throw new Error('بيانات رهان الجولة غير صالحة.');
+    }
+    const selection: Record<string, string | number> = {};
+    for (const [key, item] of Object.entries(betValue.selection)) {
+      if (typeof item === 'string' || isFiniteNumber(item)) selection[key] = item;
+    }
+    if (
+      typeof betValue.user_id !== 'string' ||
+      typeof betValue.display_name !== 'string' ||
+      !isFiniteNumber(betValue.amount) ||
+      typeof betValue.is_winner !== 'boolean' ||
+      !isFiniteNumber(betValue.multiplier) ||
+      !isFiniteNumber(betValue.payout)
+    ) {
+      throw new Error('بيانات رهان الجولة غير صالحة.');
+    }
+    return {
+      userId: betValue.user_id,
+      displayName: betValue.display_name,
+      amount: betValue.amount,
+      selection,
+      isWinner: betValue.is_winner,
+      multiplier: betValue.multiplier,
+      payout: betValue.payout,
+    };
+  });
+
+  if (
+    typeof value.round_id !== 'string' ||
+    !isFiniteNumber(value.round_number) ||
+    typeof value.started_at !== 'string' ||
+    typeof value.betting_ends_at !== 'string' ||
+    typeof value.round_ends_at !== 'string' ||
+    typeof value.server_now !== 'string' ||
+    (value.phase !== 'betting' && value.phase !== 'revealing')
+  ) {
+    throw new Error('بيانات الجولة المشتركة غير مكتملة.');
+  }
+
+  return {
+    roundId: value.round_id,
+    roundNumber: value.round_number,
+    startedAt: value.started_at,
+    bettingEndsAt: value.betting_ends_at,
+    roundEndsAt: value.round_ends_at,
+    serverNow: value.server_now,
+    phase: value.phase,
+    result,
+    bets,
+  };
+}
+
+export async function getRoomGameRoundFromSupabase(
+  roomId: string,
+  gameKind: RoomGameKind,
+  userId: string
+): Promise<RoomGameRoundState> {
+  const { data, error } = await supabase.rpc('sada_get_room_game_round', {
+    p_room_id: roomId,
+    p_game_kind: gameKind,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message || 'تعذّرت مزامنة جولة الغرفة.');
+  return parseRoomGameRoundState(data);
+}
+
+export async function placeRoomGameBetInSupabase(
+  roomId: string,
+  gameKind: RoomGameKind,
+  roundNumber: number,
+  userId: string,
+  amount: number,
+  selection: RoomGameBetSelection
+): Promise<RoomGameRoundState> {
+  const { data, error } = await supabase.rpc('sada_place_room_game_bet', {
+    p_room_id: roomId,
+    p_game_kind: gameKind,
+    p_round_number: roundNumber,
+    p_user_id: userId,
+    p_amount: amount,
+    p_selection: selection,
+  });
+  if (error) throw new Error(error.message || 'تعذّر تسجيل رهان الجولة.');
+  return parseRoomGameRoundState(data);
+}
+
+export async function refreshGameUserFromSupabase(userId: string): Promise<User> {
+  return fetchFreshUser(userId);
 }
 
 async function applyGameBalance(

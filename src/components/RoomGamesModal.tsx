@@ -178,6 +178,7 @@ const GAME_SHELVES: ShelfGameItem[][] = [
 ];
 
 interface RoomGamesModalProps {
+  roomId: string;
   roomTitle: string;
   totalVolumeCoins: number;
   mySeat: RoomSeat | null;
@@ -192,6 +193,7 @@ interface RoomGamesModalProps {
 }
 
 export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
+  roomId,
   roomTitle,
   totalVolumeCoins,
   mySeat,
@@ -360,9 +362,7 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
               </div>
 
               <div
-                className={`flex-1 min-h-0 p-2.5 ${
-                  isCompactRoulette ? 'overflow-hidden' : 'overflow-y-auto no-scrollbar'
-                }`}
+                className="flex-1 min-h-0 overflow-y-auto p-2.5 no-scrollbar"
               >
                 {selectedGame.category === 'competitions' ? (
                   <CompetitionsPage embedded />
@@ -372,6 +372,7 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                     embedded
                     compactRoomMode
                     initialCategory={selectedGame.category}
+                    roomId={roomId}
                     onPlaySpent={onPlaySpent}
                   />
                 )}

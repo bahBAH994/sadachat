@@ -2333,6 +2333,7 @@ export const RoomPage: React.FC = () => {
       <AnimatePresence>
         {showGamesOverlay && (
           <RoomGamesModal
+            roomId={room.id}
             roomTitle={room.title}
             totalVolumeCoins={totalVolumeCoins}
             mySeat={mySeat}

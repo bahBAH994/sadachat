@@ -38,8 +38,15 @@ import {
   playLadderActionInSupabase,
   playRpsInSupabase,
   playStandardDiceInSupabase,
+  getRoomGameRoundFromSupabase,
+  placeRoomGameBetInSupabase,
+  refreshGameUserFromSupabase,
   spinRouletteInSupabase,
   spinSlotMachineInSupabase,
+  type RoomGameKind,
+  type RoomGameBetSelection,
+  type RoomGameRoundBet,
+  type RoomGameRoundState,
   type RpsMove,
   type RpsPlayResponse,
   type SlotGameId,
@@ -489,7 +496,42 @@ interface GamesCenterPageProps {
   embedded?: boolean;
   compactRoomMode?: boolean;
   initialCategory?: CenterCategory;
+  roomId?: string;
   onPlaySpent?: (coins: number) => void;
+}
+
+function getRoomBetLabel(bet: RoomGameRoundBet): string {
+  const { selection } = bet;
+  if (typeof selection.betType === 'string') {
+    const rouletteLabels: Record<string, string> = {
+      red: 'أحمر',
+      black: 'أسود',
+      even: 'زوجي',
+      odd: 'فردي',
+      dozen_1: '1–12',
+      dozen_2: '13–24',
+      dozen_3: '25–36',
+      zero: 'صفر',
+      straight: `رقم #${selection.targetNumber ?? '?'}`,
+    };
+    return rouletteLabels[selection.betType] || 'رهان روليت';
+  }
+
+  const diceLabels: Record<string, string> = {
+    high: 'عالي',
+    low: 'منخفض',
+    seven: 'السبعة',
+    doubles: 'تطابق',
+    even: 'زوجي',
+    odd: 'فردي',
+    under_10: 'مجموع 3–10',
+    over_11: 'مجموع 11–18',
+    lucky_16: 'مجموع 16+',
+    triple: 'ثلاثية',
+  };
+  const pick = typeof selection.pick === 'string' ? selection.pick : '';
+  if (pick.startsWith('exact_')) return `رقم ${pick.slice(6)}`;
+  return diceLabels[pick] || 'رهان نرد';
 }
 
 const DEFAULT_SLOT_MACHINE =
@@ -499,6 +541,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   embedded = false,
   compactRoomMode = false,
   initialCategory = 'slots',
+  roomId,
   onPlaySpent,
 }) => {
   const { user, updateLocalUser } = useAuth();
@@ -555,6 +598,12 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   const [wheelRotation, setWheelRotation] = useState<number>(0);
   const [isRouletteSpinning, setIsRouletteSpinning] = useState(false);
   const [rouletteResult, setRouletteResult] = useState<RouletteSpinResponse | null>(null);
+  const [roomGameRound, setRoomGameRound] = useState<RoomGameRoundState | null>(null);
+  const [roomClockNow, setRoomClockNow] = useState(Date.now());
+  const [roomClockOffset, setRoomClockOffset] = useState(0);
+  const [isPlacingRoomBet, setIsPlacingRoomBet] = useState(false);
+  const handledRoomRoundRef = useRef<string | null>(null);
+  const roomRoundIntervalRef = useRef<number | null>(null);
 
   // --- MYSTERY BOXES STATE ---
   const [isOpeningBox, setIsOpeningBox] = useState(false);
@@ -572,11 +621,92 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
       window.clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+    if (roomRoundIntervalRef.current !== null) {
+      window.clearInterval(roomRoundIntervalRef.current);
+      roomRoundIntervalRef.current = null;
+    }
   };
 
   useEffect(() => {
     return () => clearSpinTimers();
   }, []);
+
+  const roomRoundGameKind: RoomGameKind | null =
+    category === 'roulette'
+      ? 'roulette'
+      : category === 'dice' && diceGame !== 'ladder_dice'
+      ? 'dice'
+      : null;
+  const roomRoundUserId = user?.id;
+  const roomRoundEnabled = Boolean(
+    compactRoomMode && roomId && roomRoundUserId && roomRoundGameKind
+  );
+  const roomBetSeconds = roomGameRound
+    ? Math.max(
+        0,
+        Math.ceil(
+          (Date.parse(roomGameRound.bettingEndsAt) - (roomClockNow + roomClockOffset)) / 1000
+        )
+      )
+    : 0;
+  const roomRevealSeconds = roomGameRound
+    ? Math.max(
+        0,
+        Math.ceil(
+          (Date.parse(roomGameRound.roundEndsAt) - (roomClockNow + roomClockOffset)) / 1000
+        )
+      )
+    : 0;
+  const currentRoomBet =
+    roomGameRound?.bets.find((roundBet) => roundBet.userId === user?.id) ?? null;
+  const roomBettingClosed = Boolean(
+    roomRoundEnabled &&
+      (!roomGameRound || roomGameRound.phase !== 'betting' || roomBetSeconds <= 0)
+  );
+  const roomBetControlsDisabled = Boolean(
+    roomRoundEnabled && (roomBettingClosed || currentRoomBet || isPlacingRoomBet)
+  );
+
+  useEffect(() => {
+    if (!roomRoundEnabled || !roomId || !roomRoundUserId || !roomRoundGameKind) {
+      setRoomGameRound(null);
+      setRoomClockOffset(0);
+      return;
+    }
+
+    let disposed = false;
+    let loading = false;
+    const syncRound = async () => {
+      if (disposed || loading) return;
+      loading = true;
+      try {
+        const nextRound = await getRoomGameRoundFromSupabase(
+          roomId,
+          roomRoundGameKind,
+          roomRoundUserId
+        );
+        if (!disposed) {
+          setRoomGameRound(nextRound);
+          setRoomClockOffset(Date.parse(nextRound.serverNow) - Date.now());
+        }
+      } catch (error) {
+        if (!disposed) {
+          setErrorMsg(error instanceof Error ? error.message : 'تعذّرت مزامنة جولة الغرفة.');
+        }
+      } finally {
+        loading = false;
+      }
+    };
+
+    void syncRound();
+    const pollId = window.setInterval(() => void syncRound(), 900);
+    const clockId = window.setInterval(() => setRoomClockNow(Date.now()), 100);
+    return () => {
+      disposed = true;
+      window.clearInterval(pollId);
+      window.clearInterval(clockId);
+    };
+  }, [roomId, roomRoundEnabled, roomRoundGameKind, roomRoundUserId]);
 
   useEffect(() => {
     if (!user) return;
@@ -783,6 +913,178 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
       setErrorMsg(err instanceof Error ? err.message : 'تعذّر تنفيذ جولة النرد.');
     }
   };
+
+  const handlePlaceRoomBet = async () => {
+    if (
+      !user ||
+      !roomId ||
+      !roomRoundGameKind ||
+      !roomGameRound ||
+      roomBetControlsDisabled ||
+      user.coins < bet
+    ) {
+      return;
+    }
+
+    let selection: RoomGameBetSelection;
+    if (roomRoundGameKind === 'roulette') {
+      selection = {
+        betType: rouletteBetType,
+        ...(rouletteBetType === 'straight' ? { targetNumber: rouletteStraightNum } : {}),
+      };
+    } else if (diceGame === 'double_dice') {
+      selection = { gameId: 'double_dice', pick: doublePick };
+    } else if (diceGame === 'prediction_dice') {
+      selection = { gameId: 'prediction_dice', pick: predPick };
+    } else if (diceGame === 'speed_dice') {
+      selection = { gameId: 'speed_dice', pick: speedPick };
+    } else {
+      return;
+    }
+
+    setErrorMsg(null);
+    setIsPlacingRoomBet(true);
+    try {
+      const nextRound = await placeRoomGameBetInSupabase(
+        roomId,
+        roomRoundGameKind,
+        roomGameRound.roundNumber,
+        user.id,
+        bet,
+        selection
+      );
+      setRoomGameRound(nextRound);
+      onPlaySpent?.(bet);
+      const settleDelay = Math.max(
+        0,
+        Date.parse(nextRound.bettingEndsAt) - (Date.now() + roomClockOffset) + 100
+      );
+      window.setTimeout(() => {
+        void getRoomGameRoundFromSupabase(roomId, roomRoundGameKind, user.id)
+          .then(() => refreshGameUserFromSupabase(user.id))
+          .then(updateLocalUser)
+          .catch((error: unknown) => {
+            setErrorMsg(
+              error instanceof Error
+                ? `تعذّر إتمام تسوية الجولة: ${error.message}`
+                : 'تعذّر إتمام تسوية الجولة.'
+            );
+          });
+      }, settleDelay);
+      try {
+        updateLocalUser(await refreshGameUserFromSupabase(user.id));
+      } catch (error) {
+        setErrorMsg(
+          error instanceof Error
+            ? `تم تسجيل الرهان، لكن تعذّر تحديث رصيدك: ${error.message}`
+            : 'تم تسجيل الرهان، لكن تعذّر تحديث رصيدك.'
+        );
+      }
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'تعذّر تسجيل رهان الجولة.');
+    } finally {
+      setIsPlacingRoomBet(false);
+    }
+  };
+
+  useEffect(() => {
+    if (
+      !roomRoundEnabled ||
+      !roomGameRound ||
+      roomGameRound.phase !== 'revealing' ||
+      !roomGameRound.result ||
+      handledRoomRoundRef.current === roomGameRound.roundId ||
+      !user
+    ) {
+      return;
+    }
+
+    const settledRound = roomGameRound;
+    const ownBet = settledRound.bets.find((roundBet) => roundBet.userId === user.id) ?? null;
+    handledRoomRoundRef.current = settledRound.roundId;
+    void refreshGameUserFromSupabase(user.id)
+      .then(updateLocalUser)
+      .catch((error: unknown) => {
+        setErrorMsg(
+          error instanceof Error ? `تعذّر تحديث رصيد الجولة: ${error.message}` : 'تعذّر تحديث رصيد الجولة.'
+        );
+      });
+
+    if ('number' in settledRound.result) {
+      const outcome = settledRound.result;
+      setRouletteResult(null);
+      setIsRouletteSpinning(true);
+      const sliceAngle = 360 / 37;
+      const targetAngleMod = ((360 - outcome.wheelIndex * sliceAngle) % 360 + 360) % 360;
+      setWheelRotation((previous) => {
+        const currentMod = ((previous % 360) + 360) % 360;
+        let delta = targetAngleMod - currentMod;
+        if (delta <= 0) delta += 360;
+        return previous + 360 * 5 + delta;
+      });
+      const timeoutId = window.setTimeout(() => {
+        setIsRouletteSpinning(false);
+        setRouletteResult({
+          winningNumber: outcome.number,
+          winningColor: outcome.color,
+          wheelIndex: outcome.wheelIndex,
+          won: ownBet?.isWinner ?? false,
+          multiplier: ownBet?.multiplier ?? 0,
+          payout: ownBet?.payout ?? 0,
+          bet: ownBet?.amount ?? 0,
+          xpGain: 0,
+          user,
+        });
+        if (ownBet?.isWinner) {
+          playCoinWinSound(ownBet.multiplier >= 10);
+          fireGoldCoinConfetti(ownBet.multiplier >= 10 ? 'jackpot' : 'normal');
+        }
+        if (ownBet) {
+          pushHistory(
+            `الروليت الملكية (#${outcome.number})`,
+            ownBet.amount,
+            ownBet.payout,
+            ownBet.multiplier
+          );
+        }
+      }, 4800);
+      timersRef.current.push(timeoutId);
+      return;
+    }
+
+    const diceCount =
+      diceGame === 'double_dice' ? 2 : diceGame === 'prediction_dice' ? 1 : 3;
+    const finalDice = settledRound.result.dice.slice(0, diceCount);
+    setDiceResult(null);
+    setIsDiceRolling(true);
+    playDiceTumbleSound();
+    roomRoundIntervalRef.current = window.setInterval(() => {
+      playDiceTumbleSound();
+      setDiceValues(Array.from({ length: diceCount }, () => 1 + Math.floor(Math.random() * 6)));
+    }, 115);
+    const timeoutId = window.setTimeout(() => {
+      if (roomRoundIntervalRef.current !== null) {
+        window.clearInterval(roomRoundIntervalRef.current);
+        roomRoundIntervalRef.current = null;
+      }
+      setIsDiceRolling(false);
+      setDiceValues(finalDice);
+      playDiceLandSound();
+      if (ownBet?.isWinner) {
+        playCoinWinSound(ownBet.multiplier >= 4);
+        fireGoldCoinConfetti(ownBet.multiplier >= 4 ? 'jackpot' : 'normal');
+      }
+      if (ownBet) {
+        const titles: Record<string, string> = {
+          double_dice: 'نرد الحظ المزدوج',
+          prediction_dice: 'نرد التوقعات',
+          speed_dice: 'نرد السرعة',
+        };
+        pushHistory(titles[diceGame] || 'ألعاب النرد', ownBet.amount, ownBet.payout, ownBet.multiplier);
+      }
+    }, 4800);
+    timersRef.current.push(timeoutId);
+  }, [roomGameRound, roomRoundEnabled, diceGame, user, updateLocalUser, pushHistory]);
 
   const handleLadderAction = async (action: 'roll' | 'cashout') => {
     if (!user || isDiceRolling) return;
@@ -1107,6 +1409,80 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
               </button>
             );
           })}
+        </section>
+      )}
+
+      {roomRoundEnabled && (
+        <section className="shrink-0 rounded-2xl border border-[#D4AF37]/40 bg-[#0d111e] px-3 py-2.5 text-right shadow-[0_0_22px_rgba(212,175,55,0.12)]">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs font-extrabold text-[#FCE9A6]">
+                {roomGameRound?.phase === 'betting' && roomBetSeconds > 0
+                  ? `وقت الرهان المتبقي: ${roomBetSeconds}ث`
+                  : roomGameRound
+                  ? `أُغلق الرهان — النتيجة خلال: ${roomRevealSeconds}ث`
+                  : 'جارٍ مزامنة الجولة الجماعية...'}
+              </p>
+              <p className="text-[10px] text-slate-400">
+                {roomGameRound?.phase === 'betting' && roomBetSeconds > 0
+                  ? 'اختر توقعك وقيمة الرهان قبل انتهاء الوقت'
+                  : 'الرهانات مغلقة ويجري عرض النتيجة للجميع'}
+              </p>
+            </div>
+            <span className="shrink-0 rounded-lg border border-[#D4AF37]/30 bg-[#14161f] px-2 py-1 text-[10px] font-bold text-[#FCE9A6]">
+              {roomGameRound ? `الجولة ${roomGameRound.roundNumber}` : '—'}
+            </span>
+          </div>
+
+          {roomGameRound?.result && (
+            <p className="mt-1 text-[11px] font-extrabold text-emerald-300">
+              {'number' in roomGameRound.result
+                ? `النتيجة المشتركة: #${roomGameRound.result.number} — ${
+                    roomGameRound.result.color === 'red'
+                      ? 'أحمر'
+                      : roomGameRound.result.color === 'black'
+                      ? 'أسود'
+                      : 'أخضر'
+                  }`
+                : `النتيجة المشتركة: ${roomGameRound.result.dice.join(' - ')} (المجموع ${roomGameRound.result.sum})`}
+            </p>
+          )}
+
+          <div className="mt-1.5 max-h-20 space-y-1 overflow-y-auto no-scrollbar">
+            {roomGameRound?.bets.length ? (
+              roomGameRound.bets.map((roundBet) => (
+                <div
+                  key={roundBet.userId}
+                  className="flex items-center justify-between gap-2 text-[10px]"
+                >
+                  <span className="min-w-0 truncate text-slate-200">
+                    {roundBet.displayName}
+                    <span className="mx-1 text-slate-500">·</span>
+                    {getRoomBetLabel(roundBet)}
+                    <span className="mx-1 text-slate-500">·</span>
+                    {roundBet.amount.toLocaleString('en-US')} كوين
+                  </span>
+                  <span
+                    className={`shrink-0 font-bold ${
+                      roomGameRound.phase === 'revealing'
+                        ? roundBet.isWinner
+                          ? 'text-emerald-300'
+                          : 'text-slate-500'
+                        : 'text-[#FCE9A6]'
+                    }`}
+                  >
+                    {roomGameRound.phase === 'revealing'
+                      ? roundBet.isWinner
+                        ? `فاز +${roundBet.payout.toLocaleString('en-US')}`
+                        : 'لم يفز'
+                      : 'يراهن'}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-[10px] text-slate-500">لم تُسجّل رهانات في هذه الجولة بعد.</p>
+            )}
+          </div>
         </section>
       )}
 
@@ -1546,7 +1922,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   <button
                     key={d.id}
                     type="button"
-                    disabled={isDiceRolling}
+                    disabled={isDiceRolling || roomBetControlsDisabled}
                     onClick={() => handleSelectDiceGame(d.id)}
                     className={`shrink-0 rounded-xl px-2.5 py-1 text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
                       selected
@@ -1596,7 +1972,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   <button
                     key={d.id}
                     type="button"
-                    disabled={isDiceRolling}
+                    disabled={isDiceRolling || roomBetControlsDisabled}
                     onClick={() => handleSelectDiceGame(d.id)}
                     className={`rounded-3xl p-4 border text-right transition-all cursor-pointer space-y-2 ${
                       selected
@@ -1681,7 +2057,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                       <button
                         key={opt.id}
                         type="button"
-                        disabled={isDiceRolling}
+                        disabled={isDiceRolling || roomBetControlsDisabled}
                         onClick={() => setDoublePick(opt.id)}
                         className={`rounded-2xl p-3 border text-center cursor-pointer transition ${
                           doublePick === opt.id
@@ -1708,7 +2084,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                         <button
                           key={opt.id}
                           type="button"
-                          disabled={isDiceRolling}
+                          disabled={isDiceRolling || roomBetControlsDisabled}
                           onClick={() => setPredPick(opt.id)}
                           className={`rounded-2xl p-3 border text-center cursor-pointer transition ${
                             predPick === opt.id
@@ -1731,7 +2107,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                           <button
                             key={key}
                             type="button"
-                            disabled={isDiceRolling}
+                            disabled={isDiceRolling || roomBetControlsDisabled}
                             onClick={() => setPredPick(key)}
                             className={`rounded-xl py-2.5 px-2 border text-xs font-extrabold font-mono-num cursor-pointer transition ${
                               predPick === key
@@ -1760,7 +2136,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                       <button
                         key={opt.id}
                         type="button"
-                        disabled={isDiceRolling}
+                        disabled={isDiceRolling || roomBetControlsDisabled}
                         onClick={() => setSpeedPick(opt.id)}
                         className={`rounded-2xl p-3 border text-center cursor-pointer transition ${
                           speedPick === opt.id
@@ -1811,7 +2187,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                       <button
                         key={val}
                         type="button"
-                        disabled={isDiceRolling}
+                        disabled={isDiceRolling || roomBetControlsDisabled}
                         onClick={() => setBet(val)}
                         className={`${
                           compactRoomMode ? 'min-h-[30px] text-[10px]' : 'min-h-[40px] text-xs'
@@ -1828,18 +2204,31 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
                   <button
                     type="button"
-                    disabled={isDiceRolling || user.coins < bet || user.coins <= 0}
-                    onClick={handlePlayStandardDice}
+                    disabled={
+                      isDiceRolling ||
+                      roomBetControlsDisabled ||
+                      user.coins < bet ||
+                      user.coins <= 0
+                    }
+                    onClick={roomRoundEnabled ? handlePlaceRoomBet : handlePlayStandardDice}
                     className={`gold-btn w-full ${
                       compactRoomMode ? 'min-h-[40px] text-xs sm:text-sm' : 'min-h-[52px] text-base'
                     } rounded-xl sm:rounded-2xl font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed`}
                   >
                     <Dices className={`${compactRoomMode ? 'w-4 h-4' : 'w-5 h-5'} ${isDiceRolling ? 'animate-spin' : ''}`} />
                     <span>
-                      {isDiceRolling
+                      {isPlacingRoomBet
+                        ? 'جارٍ تسجيل الرهان...'
+                        : isDiceRolling
                         ? 'النرد 3D يتدحرج...'
+                        : roomRoundEnabled && currentRoomBet
+                        ? 'تم تسجيل رهانك — انتظر النتيجة'
+                        : roomRoundEnabled && roomBettingClosed
+                        ? 'انتظر بداية الجولة التالية'
                         : user.coins < bet || user.coins <= 0
                         ? 'رصيدك غير كافٍ للعب'
+                        : roomRoundEnabled
+                        ? `تسجيل الرهان (${bet.toLocaleString('en-US')} كوينز)`
                         : `رمي النرد 3D (${bet.toLocaleString('en-US')} كوينز)`}
                     </span>
                   </button>
@@ -1983,7 +2372,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
       {/* ===================== CATEGORY 3: ROYAL ROULETTE ===================== */}
       {category === 'roulette' && (
-        <section className="royal-glass flex max-h-[82vh] min-h-0 flex-1 flex-col justify-between gap-2 overflow-hidden rounded-[2rem] border border-[#D4AF37]/35 p-3">
+        <section className="royal-glass flex max-h-[82vh] min-h-0 flex-1 flex-col justify-between gap-2 overflow-y-auto rounded-[2rem] border border-[#D4AF37]/35 p-3">
           {/* Wheel Showcase */}
           <div className="flex min-h-0 flex-col items-center justify-center gap-2">
             <div className="relative h-44 w-44 shrink-0 flex items-center justify-center">
@@ -2022,7 +2411,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                     className="w-full h-full rounded-full relative overflow-hidden bg-[#080B18]"
                     style={{
                       transform: `rotate(${wheelRotation}deg)`,
-                      transition: 'transform 3200ms cubic-bezier(0.12, 0.85, 0.2, 1)',
+                      transition: `transform ${roomRoundEnabled ? 4800 : 3200}ms cubic-bezier(0.12, 0.85, 0.2, 1)`,
                     }}
                   >
                   <svg width={200} height={200} viewBox="0 0 200 200" className="w-full h-full">
@@ -2152,7 +2541,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                 <button
                   key={opt.id}
                   type="button"
-                  disabled={isRouletteSpinning}
+                  disabled={isRouletteSpinning || roomBetControlsDisabled}
                   onClick={() => setRouletteBetType(opt.id)}
                   className={`rounded-xl p-1.5 border text-center cursor-pointer transition ${
                     opt.cls
@@ -2175,7 +2564,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
               <div className="flex items-center justify-between text-xs">
                 <button
                   type="button"
-                  disabled={isRouletteSpinning}
+                  disabled={isRouletteSpinning || roomBetControlsDisabled}
                   onClick={() => setRouletteBetType('straight')}
                   className={`text-[10px] font-extrabold cursor-pointer ${
                     rouletteBetType === 'straight' ? 'text-[#FCE9A6]' : 'text-slate-300'
@@ -2193,7 +2582,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                     <button
                       key={n}
                       type="button"
-                      disabled={isRouletteSpinning}
+                      disabled={isRouletteSpinning || roomBetControlsDisabled}
                       onClick={() => {
                         setRouletteBetType('straight');
                         setRouletteStraightNum(n);
@@ -2215,7 +2604,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                 <button
                   key={val}
                   type="button"
-                  disabled={isRouletteSpinning}
+                  disabled={isRouletteSpinning || roomBetControlsDisabled}
                   onClick={() => setBet(val)}
                   className={`min-h-[32px] rounded-lg text-[10px] font-extrabold font-mono-num border cursor-pointer transition ${
                     bet === val
@@ -2230,14 +2619,27 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
               <button
               type="button"
-              disabled={isRouletteSpinning || user.coins < bet}
-              onClick={handleSpinRoulette}
+              disabled={
+                isRouletteSpinning ||
+                roomBetControlsDisabled ||
+                user.coins < bet ||
+                user.coins <= 0
+              }
+              onClick={roomRoundEnabled ? handlePlaceRoomBet : handleSpinRoulette}
               className="gold-btn w-full min-h-[42px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-45"
             >
               <Disc3 className={`w-5 h-5 ${isRouletteSpinning ? 'animate-spin' : ''}`} />
               <span>
-                {isRouletteSpinning
+                {isPlacingRoomBet
+                  ? 'جارٍ تسجيل الرهان...'
+                  : isRouletteSpinning
                   ? 'العجلة الذهبية تدور...'
+                  : roomRoundEnabled && currentRoomBet
+                  ? 'تم تسجيل رهانك — انتظر النتيجة'
+                  : roomRoundEnabled && roomBettingClosed
+                  ? 'انتظر بداية الجولة التالية'
+                  : roomRoundEnabled
+                  ? `تسجيل الرهان (${bet.toLocaleString('en-US')} كوينز)`
                   : `تدوير الروليت الملكية (${bet.toLocaleString('en-US')} كوينز)`}
               </span>
               </button>
