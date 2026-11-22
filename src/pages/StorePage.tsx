@@ -258,7 +258,7 @@ export const StorePage: React.FC = () => {
   }, [idTab]);
 
   return (
-    <div className="min-h-full bg-[#F5F6FA]">
+    <div className="min-h-full bg-[#F5F6FA] pb-28">
       <div className="max-w-4xl mx-auto px-4 pt-4 space-y-5">
         {/* Hero Store Header with Real Coins Balance */}
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#1B2542] to-[#0E3A2F] p-5 sm:p-6 text-white shadow-xl space-y-4">

@@ -111,7 +111,7 @@ const GiftGridItem = memo<GiftGridItemProps>(({ gift, active, onSelect }) => {
       </span>
 
       <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-mono-num font-extrabold text-[#FCE9A6]">
-        <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3 h-3" fallbackTextClass="text-[9px]" />
+        <Coins className="w-3 h-3 text-[#FCE9A6]" aria-label="كوينز" />
         <span>{gift.coinsCost.toLocaleString('en-US')}</span>
       </div>
     </button>

@@ -250,6 +250,7 @@ export const LobbyPage: React.FC = () => {
   const [togglingFollowId, setTogglingFollowId] = useState<string | null>(null);
 
   const [showCreate, setShowCreate] = useState(false);
+  const [agencyToastVisible, setAgencyToastVisible] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState<Room['category']>('حوار');
   const [newDesc, setNewDesc] = useState('');
@@ -569,12 +570,8 @@ export const LobbyPage: React.FC = () => {
         return;
       }
     }
-    const ownRoom = rooms.find((r) => r.hostId === user.id);
-    if (ownRoom) {
-      enterRoom(ownRoom);
-      return;
-    }
-    setShowCreate(true);
+    setAgencyToastVisible(true);
+    window.setTimeout(() => setAgencyToastVisible(false), 2600);
   };
 
   useEffect(() => {
@@ -1228,10 +1225,10 @@ export const LobbyPage: React.FC = () => {
       <button
         type="button"
         onClick={handleGoToAgencyChat}
-        className="fixed bottom-24 left-4 z-30 emerald-btn rounded-full px-5 py-3 text-sm font-extrabold flex items-center gap-2 cursor-pointer"
+        className="fixed bottom-24 left-3 z-30 emerald-btn rounded-full px-3 py-1.5 text-xs shadow-lg font-extrabold flex items-center gap-2 cursor-pointer"
       >
         <Mic2 className="w-4 h-4" />
-        <span>غرفتي / وكالتي</span>
+        <span>وكالتي</span>
       </button>
 
       {/* Create Personal Room Modal */}
@@ -1442,6 +1439,14 @@ export const LobbyPage: React.FC = () => {
                 تحقق ودخول
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {agencyToastVisible && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] pointer-events-none">
+          <div className="rounded-full bg-slate-900/95 text-white border border-white/15 px-4 py-2.5 text-xs font-extrabold shadow-xl whitespace-nowrap">
+            أنت غير منضم إلى أي وكالة حالياً، انضم لوكالة أولاً
           </div>
         </div>
       )}

@@ -308,18 +308,18 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
         </div>
 
         {/* Speaker Name & Role Micro-Tag */}
-        <div className="mt-1 flex items-center justify-center gap-0.5 max-w-[74px]">
+        <div className="mt-1 flex items-center justify-center gap-0.5 w-full max-w-[52px] mx-auto px-0.5 text-center">
           {seat.userId ? (
             <>
               {isHost && <span className="text-[8px] text-amber-300 shrink-0">👑</span>}
               <VipUserName
                 name={seat.displayName || 'متحدث'}
                 vipTier={resolvedVip}
-                className="text-[10px] font-bold text-white/95 truncate leading-tight"
+                className="text-[9px] font-medium text-white/95 truncate leading-tight w-full max-w-[52px] mx-auto px-0.5 text-center"
               />
             </>
           ) : (
-            <span className="text-[9px] font-semibold text-slate-400/90 truncate">
+            <span className="text-[9px] font-medium text-slate-400/90 truncate w-full max-w-[52px] mx-auto px-0.5 text-center">
               {seat.isLocked ? 'مقفل' : 'مايك'}
             </span>
           )}
@@ -548,6 +548,7 @@ export const RoomPage: React.FC = () => {
   } = useActiveRoom();
 
   const [chatText, setChatText] = useState('');
+  const chatInputRef = useRef<HTMLInputElement | null>(null);
   const [chatFilter, setChatFilter] = useState<'all' | 'chat'>('all');
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
@@ -1534,8 +1535,8 @@ export const RoomPage: React.FC = () => {
         </AnimatePresence>
 
         {/* 2. TAKA MIC GRID: 6 columns × 5 rows */}
-        <section className="shrink-0 relative z-20 grid grid-cols-6 gap-x-1 gap-y-0.5 px-1.5">
-          {(room.seats || []).slice(0, 30).map((seat) => {
+        <section className="shrink-0 relative z-20 grid grid-cols-6 gap-x-1 gap-y-1 px-1.5">
+          {(room.seats || []).slice(0, 24).map((seat) => {
             const seatLookup = seat.userId ? userProfileLookup.get(seat.userId) : undefined;
             return (
               <RoomSeatItem
@@ -1546,7 +1547,7 @@ export const RoomPage: React.FC = () => {
                 isHost={Boolean(seat.userId && seat.userId === room.hostId)}
                 isHero5={false}
                 vipLevel={seatLookup?.vipLevel || seat.vipLevel || 'none'}
-                sizeClass="w-8 h-8"
+                sizeClass="w-9 h-9"
                 seatEmoji={seat.userId ? seatEmojis[seat.userId] : undefined}
                 seatGiftReaction={seat.userId ? seatGiftReactions[seat.userId] : undefined}
                 seatHaloActive={Boolean(seat.userId && seatHaloEffects[seat.userId])}
@@ -1736,7 +1737,7 @@ export const RoomPage: React.FC = () => {
         )}
 
         {/* 4. FIXED SINGLE-ROW BOTTOM ACTION BAR (Chat Input + 😊 + 🎁 + 🎮 + 🎙️) */}
-        <footer className="relative z-30 shrink-0 bg-[#14161f] px-2 py-2 pb-[max(env(safe-area-inset-bottom,0px),8px)]">
+        <footer className="relative z-30 shrink-0 bg-[#14161f] px-2 py-2 pb-4">
           <div className="flex items-center gap-1.5">
             {/* 1. Public Chat Input Box */}
             <form
@@ -1744,10 +1745,12 @@ export const RoomPage: React.FC = () => {
               className="flex-1 min-w-0 flex items-center gap-1 rounded-full bg-[#14161f]/95 border border-white/20 px-3 py-1"
             >
               <input
+                ref={chatInputRef}
                 type="text"
                 value={chatText}
                 onChange={(e) => setChatText(e.target.value)}
                 onFocus={() => {
+                  setShowEmojiPicker(false);
                   window.scrollTo(0, 0);
                   const viewport = window.visualViewport;
                   setVisualViewportTop(viewport?.offsetTop || 0);
@@ -1756,6 +1759,19 @@ export const RoomPage: React.FC = () => {
                 placeholder="أهلاً..."
                 className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none py-1"
               />
+              {isKeyboardOpen && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    chatInputRef.current?.blur();
+                    setShowEmojiPicker((current) => !current);
+                  }}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-[#FCE9A6] cursor-pointer shrink-0"
+                  aria-label="سمايلات"
+                >
+                  <Smile className="w-5 h-5" />
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={!chatText.trim()}
@@ -1766,10 +1782,15 @@ export const RoomPage: React.FC = () => {
               </button>
             </form>
 
+            {!isKeyboardOpen && (
+              <>
             {/* 2. Interactive Seat Emojis Button (😊) */}
             <button
               type="button"
-              onClick={() => setShowEmojiPicker((v) => !v)}
+              onClick={() => {
+                chatInputRef.current?.blur();
+                setShowEmojiPicker((v) => !v);
+              }}
               className={`w-10 h-10 rounded-full flex items-center justify-center border cursor-pointer shrink-0 transition active:scale-95 ${
                 showEmojiPicker
                   ? 'bg-[#D4AF37] border-[#FFF3C4] text-[#070913] shadow-[0_0_14px_rgba(243,211,122,0.7)]'
@@ -1860,6 +1881,8 @@ export const RoomPage: React.FC = () => {
                 <Mic className="w-4 h-4" />
               )}
             </button>
+              </>
+            )}
           </div>
 
           {mySeat && micDenied && !mySeat.isMuted && (
@@ -2031,7 +2054,7 @@ export const RoomPage: React.FC = () => {
       <AnimatePresence>
         {seatActionTarget && seatActionTarget.userId && (
           <div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-[#0d111e] p-0 sm:p-4"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:p-4"
             onClick={() => setSeatActionTarget(null)}
           >
             <motion.div
@@ -2040,7 +2063,7 @@ export const RoomPage: React.FC = () => {
               exit={{ y: 40, opacity: 0 }}
               transition={{ duration: 0.15, ease: 'easeOut' }}
               onClick={(e) => e.stopPropagation()}
-              className="royal-glass room-modal-panel w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
+              className="royal-glass room-modal-panel w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 pb-4 space-y-4"
             >
               <div className="flex items-center justify-between">
                 {(() => {

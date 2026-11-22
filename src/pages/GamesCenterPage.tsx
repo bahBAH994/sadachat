@@ -597,6 +597,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   const [wheelAngle, setWheelAngle] = useState<number>(0);
   const [isRouletteSpinning, setIsRouletteSpinning] = useState(false);
   const [rouletteResult, setRouletteResult] = useState<RouletteSpinResponse | null>(null);
+  const [gameToast, setGameToast] = useState<string | null>(null);
   const [roomGameRound, setRoomGameRound] = useState<RoomGameRoundState | null>(null);
   const [roomClockNow, setRoomClockNow] = useState(Date.now());
   const [roomClockOffset, setRoomClockOffset] = useState(0);
@@ -677,8 +678,8 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
     const bettingMs = 15_000;
     const syncRound = () => {
       const now = Date.now();
-      const cycleIndex = Math.floor(now / cycleMs);
-      const elapsed = now - cycleIndex * cycleMs;
+      const cycleIndex = Math.floor(now / 1000 / 20);
+      const elapsed = (Math.floor(now / 1000) % 20) * 1000;
       const betting = elapsed < bettingMs;
       const startedAt = cycleIndex * cycleMs;
       const bettingEndsAt = startedAt + bettingMs;
@@ -746,6 +747,11 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
       .then((session) => setLadderSession(session))
       .catch(() => {});
   }, [user]);
+
+  const showGameToast = (message: string) => {
+    setGameToast(message);
+    window.setTimeout(() => setGameToast(null), 2600);
+  };
 
   const pushHistory = (gameTitle: string, wager: number, payout: number, multiplier: number) => {
     if (payout > 0) setSessionTotalWon((prev) => prev + payout);
@@ -893,7 +899,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   const handlePlayStandardDice = async () => {
     if (!user || isDiceRolling || diceGame === 'ladder_dice') return;
     if (user.coins < bet || user.coins <= 0) {
-      setErrorMsg('رصيد الكوينز غير كافٍ لهذه الجولة.');
+      showGameToast('رصيد الكوينز غير كافٍ للعب');
       return;
     }
 
@@ -1158,7 +1164,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   const handleSpinRoulette = async () => {
     if (!user || isRouletteSpinning) return;
     if (user.coins < bet || user.coins <= 0) {
-      setErrorMsg('رصيد الكوينز غير كافٍ لدورة الروليت.');
+      showGameToast('رصيد الكوينز غير كافٍ للعب');
       return;
     }
 
@@ -1512,8 +1518,14 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         </section>
       )}
 
+      {gameToast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[100] rounded-full border border-amber-400/60 bg-slate-950/95 px-4 py-2 text-xs font-extrabold text-amber-100 shadow-xl">
+          {gameToast}
+        </div>
+      )}
+
       {/* Insufficient Coins Strict Guard Banner */}
-      {user.coins < 100 && (
+      {user.coins < 100 && category !== 'roulette' && category !== 'dice' && (
         <div className="rounded-2xl border border-amber-400/50 bg-amber-950/55 px-3.5 py-2 flex items-center justify-between gap-2 text-[11px] sm:text-xs text-[#FCE9A6]">
           <span>رصيدك الحالي ({user.coins.toLocaleString('en-US')} كوينز) لا يكفي للعب — يلزم 100 كوينز على الأقل.</span>
           <Link
@@ -2401,7 +2413,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         <section className="royal-glass flex max-h-[82vh] min-h-0 flex-1 flex-col justify-between gap-2 overflow-y-auto rounded-[2rem] border border-[#D4AF37]/35 p-3">
           {/* Wheel Showcase */}
           <div className="flex min-h-0 flex-col items-center justify-center gap-2">
-            <div className="relative h-44 w-44 shrink-0 flex items-center justify-center">
+            <div className="relative h-32 w-32 shrink-0 flex items-center justify-center">
               {/* Sculpted 3D Metallic Pointer with Ruby Jewel */}
               <div
                 className="absolute -top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none drop-shadow-[0_6px_12px_rgba(0,0,0,0.85)]"
@@ -2545,7 +2557,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
           </div>
 
           {/* Betting Controls */}
-          <div className="w-full min-h-0 space-y-2">
+          <div className="w-full min-h-0 space-y-1.5 pb-4">
             <div className="mt-3">
               <h2 className="text-sm font-extrabold text-[#FCE9A6] mb-4">لوحة رهانات الروليت الملكية</h2>
               <p className="text-[10px] text-slate-300 mt-0.5">
@@ -2667,7 +2679,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   : roomRoundEnabled && roomBettingClosed
                   ? 'انتظر بداية الجولة التالية'
                   : roomRoundEnabled
-                  ? `تسجيل الرهان (${bet.toLocaleString('en-US')} كوينز)`
+                  ? `تأكيد الرهان الآن (${bet.toLocaleString('en-US')} كوينز)`
                   : `تدوير الروليت الملكية (${bet.toLocaleString('en-US')} كوينز)`}
               </span>
               </button>

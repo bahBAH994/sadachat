@@ -24,10 +24,11 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install dependencies
-        run: |
-          npm install --legacy-peer-deps
-          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/status-bar @capacitor/keyboard --legacy-peer-deps
+        run: npm install --legacy-peer-deps
 
       - name: Build web app
         run: npm run build
@@ -48,11 +49,64 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Build Android APK
+      - name: Configure immersive Android fullscreen
         run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          cat > android/app/src/main/java/com/sada/voicechat/MainActivity.java <<'EOF'
+          package com.sada.voicechat;
+
+          import android.os.Bundle;
+          import android.view.View;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              private void hideSystemBars() {
+                  WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+                  WindowInsetsControllerCompat controller =
+                      new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+                  controller.hide(WindowInsetsCompat.Type.systemBars());
+                  controller.setSystemBarsBehavior(
+                      WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                  );
+                  getWindow().getDecorView().setSystemUiVisibility(
+                      View.SYSTEM_UI_FLAG_FULLSCREEN |
+                      View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                      View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                  );
+              }
+
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  hideSystemBars();
+              }
+
+              @Override
+              public void onWindowFocusChanged(boolean hasFocus) {
+                  super.onWindowFocusChanged(hasFocus);
+                  if (hasFocus) hideSystemBars();
+              }
+          }
+          EOF
+
+          python3 - <<'EOF'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          if 'android:windowSoftInputMode="adjustResize"' not in s:
+              s = s.replace('android:exported="true"', 'android:exported="true"\n            android:windowSoftInputMode="adjustResize"', 1)
+          if 'android.permission.RECORD_AUDIO' not in s:
+              s = s.replace('<application', '<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <application', 1)
+          p.write_text(s)
+          EOF
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
+      - name: Build Android APK
+        run: cd android && ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

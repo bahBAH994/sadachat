@@ -140,7 +140,7 @@ const PmGiftItem = memo<{
     </div>
     <span className="text-[11px] font-bold text-white line-clamp-1">{g.name}</span>
     <span className="text-[10px] font-mono-num text-[#FCE9A6] font-extrabold inline-flex items-center gap-1">
-      <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3 h-3" fallbackTextClass="text-[10px]" />
+      <Coins className="w-3 h-3 text-[#FCE9A6]" aria-label="كوينز" />
       <span>{g.coinsCost.toLocaleString('en-US')}</span>
     </span>
   </button>
@@ -174,6 +174,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const [togglingFollow, setTogglingFollow] = useState(false);
 
   const [selectedPeerId, setSelectedPeerId] = useState<string>(initialPeerId || '');
+  const privateMessageInputRef = useRef<HTMLInputElement | null>(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(Boolean(initialPeerId));
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isSmallViewport, setIsSmallViewport] = useState(
@@ -226,6 +227,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       setSelectedPeerId(queryTarget);
       setMobileChatOpen(true);
     } else {
+      setSelectedPeerId('');
       setMobileChatOpen(false);
     }
   }, [embedded, queryTarget, user?.id]);
@@ -272,11 +274,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             setShowGiftDrawer(true);
           }
         } else {
-          setSelectedPeerId((prev) => {
-            if (prev) return prev;
-            if (data.conversations[0]?.peer.id) return data.conversations[0].peer.id;
-            return data.recipients[0]?.id || '';
-          });
+          setSelectedPeerId('');
+          setMobileChatOpen(false);
         }
       } else if (initialPeerId && initialPeerId !== currentUser.id) {
         setSelectedPeerId(initialPeerId);
@@ -381,7 +380,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         }
       }
       return true;
-    });
+    }).slice().sort((a, b) =>
+      Date.parse(b.lastMessage?.createdAt || '') - Date.parse(a.lastMessage?.createdAt || '')
+    );
   }, [conversations, inboxFilter, searchQuery]);
 
   const isPeerOnline = useCallback(
@@ -613,6 +614,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         {showSearchBar && (
           <div className="max-w-5xl mx-auto px-4 pb-3">
             <input
+              ref={privateMessageInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1094,7 +1096,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                               }`}
                             >
                               <span>الإجمالي:</span>
-                              <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3.5 h-3.5" priority />
+                              <Coins className="w-3.5 h-3.5 text-[#FCE9A6]" aria-label="كوينز" />
                               <span>{giftTotalCost.toLocaleString('en-US')}</span>
                             </span>
                           </div>
@@ -1138,7 +1140,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                               className="flex items-center gap-1.5 rounded-xl bg-black/70 border border-[#F3D37A]/50 px-2.5 py-1.5 shrink-0 cursor-pointer hover:border-[#FCE9A6]"
                               title="رصيدك الحالي · اضغط للشحن السريع"
                             >
-                              <Fluent3DAsset glyph="🪙" alt="كوينز" sizeClass="w-3.5 h-3.5" priority />
+                              <Coins className="w-3.5 h-3.5 text-[#FCE9A6]" aria-label="كوينز" />
                               <span className="text-xs font-mono-num font-black text-[#FCE9A6]">
                                 {(user?.coins ?? 0).toLocaleString('en-US')}
                               </span>
@@ -1153,7 +1155,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                   )}
                 </AnimatePresence>
 
-                <div className="shrink-0 bg-white border-t border-slate-200 p-2.5">
+                <div className="shrink-0 bg-white border-t border-slate-200 p-2.5 pb-4">
                   {showEmojiPicker && (
                     <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2">
                       {['😊', '😂', '😍', '🥰', '👍', '👏', '❤️', '🔥'].map((emoji) => (
@@ -1186,6 +1188,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                       value={text}
                       onChange={(e) => setText(e.target.value)}
                       onFocus={() => {
+                        setShowEmojiPicker(false);
                         window.scrollTo(0, 0);
                         const viewport = window.visualViewport;
                         setVisualViewportRect({
@@ -1198,7 +1201,10 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                     />
                     <button
                       type="button"
-                      onClick={() => setShowEmojiPicker((current) => !current)}
+                      onClick={() => {
+                        privateMessageInputRef.current?.blur();
+                        setShowEmojiPicker((current) => !current);
+                      }}
                       className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer shrink-0 ${
                         showEmojiPicker ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
                       }`}
