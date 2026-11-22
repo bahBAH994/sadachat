@@ -839,13 +839,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             className={`light-card min-h-0 overflow-hidden rounded-3xl px-3 pt-3 sm:px-5 sm:pt-4 flex flex-col relative ${
               embedded
                 ? 'lg:col-span-7 h-[72dvh] max-h-[580px] pb-2.5 sm:pb-3'
-                : 'fixed inset-x-0 top-0 z-[60] h-[100dvh] bg-slate-50 lg:static lg:inset-auto lg:z-auto lg:h-auto lg:col-span-7'
+                : 'fixed inset-x-0 top-0 z-[100] h-[100dvh] flex flex-col bg-white lg:static lg:inset-auto lg:z-auto lg:h-auto lg:col-span-7'
             } ${mobileChatOpen ? 'flex' : 'hidden lg:flex'}`}
-            style={
-              !embedded && isSmallViewport
-                ? { top: `${visualViewportRect.top}px`, height: `${visualViewportRect.height}px` }
-                : undefined
-            }
           >
             {activePeer ? (
               <>

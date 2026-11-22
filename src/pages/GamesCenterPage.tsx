@@ -38,7 +38,6 @@ import {
   playLadderActionInSupabase,
   playRpsInSupabase,
   playStandardDiceInSupabase,
-  getRoomGameRoundFromSupabase,
   placeRoomGameBetInSupabase,
   refreshGameUserFromSupabase,
   spinRouletteInSupabase,
@@ -674,36 +673,69 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
       return;
     }
 
-    let disposed = false;
-    let loading = false;
-    const syncRound = async () => {
-      if (disposed || loading) return;
-      loading = true;
-      try {
-        const nextRound = await getRoomGameRoundFromSupabase(
-          roomId,
-          roomRoundGameKind,
-          roomRoundUserId
-        );
-        if (!disposed) {
-          setRoomGameRound(nextRound);
-          setRoomClockOffset(Date.parse(nextRound.serverNow) - Date.now());
+    const cycleMs = 20_000;
+    const bettingMs = 15_000;
+    const syncRound = () => {
+      const now = Date.now();
+      const cycleIndex = Math.floor(now / cycleMs);
+      const elapsed = now - cycleIndex * cycleMs;
+      const betting = elapsed < bettingMs;
+      const startedAt = cycleIndex * cycleMs;
+      const bettingEndsAt = startedAt + bettingMs;
+      const roundEndsAt = startedAt + cycleMs;
+      const roundNumber = cycleIndex + 1;
+      const roundId = `${roomId}_${roomRoundGameKind}_${roundNumber}`;
+      const wheelIndex = Math.abs(roundNumber * 17 + 11) % 37;
+      const number = ROULETTE_WHEEL_ORDER[wheelIndex];
+      const result =
+        roomRoundGameKind === 'roulette'
+          ? {
+              number,
+              color:
+                number === 0
+                  ? ('green' as const)
+                  : ROULETTE_REDS.has(number)
+                  ? ('red' as const)
+                  : ('black' as const),
+              wheelIndex,
+            }
+          : null;
+
+      setRoomClockNow(now);
+      setRoomClockOffset(0);
+      setRoomGameRound((previous) => {
+        if (previous?.roundId === roundId) return previous;
+        if (previous?.roundNumber === roundNumber) {
+          return {
+            ...previous,
+            startedAt: new Date(startedAt).toISOString(),
+            bettingEndsAt: new Date(bettingEndsAt).toISOString(),
+            roundEndsAt: new Date(roundEndsAt).toISOString(),
+            serverNow: new Date(now).toISOString(),
+            phase: betting ? 'betting' : 'revealing',
+            result: betting ? null : previous.result ?? result,
+          };
         }
-      } catch (error) {
-        if (!disposed) {
-          setErrorMsg(error instanceof Error ? error.message : 'تعذّرت مزامنة جولة الغرفة.');
-        }
-      } finally {
-        loading = false;
-      }
+
+        return {
+          roundId,
+          roundNumber,
+          startedAt: new Date(startedAt).toISOString(),
+          bettingEndsAt: new Date(bettingEndsAt).toISOString(),
+          roundEndsAt: new Date(roundEndsAt).toISOString(),
+          serverNow: new Date(now).toISOString(),
+          phase: betting ? 'betting' : 'revealing',
+          result: betting ? null : result,
+          bets: [],
+        };
+      });
     };
 
-    void syncRound();
-    const pollId = window.setInterval(() => void syncRound(), 900);
+    syncRound();
+    const syncId = window.setInterval(syncRound, 100);
     const clockId = window.setInterval(() => setRoomClockNow(Date.now()), 100);
     return () => {
-      disposed = true;
-      window.clearInterval(pollId);
+      window.clearInterval(syncId);
       window.clearInterval(clockId);
     };
   }, [roomId, roomRoundEnabled, roomRoundGameKind, roomRoundUserId]);
@@ -960,8 +992,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         Date.parse(nextRound.bettingEndsAt) - (Date.now() + roomClockOffset) + 100
       );
       window.setTimeout(() => {
-        void getRoomGameRoundFromSupabase(roomId, roomRoundGameKind, user.id)
-          .then(() => refreshGameUserFromSupabase(user.id))
+        void refreshGameUserFromSupabase(user.id)
           .then(updateLocalUser)
           .catch((error: unknown) => {
             setErrorMsg(
@@ -1421,7 +1452,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   ? `وقت الرهان المتبقي: ${roomBetSeconds}ث`
                   : roomGameRound
                   ? `أُغلق الرهان — النتيجة خلال: ${roomRevealSeconds}ث`
-                  : 'جارٍ مزامنة الجولة الجماعية...'}
+                  : ''}
               </p>
               <p className="text-[10px] text-slate-400">
                 {roomGameRound?.phase === 'betting' && roomBetSeconds > 0
@@ -1499,7 +1530,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         </div>
       )}
 
-      {errorMsg && (
+      {errorMsg && category !== 'roulette' && (
         <div className="rounded-2xl border border-rose-500/45 bg-rose-950/60 px-3.5 py-2 text-xs text-rose-200">
           {errorMsg}
         </div>
@@ -2518,8 +2549,8 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
           {/* Betting Controls */}
           <div className="w-full min-h-0 space-y-2">
-            <div>
-              <h2 className="text-sm font-extrabold text-[#FCE9A6]">لوحة رهانات الروليت الملكية</h2>
+            <div className="mt-3">
+              <h2 className="text-sm font-extrabold text-[#FCE9A6] mb-4">لوحة رهانات الروليت الملكية</h2>
               <p className="text-[10px] text-slate-300 mt-0.5">
                 اختر اللون أو الفئة أو الرقم الدقيق لتدوير العجلة الذهبية بمضاعفات تصل إلى ×32
               </p>

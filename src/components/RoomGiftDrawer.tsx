@@ -533,7 +533,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
               لا توجد هدايا في هذه الفئة ضمن هذا التبويب.
             </p>
           ) : (
-            <div className="flex-1 min-h-[200px] overflow-y-auto grid grid-cols-4 gap-2 p-2 pb-4">
+            <div className="flex-1 min-h-[200px] overflow-y-auto grid grid-cols-4 gap-2 p-2 pb-8">
               {visibleGifts.map((gift) => (
                 <GiftGridItem
                   key={gift.id}
@@ -548,7 +548,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
 
         {/* Sticky Bottom Quantity & Send Bar + Bottom-Left Coins Balance & (+) Recharge */}
         {giftTab !== 'history' && selectedGift && (
-          <div className="relative z-20 shrink-0 border-t border-amber-500/20 bg-[#14161f] p-3 pb-[max(env(safe-area-inset-bottom,0px),12px)] space-y-2">
+          <div className="relative z-20 shrink-0 border-t border-amber-500/20 bg-[#14161f] py-2 px-3 pb-[max(env(safe-area-inset-bottom,0px),8px)] space-y-1.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1 overflow-x-auto touch-pan-x no-scrollbar">
                 {QUANTITIES.map((qty) => (

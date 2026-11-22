@@ -685,20 +685,6 @@ function parseRoomGameRoundState(value: unknown): RoomGameRoundState {
   };
 }
 
-export async function getRoomGameRoundFromSupabase(
-  roomId: string,
-  gameKind: RoomGameKind,
-  userId: string
-): Promise<RoomGameRoundState> {
-  const { data, error } = await supabase.rpc('sada_get_room_game_round', {
-    p_room_id: roomId,
-    p_game_kind: gameKind,
-    p_user_id: userId,
-  });
-  if (error) throw new Error(error.message || 'تعذّرت مزامنة جولة الغرفة.');
-  return parseRoomGameRoundState(data);
-}
-
 export async function placeRoomGameBetInSupabase(
   roomId: string,
   gameKind: RoomGameKind,

@@ -251,7 +251,7 @@ const AuthenticatedAppShell: React.FC = () => {
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden">
-      {!isFullScreenRoom && !isFullScreenSvip && <TopBar />}
+      {!isFullScreenRoom && !isFullScreenSvip && !isPrivateChatOpen && <TopBar />}
       <main
         tabIndex={0}
         className={
