@@ -1,5 +1,7 @@
 import React, { Component } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import App from './App.tsx';
 import './index.css';
 
@@ -161,6 +163,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   } catch {
     // ignore passive event unsupported error on older WebViews
   }
+}
+
+if (typeof window !== 'undefined' && Capacitor.getPlatform() === 'android') {
+  void StatusBar.setOverlaysWebView({ overlay: true });
+  void StatusBar.setStyle({ style: Style.Dark });
 }
 
 const rootEl = document.getElementById('root');

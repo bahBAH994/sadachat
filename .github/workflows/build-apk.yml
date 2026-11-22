@@ -1,0 +1,52 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: |
+          curl -L https://services.gradle.org/distributions/gradle-8.11.1-bin.zip -o /tmp/gradle-8.11.1.zip
+          unzip -q /tmp/gradle-8.11.1.zip -d /tmp/gradle
+          /tmp/gradle/gradle-8.11.1/bin/gradle wrapper --gradle-version 8.11.1
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sada-app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk

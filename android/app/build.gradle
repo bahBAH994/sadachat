@@ -1,0 +1,36 @@
+apply plugin: 'com.android.application'
+
+apply from: '../variables.gradle'
+
+android {
+    namespace 'com.sada.voicechat'
+    compileSdk project.ext.compileSdkVersion
+
+    defaultConfig {
+        applicationId "com.sada.voicechat"
+        minSdk project.ext.minSdkVersion
+        targetSdk project.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+}

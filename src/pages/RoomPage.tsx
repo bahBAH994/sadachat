@@ -1558,7 +1558,7 @@ export const RoomPage: React.FC = () => {
         </section>
 
         {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
-        <section className="flex-1 min-h-0 overflow-y-auto px-3 pb-14 py-1 flex flex-col mt-1">
+        <section className="flex-1 min-h-0 overflow-y-auto px-3 pb-1 py-1 flex flex-col mt-1">
           {/* Compact Chat Filter Tabs */}
           <div
             className={`flex items-center gap-1.5 px-1 mb-1 shrink-0 ${
