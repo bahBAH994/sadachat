@@ -34,7 +34,17 @@ jobs:
 
       - name: Prepare Android project
         run: |
-          rm -rf android
+          rm -rf android capacitor.config.ts capacitor.config.js
+          cat << 'EOF' > capacitor.config.json
+          {
+            "appId": "com.sada.voicechat",
+            "appName": "صَدَى - SADA",
+            "webDir": "dist",
+            "server": {
+              "androidScheme": "https"
+            }
+          }
+          EOF
           npx cap add android
           npx cap sync android
 
