@@ -551,6 +551,7 @@ export const RoomPage: React.FC = () => {
   const [chatFilter, setChatFilter] = useState<'all' | 'chat'>('all');
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [visualViewportTop, setVisualViewportTop] = useState(0);
   const [canManageRoomActions, setCanManageRoomActions] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGiftModal, setShowGiftModal] = useState(false);
@@ -591,6 +592,8 @@ export const RoomPage: React.FC = () => {
       const height = viewport?.height ?? window.innerHeight;
       maxViewportHeight = Math.max(maxViewportHeight, height);
       setViewportHeight(height);
+      setVisualViewportTop(viewport?.offsetTop || 0);
+      window.scrollTo(0, 0);
       setIsKeyboardOpen(maxViewportHeight - height > 120);
     };
     const resetAfterOrientationChange = () => {
@@ -1123,8 +1126,11 @@ export const RoomPage: React.FC = () => {
 
   return (
     <div
-      style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh' }}
-      className={`fixed inset-x-0 top-0 z-50 flex flex-col overflow-hidden bg-[#0A0805] text-white ${
+      style={{
+        top: `${visualViewportTop}px`,
+        height: viewportHeight ? `${viewportHeight}px` : '100dvh',
+      }}
+      className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-[#0b0e17] text-white ${
         fullscreenGift ? 'animate-dragon-shake' : ''
       }`}
     >
@@ -1157,9 +1163,7 @@ export const RoomPage: React.FC = () => {
       <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-2 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2">
         {/* 1. ROOM TOP BAR */}
         <header
-          className={`pt-[max(env(safe-area-inset-top),32px)] flex items-center justify-between gap-1.5 shrink-0 ${
-            isKeyboardOpen ? 'sticky top-0 z-20 scale-90 origin-top' : ''
-          }`}
+          className="relative z-30 shrink-0 pt-9 px-3 pb-2 bg-[#0b0e17]/95 flex items-center justify-between gap-1.5"
         >
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
           <div
@@ -1529,13 +1533,13 @@ export const RoomPage: React.FC = () => {
 
         {/* 2. SMART GEOMETRIC MIC GRID (1+4 | 2+4+4 | 5xN up to 30 Larger Mics) */}
         <section
-          className={`shrink-0 ${
-            isKeyboardOpen
-              ? 'sticky top-0 z-20 scale-90 origin-top max-h-none'
-              : showGamesOverlay
-              ? 'max-h-[34dvh]'
-              : 'max-h-[50dvh]'
-          } overflow-y-auto no-scrollbar py-1 space-y-2`}
+          className={`shrink-0 relative z-20 py-1 space-y-2 ${
+            (Array.isArray(room?.seats) ? room.seats.length : 0) <= 10
+              ? 'px-2 overflow-visible'
+              : isKeyboardOpen
+              ? 'max-h-[22vh] overflow-y-auto overscroll-contain px-2 no-scrollbar'
+              : 'max-h-[34vh] overflow-y-auto overscroll-contain px-2 no-scrollbar'
+          }`}
         >
           {micRows.map((row, rIdx) => (
             <div
@@ -1583,7 +1587,7 @@ export const RoomPage: React.FC = () => {
         </section>
 
         {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
-        <section className="flex-1 min-h-0 flex flex-col mt-1 overflow-hidden">
+        <section className="flex-1 min-h-[100px] overflow-y-auto px-3 py-1 flex flex-col mt-1">
           {/* Compact Chat Filter Tabs */}
           <div
             className={`flex items-center gap-1.5 px-1 mb-1 shrink-0 ${
@@ -1761,7 +1765,7 @@ export const RoomPage: React.FC = () => {
         )}
 
         {/* 4. FIXED SINGLE-ROW BOTTOM ACTION BAR (Chat Input + 😊 + 🎁 + 🎮 + 🎙️) */}
-        <footer className="pt-1.5 pb-[max(env(safe-area-inset-bottom,0px),6px)] shrink-0">
+        <footer className="relative z-30 shrink-0 bg-[#14161f] px-2 py-2 pb-[max(env(safe-area-inset-bottom,0px),8px)]">
           <div className="flex items-center gap-1.5">
             {/* 1. Public Chat Input Box */}
             <form
@@ -1772,6 +1776,12 @@ export const RoomPage: React.FC = () => {
                 type="text"
                 value={chatText}
                 onChange={(e) => setChatText(e.target.value)}
+                onFocus={() => {
+                  window.scrollTo(0, 0);
+                  const viewport = window.visualViewport;
+                  setVisualViewportTop(viewport?.offsetTop || 0);
+                  setViewportHeight(viewport?.height || window.innerHeight);
+                }}
                 placeholder="أهلاً..."
                 className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none py-1"
               />

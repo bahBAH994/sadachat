@@ -594,7 +594,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
   // --- ROULETTE STATE ---
   const [rouletteBetType, setRouletteBetType] = useState<RouletteBetType>('red');
   const [rouletteStraightNum, setRouletteStraightNum] = useState<number>(7);
-  const [wheelRotation, setWheelRotation] = useState<number>(0);
+  const [wheelAngle, setWheelAngle] = useState<number>(0);
   const [isRouletteSpinning, setIsRouletteSpinning] = useState(false);
   const [rouletteResult, setRouletteResult] = useState<RouletteSpinResponse | null>(null);
   const [roomGameRound, setRoomGameRound] = useState<RoomGameRoundState | null>(null);
@@ -1046,13 +1046,8 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
       setRouletteResult(null);
       setIsRouletteSpinning(true);
       const sliceAngle = 360 / 37;
-      const targetAngleMod = ((360 - outcome.wheelIndex * sliceAngle) % 360 + 360) % 360;
-      setWheelRotation((previous) => {
-        const currentMod = ((previous % 360) + 360) % 360;
-        let delta = targetAngleMod - currentMod;
-        if (delta <= 0) delta += 360;
-        return previous + 360 * 5 + delta;
-      });
+      const targetSectorAngle = ((360 - outcome.wheelIndex * sliceAngle) % 360 + 360) % 360;
+      setWheelAngle((previous) => previous + 1800 + targetSectorAngle);
       const timeoutId = window.setTimeout(() => {
         setIsRouletteSpinning(false);
         setRouletteResult({
@@ -1078,7 +1073,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
             ownBet.multiplier
           );
         }
-      }, 4800);
+      }, 4000);
       timersRef.current.push(timeoutId);
       return;
     }
@@ -1113,7 +1108,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
         };
         pushHistory(titles[diceGame] || 'ألعاب النرد', ownBet.amount, ownBet.payout, ownBet.multiplier);
       }
-    }, 4800);
+    }, 4000);
     timersRef.current.push(timeoutId);
   }, [roomGameRound, roomRoundEnabled, diceGame, user, updateLocalUser, pushHistory]);
 
@@ -2441,8 +2436,10 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
                   <div
                     className="w-full h-full rounded-full relative overflow-hidden bg-[#080B18]"
                     style={{
-                      transform: `rotate(${wheelRotation}deg)`,
-                      transition: `transform ${roomRoundEnabled ? 4800 : 3200}ms cubic-bezier(0.12, 0.85, 0.2, 1)`,
+                      transform: `rotate(${wheelAngle}deg)`,
+                      transition: isRouletteSpinning
+                        ? 'transform 4s cubic-bezier(0.15, 0.85, 0.25, 1)'
+                        : 'none',
                     }}
                   >
                   <svg width={200} height={200} viewBox="0 0 200 200" className="w-full h-full">
