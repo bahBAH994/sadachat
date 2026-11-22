@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Check, Coins, MessageCircleHeart, Plus, Sparkles, Users, X } from 'lucide-react';
+import { Check, Coins, MessageCircleHeart, Sparkles, Users, X } from 'lucide-react';
 import { resolveAsset } from '../lib/assets';
 import { getCachedGiftCatalog } from '../lib/sadaCatalog';
 import { Fluent3DAsset } from './Fluent3DAsset';
@@ -131,7 +131,7 @@ const RecipientSpeakerChip = memo<RecipientSpeakerChipProps>(
       <button
         type="button"
         onClick={() => onToggle(uid)}
-        className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
+        className="relative z-20 flex flex-col items-center gap-1 shrink-0 cursor-pointer group pointer-events-auto"
       >
         <div
           className={`relative w-11 h-11 rounded-full p-[2px] transition ${
@@ -184,7 +184,6 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
   sending,
   onSend,
   onOpenPM,
-  onRecharge,
   onClose,
 }) => {
   const gifts = useMemo(
@@ -216,6 +215,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
   const [giftTab, setGiftTab] = useState<'fixed' | 'lucky' | 'history'>('fixed');
   const [tierFilter, setTierFilter] = useState<'all' | 'light' | 'medium' | 'royal'>('all');
   const [quantity, setQuantity] = useState<number>(1);
+  const [insufficientNotice, setInsufficientNotice] = useState(false);
   const [selectedGiftId, setSelectedGiftId] = useState<string>(() => {
     const firstFixed = gifts.find((g) => g.category !== 'lucky');
     return firstFixed?.id || gifts[0]?.id || 'gift_01';
@@ -276,7 +276,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
       return;
     }
     if (isAllSelected) {
-      setSelectedTargetIds([allSeatedIds[0]]);
+      setSelectedTargetIds([]);
     } else {
       setSelectedTargetIds(allSeatedIds);
     }
@@ -284,10 +284,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
 
   const toggleTarget = useCallback((uid: string) => {
     setSelectedTargetIds((prev) => {
-      if (prev.includes(uid)) {
-        if (prev.length === 1) return prev;
-        return prev.filter((id) => id !== uid);
-      }
+      if (prev.includes(uid)) return prev.filter((id) => id !== uid);
       return [...prev, uid];
     });
   }, []);
@@ -308,6 +305,14 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
       className="fixed inset-0 z-50 flex items-end justify-center bg-[#0d111e]"
       onClick={onClose}
     >
+      {insufficientNotice && (
+        <div
+          role="alert"
+          className="fixed top-3 left-1/2 -translate-x-1/2 z-[70] w-[calc(100%-24px)] max-w-md rounded-2xl border border-rose-400/70 bg-rose-950/95 px-4 py-3 text-center text-sm font-extrabold text-rose-100 shadow-2xl"
+        >
+          رصيد الكوينز غير كافٍ لإرسال هذه الهدية
+        </div>
+      )}
       <motion.div
         initial={{ y: 70, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -373,7 +378,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
             <button
               type="button"
               onClick={toggleAllSeated}
-              className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
+              className="relative z-20 flex flex-col items-center gap-1 shrink-0 cursor-pointer group pointer-events-auto"
             >
               <div
                 className={`relative w-11 h-11 rounded-full flex items-center justify-center border-2 transition ${
@@ -403,7 +408,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
               <button
                 type="button"
                 onClick={() => toggleTarget(room.hostId)}
-                className="flex flex-col items-center gap-1 shrink-0 cursor-pointer"
+                className="relative z-20 flex flex-col items-center gap-1 shrink-0 cursor-pointer pointer-events-auto"
               >
                 <div
                   className={`relative w-11 h-11 rounded-full p-[2px] transition ${
@@ -546,92 +551,54 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
           )}
         </div>
 
-        {/* Sticky Bottom Quantity & Send Bar + Bottom-Left Coins Balance & (+) Recharge */}
+        {/* Compact Quantity & Send Bar */}
         {giftTab !== 'history' && selectedGift && (
-          <div className="relative z-20 shrink-0 border-t border-amber-500/20 bg-[#14161f] py-2 px-3 pb-[max(env(safe-area-inset-bottom,0px),8px)] space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1 overflow-x-auto touch-pan-x no-scrollbar">
-                {QUANTITIES.map((qty) => (
-                  <button
-                    key={qty}
-                    type="button"
-                    onClick={() => setQuantity(qty)}
-                    className={`min-w-[44px] h-8 px-2 rounded-full text-[11px] font-mono-num font-extrabold transition cursor-pointer shrink-0 ${
-                      quantity === qty
-                        ? 'bg-gradient-to-r from-[#FCE9A6] to-[#D4AF37] text-[#070913] shadow-[0_0_12px_rgba(243,211,122,0.55)]'
-                        : 'bg-white/10 text-slate-200 hover:bg-white/15 border border-white/10'
-                    }`}
-                  >
-                    ×{qty}
-                  </button>
-                ))}
-              </div>
-
-              <div className="text-left shrink-0">
-                <div className="text-[10px] text-slate-400">الإجمالي</div>
-                <div
-                  className={`text-xs font-mono-num font-extrabold flex items-center gap-1 ${
-                    canAfford ? 'text-[#FCE9A6]' : 'text-rose-400'
+          <div className="relative z-20 shrink-0 bg-[#14161f] border-t border-amber-500/20 px-3 py-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1 overflow-x-auto touch-pan-x no-scrollbar min-w-0">
+              {QUANTITIES.map((qty) => (
+                <button
+                  key={qty}
+                  type="button"
+                  onClick={() => setQuantity(qty)}
+                  className={`min-w-[38px] h-8 px-1.5 rounded-full text-[10px] font-mono-num font-extrabold transition cursor-pointer shrink-0 ${
+                    quantity === qty
+                      ? 'bg-gradient-to-r from-[#FCE9A6] to-[#D4AF37] text-[#070913] shadow-[0_0_12px_rgba(243,211,122,0.55)]'
+                      : 'bg-white/10 text-slate-200 hover:bg-white/15 border border-white/10'
                   }`}
                 >
-                  <Coins className="w-3.5 h-3.5 text-[#FCE9A6]" aria-label="كوينز" />
-                  <span>{totalCost.toLocaleString('en-US')}</span>
-                </div>
+                  {qty}x
+                </button>
+              ))}
+            </div>
+
+            <div className="text-left shrink-0">
+              <div className="text-[9px] text-slate-400 leading-tight">الإجمالي</div>
+              <div className={`text-xs font-mono-num font-extrabold flex items-center gap-1 ${canAfford ? 'text-[#FCE9A6]' : 'text-rose-400'}`}>
+                <Coins className="w-3 h-3" aria-label="كوينز" />
+                <span>{totalCost.toLocaleString('en-US')}</span>
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-2.5">
-              <button
-                type="button"
-                disabled={sending || !canAfford}
-                onClick={() => void onSend(selectedGift.id, selectedTargetIds, quantity)}
-                className={`flex-1 min-h-[44px] rounded-2xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 px-3 transition cursor-pointer ${
-                  canAfford
-                    ? 'bg-gradient-to-r from-[#FDE047] via-[#D4AF37] to-[#B45309] text-[#070913] shadow-[0_0_24px_rgba(243,211,122,0.55)] hover:brightness-105 active:scale-[0.99]'
-                    : 'bg-rose-950/70 border border-rose-400/40 text-rose-200 cursor-not-allowed'
-                }`}
-              >
-                <Sparkles className="w-4 h-4 shrink-0" />
-                {canAfford && !sending && (
-                  <Fluent3DAsset
-                    glyph={selectedGift.glyph}
-                    imageUrl={selectedGift.imageUrl}
-                    alt={selectedGift.name}
-                    sizeClass="w-5 h-5"
-                    priority
-                  />
-                )}
-                <span className="truncate">
-                  {sending
-                    ? 'جارٍ الإرسال...'
-                    : !canAfford
-                    ? 'رصيد الكوينز غير كافٍ'
-                    : `إرسال ${selectedGift.name} ×${quantity}${
-                        effectiveTargetCount > 1 ? ` إلى ${effectiveTargetCount}` : ''
-                      }`}
-                </span>
-              </button>
-
-              {/* Real User Coins Balance + (+) Quick Recharge on Bottom-Left (RTL end) */}
-              <div
-                onClick={onRecharge}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') onRecharge();
-                }}
-                className="flex items-center gap-1.5 rounded-2xl bg-[#1A1308] border border-[#F3D37A]/50 px-2.5 py-1.5 shadow-[0_0_12px_rgba(212,175,55,0.22)] shrink-0 cursor-pointer hover:border-[#FCE9A6]"
-                title="رصيدك الحالي · اضغط للشحن السريع"
-              >
-                <Coins className="w-4 h-4 text-[#FCE9A6]" aria-label="رصيد الكوينز" />
-                <span className="text-xs sm:text-sm font-mono-num font-black text-[#FCE9A6]">
-                  {userCoins.toLocaleString('en-US')}
-                </span>
-                <span className="w-6 h-6 rounded-full bg-gradient-to-br from-[#FDE047] to-[#D4AF37] text-[#070913] flex items-center justify-center shadow-sm">
-                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                </span>
-              </div>
-            </div>
+            <button
+              type="button"
+              disabled={sending}
+              onClick={() => {
+                if (!canAfford) {
+                  setInsufficientNotice(true);
+                  window.setTimeout(() => setInsufficientNotice(false), 2600);
+                  return;
+                }
+                if (selectedTargetIds.length === 0) {
+                  setInsufficientNotice(false);
+                  return;
+                }
+                void onSend(selectedGift.id, selectedTargetIds, quantity);
+              }}
+              className="min-h-[38px] min-w-[82px] rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 px-3 transition cursor-pointer bg-gradient-to-r from-[#FDE047] via-[#D4AF37] to-[#B45309] text-[#070913] shadow-[0_0_18px_rgba(243,211,122,0.5)] hover:brightness-105 active:scale-[0.99] disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+              <span>إرسال</span>
+            </button>
           </div>
         )}
       </motion.div>

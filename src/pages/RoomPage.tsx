@@ -1130,7 +1130,7 @@ export const RoomPage: React.FC = () => {
         top: `${visualViewportTop}px`,
         height: viewportHeight ? `${viewportHeight}px` : '100dvh',
       }}
-      className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-[#0b0e17] text-white ${
+      className={`fixed inset-0 h-[100dvh] z-50 flex flex-col overflow-hidden bg-[#0b0e17] text-white ${
         fullscreenGift ? 'animate-dragon-shake' : ''
       }`}
     >
@@ -1160,10 +1160,10 @@ export const RoomPage: React.FC = () => {
           {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
           <DragonStageBackdrop coverImage={room.coverImage} />
 
-      <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-2 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-2 pb-2">
+      <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-1 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-1 pb-2">
         {/* 1. ROOM TOP BAR */}
         <header
-          className="relative z-30 shrink-0 pt-9 px-3 pb-2 bg-[#0b0e17]/95 flex items-center justify-between gap-1.5"
+          className="relative z-30 shrink-0 pt-1.5 px-3 pb-1 bg-[#0b0e17]/95 flex items-center justify-between gap-1.5"
         >
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
           <div
@@ -1531,63 +1531,32 @@ export const RoomPage: React.FC = () => {
           <VipEntranceOverlay entry={entryBanner} />
         </AnimatePresence>
 
-        {/* 2. SMART GEOMETRIC MIC GRID (1+4 | 2+4+4 | 5xN up to 30 Larger Mics) */}
-        <section
-          className={`shrink-0 relative z-20 py-1 space-y-2 ${
-            (Array.isArray(room?.seats) ? room.seats.length : 0) <= 10
-              ? 'px-2 overflow-visible'
-              : isKeyboardOpen
-              ? 'max-h-[22vh] overflow-y-auto overscroll-contain px-2 no-scrollbar'
-              : 'max-h-[34vh] overflow-y-auto overscroll-contain px-2 no-scrollbar'
-          }`}
-        >
-          {micRows.map((row, rIdx) => (
-            <div
-              key={rIdx}
-              className={`${
-                row.cols === 5
-                  ? 'grid grid-cols-5 gap-1.5 px-2'
-                  : row.cols === 4
-                  ? 'grid grid-cols-4 gap-2 sm:gap-3 max-w-md mx-auto'
-                  : row.cols === 2
-                  ? 'flex items-start justify-center gap-8 sm:gap-12'
-                  : 'flex items-start justify-center'
-              }`}
-            >
-              {row.seats.map((seat) => {
-                const sizeClass = row.isHero5
-                  ? 'w-[62px] h-[62px] sm:w-[68px] sm:h-[68px]'
-                  : (Array.isArray(room?.seats) ? room.seats.length : 0) <= 10
-                  ? 'w-[50px] h-[50px] sm:w-[56px] sm:h-[56px]'
-                  : 'w-[46px] h-[46px] sm:w-[52px] sm:h-[52px]';
-
-                const seatLookup = seat.userId ? userProfileLookup.get(seat.userId) : undefined;
-                return (
-                  <RoomSeatItem
-                    key={seat.seatIndex}
-                    seat={seat}
-                    isMe={seat.userId === user?.id}
-                    isTop1={Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex)}
-                    isHost={Boolean(seat.userId && seat.userId === room.hostId)}
-                    isHero5={row.isHero5}
-                    vipLevel={seatLookup?.vipLevel || seat.vipLevel || 'none'}
-                    sizeClass={sizeClass}
-                    seatEmoji={seat.userId ? seatEmojis[seat.userId] : undefined}
-                    seatGiftReaction={
-                      seat.userId ? seatGiftReactions[seat.userId] : undefined
-                    }
-                    seatHaloActive={Boolean(seat.userId && seatHaloEffects[seat.userId])}
-                    onSeatClick={onSeatItemClick}
-                    registerSeatRef={registerSeatRef}
-                  />
-                );
-              })}
-            </div>
-          ))}
+        {/* 2. TAKA MIC GRID: 6 columns × 5 rows */}
+        <section className="shrink-0 relative z-20 grid grid-cols-6 gap-x-1 gap-y-1.5 px-1.5">
+          {(room.seats || []).slice(0, 30).map((seat) => {
+            const seatLookup = seat.userId ? userProfileLookup.get(seat.userId) : undefined;
+            return (
+              <RoomSeatItem
+                key={seat.seatIndex}
+                seat={seat}
+                isMe={seat.userId === user?.id}
+                isTop1={Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex)}
+                isHost={Boolean(seat.userId && seat.userId === room.hostId)}
+                isHero5={false}
+                vipLevel={seatLookup?.vipLevel || seat.vipLevel || 'none'}
+                sizeClass="w-[38px] h-[38px] sm:w-[44px] sm:h-[44px]"
+                seatEmoji={seat.userId ? seatEmojis[seat.userId] : undefined}
+                seatGiftReaction={seat.userId ? seatGiftReactions[seat.userId] : undefined}
+                seatHaloActive={Boolean(seat.userId && seatHaloEffects[seat.userId])}
+                onSeatClick={onSeatItemClick}
+                registerSeatRef={registerSeatRef}
+              />
+            );
+          })}
         </section>
 
         {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
-        <section className="flex-1 min-h-[100px] overflow-y-auto px-3 py-1 flex flex-col mt-1">
+        <section className="flex-1 min-h-0 overflow-y-auto px-3 pb-14 py-1 flex flex-col mt-1">
           {/* Compact Chat Filter Tabs */}
           <div
             className={`flex items-center gap-1.5 px-1 mb-1 shrink-0 ${
