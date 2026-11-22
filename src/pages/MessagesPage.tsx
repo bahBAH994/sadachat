@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -213,6 +214,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   } | null>(null);
 
   const endRef = useRef<HTMLDivElement | null>(null);
+  const messagesFeedRef = useRef<HTMLDivElement | null>(null);
   const userRef = useRef(user);
   userRef.current = user;
   const queryTarget = !embedded ? searchParams.get('to') : null;
@@ -231,6 +233,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   useEffect(() => {
     const updateViewport = () => {
       const viewport = window.visualViewport;
+      window.scrollTo(0, 0);
       setIsSmallViewport(window.matchMedia('(max-width: 1023px)').matches);
       setVisualViewportRect({
         top: viewport?.offsetTop || 0,
@@ -404,7 +407,10 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   );
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const feed = messagesFeedRef.current;
+    if (feed) {
+      feed.scrollTo({ top: feed.scrollHeight, behavior: 'smooth' });
+    }
   }, [activeConversation?.messages.length, mobileChatOpen]);
 
   const handleSelectPeer = (peerId: string) => {
@@ -835,16 +841,26 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           </aside>
 
           {/* Active Conversation Window */}
+          {(() => {
+            const chatSection = (
           <section
-            className={`light-card min-h-0 overflow-hidden rounded-3xl px-3 pt-3 sm:px-5 sm:pt-4 flex flex-col relative ${
+            className={
               embedded
-                ? 'lg:col-span-7 h-[72dvh] max-h-[580px] pb-2.5 sm:pb-3'
-                : 'fixed inset-x-0 top-0 z-[100] h-[100dvh] flex flex-col bg-white lg:static lg:inset-auto lg:z-auto lg:h-auto lg:col-span-7'
-            } ${mobileChatOpen ? 'flex' : 'hidden lg:flex'}`}
+                ? 'light-card lg:col-span-7 h-[72dvh] max-h-[580px] min-h-0 overflow-hidden rounded-3xl px-3 pt-3 pb-2.5 sm:px-5 sm:pt-4 sm:pb-3 flex flex-col relative'
+                : `fixed inset-x-0 z-[9999] flex flex-col bg-slate-50 overflow-hidden ${mobileChatOpen && activePeer ? 'flex' : 'hidden'}`
+            }
+            style={
+              !embedded
+                ? {
+                    top: `${visualViewportRect.top}px`,
+                    height: `${visualViewportRect.height}px`,
+                  }
+                : undefined
+            }
           >
             {activePeer ? (
               <>
-                <div className="pt-[max(env(safe-area-inset-top),32px)] pb-2.5 mb-2.5 border-b border-slate-100 flex items-center justify-between gap-2 shrink-0">
+                <div className="shrink-0 bg-white border-b border-slate-200 px-3 py-2.5 flex items-center justify-between gap-2 z-20 pt-[max(env(safe-area-inset-top),32px)]">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <button
                       type="button"
@@ -968,7 +984,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 )}
 
                 {/* Messages Feed */}
-                <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y no-scrollbar p-3 space-y-2.5">
+                <div ref={messagesFeedRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-3 space-y-2">
                   {!activeConversation || activeConversation.messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center px-6 space-y-2">
                       <MessageCircleHeart className="w-10 h-10 text-emerald-500" />
@@ -1137,55 +1153,62 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                   )}
                 </AnimatePresence>
 
-                {showEmojiPicker && (
-                  <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar border-t border-slate-100 bg-white px-3 pt-2">
-                    {['😊', '😂', '😍', '🥰', '👍', '👏', '❤️', '🔥'].map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => setText((current) => `${current}${emoji}`)}
-                        className="w-9 h-9 rounded-xl hover:bg-slate-100 text-xl cursor-pointer shrink-0"
-                        aria-label={`إضافة ${emoji}`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Private message composer */}
-                <form
-                  onSubmit={(e) => handleSend(e)}
-                  className="shrink-0 p-3 pb-[max(env(safe-area-inset-bottom),12px)] bg-white border-t border-slate-200 flex items-center gap-1.5"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setShowEmojiPicker((current) => !current)}
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer shrink-0 ${
-                      showEmojiPicker ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-                    }`}
-                    aria-label="اختيار سمايل"
-                    aria-expanded={showEmojiPicker}
+                <div className="shrink-0 bg-white border-t border-slate-200 p-2.5">
+                  {showEmojiPicker && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2">
+                      {['😊', '😂', '😍', '🥰', '👍', '👏', '❤️', '🔥'].map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => setText((current) => `${current}${emoji}`)}
+                          className="w-9 h-9 rounded-xl hover:bg-slate-100 text-xl cursor-pointer shrink-0"
+                          aria-label={`إضافة ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <form
+                    onSubmit={(e) => handleSend(e)}
+                    className="flex items-center gap-2"
                   >
-                    <Smile className="w-5 h-5" />
-                  </button>
-                  <input
-                    type="text"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    placeholder="اكتب رسالة..."
-                    className="flex-1 min-w-0 rounded-2xl bg-slate-100 border border-slate-200 px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-700"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={sending || !text.trim()}
-                    className="min-h-[40px] rounded-2xl bg-emerald-800 hover:bg-emerald-900 border border-emerald-700 text-white px-4 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-sm transition"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span>إرسال</span>
-                  </button>
-                </form>
+                    <button
+                      type="submit"
+                      disabled={sending || !text.trim()}
+                      className="min-h-[40px] rounded-2xl bg-emerald-800 hover:bg-emerald-900 border border-emerald-700 text-white px-3 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-sm transition"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>إرسال</span>
+                    </button>
+                    <input
+                      type="text"
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      onFocus={() => {
+                        window.scrollTo(0, 0);
+                        const viewport = window.visualViewport;
+                        setVisualViewportRect({
+                          top: viewport?.offsetTop || 0,
+                          height: viewport?.height || window.innerHeight,
+                        });
+                      }}
+                      placeholder="اكتب رسالة..."
+                      className="flex-1 min-w-0 rounded-2xl bg-slate-100 border border-slate-200 px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPicker((current) => !current)}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer shrink-0 ${
+                        showEmojiPicker ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                      }`}
+                      aria-label="اختيار سمايل"
+                      aria-expanded={showEmojiPicker}
+                    >
+                      <Smile className="w-5 h-5" />
+                    </button>
+                  </form>
+                </div>
 
                 {/* 3.0s Circular Combo Button inside Private Chat */}
                 <AnimatePresence>
@@ -1254,6 +1277,11 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
               </div>
             )}
           </section>
+            );
+            return !embedded && mobileChatOpen && activePeer
+              ? createPortal(chatSection, document.body)
+              : chatSection;
+          })()}
         </div>
       </div>
 
