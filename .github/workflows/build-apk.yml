@@ -23,7 +23,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Install dependencies
         run: npm install
@@ -31,19 +31,26 @@ jobs:
       - name: Build web app
         run: npm run build
 
+      - name: Add Android project when missing
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+
       - name: Sync Capacitor Android
         run: npx cap sync android
 
       - name: Generate Gradle wrapper
-        working-directory: android
         run: |
-          curl -L https://services.gradle.org/distributions/gradle-8.11.1-bin.zip -o /tmp/gradle-8.11.1.zip
-          unzip -q /tmp/gradle-8.11.1.zip -d /tmp/gradle
-          /tmp/gradle/gradle-8.11.1/bin/gradle wrapper --gradle-version 8.11.1
+          curl -L --fail https://services.gradle.org/distributions/gradle-8.11.1-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp/gradle
+          /tmp/gradle/gradle-8.11.1/bin/gradle -p android wrapper --gradle-version 8.11.1
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
 
       - name: Build debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug
+        run: cd android && ./gradlew assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
