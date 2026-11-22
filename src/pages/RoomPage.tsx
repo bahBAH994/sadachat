@@ -603,6 +603,8 @@ export const RoomPage: React.FC = () => {
         maxViewportHeight = height;
         setIsKeyboardOpen(false);
         setViewportHeight(height);
+        setVisualViewportTop(viewport?.offsetTop || 0);
+        window.scrollTo(0, 0);
       }, 350);
     };
 
@@ -1130,7 +1132,7 @@ export const RoomPage: React.FC = () => {
         top: `${visualViewportTop}px`,
         height: viewportHeight ? `${viewportHeight}px` : '100dvh',
       }}
-      className={`fixed inset-0 h-[100dvh] z-50 flex flex-col overflow-hidden bg-[#0b0e17] text-white ${
+      className={`fixed inset-x-0 z-50 flex flex-col overflow-hidden bg-[#0b0e17] text-white ${
         fullscreenGift ? 'animate-dragon-shake' : ''
       }`}
     >
@@ -1163,7 +1165,7 @@ export const RoomPage: React.FC = () => {
       <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-1 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-1 pb-2">
         {/* 1. ROOM TOP BAR */}
         <header
-          className="relative z-30 shrink-0 pt-1.5 px-3 pb-1 bg-[#0b0e17]/95 flex items-center justify-between gap-1.5"
+          className="relative z-30 shrink-0 pt-2 px-2.5 pb-1 bg-[#0b0e17]/95 flex items-center justify-between gap-1.5"
         >
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
           <div
@@ -1532,7 +1534,7 @@ export const RoomPage: React.FC = () => {
         </AnimatePresence>
 
         {/* 2. TAKA MIC GRID: 6 columns × 5 rows */}
-        <section className="shrink-0 relative z-20 grid grid-cols-6 gap-x-1 gap-y-1.5 px-1.5">
+        <section className="shrink-0 relative z-20 grid grid-cols-6 gap-x-1 gap-y-0.5 px-1.5">
           {(room.seats || []).slice(0, 30).map((seat) => {
             const seatLookup = seat.userId ? userProfileLookup.get(seat.userId) : undefined;
             return (
@@ -1544,7 +1546,7 @@ export const RoomPage: React.FC = () => {
                 isHost={Boolean(seat.userId && seat.userId === room.hostId)}
                 isHero5={false}
                 vipLevel={seatLookup?.vipLevel || seat.vipLevel || 'none'}
-                sizeClass="w-[38px] h-[38px] sm:w-[44px] sm:h-[44px]"
+                sizeClass="w-8 h-8"
                 seatEmoji={seat.userId ? seatEmojis[seat.userId] : undefined}
                 seatGiftReaction={seat.userId ? seatGiftReactions[seat.userId] : undefined}
                 seatHaloActive={Boolean(seat.userId && seatHaloEffects[seat.userId])}
