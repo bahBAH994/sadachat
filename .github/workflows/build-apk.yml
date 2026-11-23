@@ -24,11 +24,10 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: |
+          npm install --legacy-peer-deps
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/status-bar @capacitor/keyboard --legacy-peer-deps
 
       - name: Build web app
         run: npm run build
@@ -49,34 +48,23 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Configure immersive Android fullscreen
+      - name: Configure Immersive Fullscreen and Permissions
         run: |
-          cat > android/app/src/main/java/com/sada/voicechat/MainActivity.java <<'EOF'
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          sed -i 's/<uses-permission android:name="android.permission.INTERNET" \/>/<uses-permission android:name="android.permission.INTERNET" \/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO" \/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" \/>/' "$MANIFEST"
+          sed -i 's/android:name=".MainActivity"/android:name=".MainActivity"\n            android:windowSoftInputMode="adjustResize"/' "$MANIFEST"
+          MAIN_ACT=$(find android/app/src/main/java -name "MainActivity.*" | head -n 1)
+          if [[ "$MAIN_ACT" == *.java ]]; then
+            cat << 'EOF' > "$MAIN_ACT"
           package com.sada.voicechat;
 
           import android.os.Bundle;
-          import android.view.View;
           import androidx.core.view.WindowCompat;
           import androidx.core.view.WindowInsetsCompat;
           import androidx.core.view.WindowInsetsControllerCompat;
           import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
-              private void hideSystemBars() {
-                  WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-                  WindowInsetsControllerCompat controller =
-                      new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
-                  controller.hide(WindowInsetsCompat.Type.systemBars());
-                  controller.setSystemBarsBehavior(
-                      WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                  );
-                  getWindow().getDecorView().setSystemUiVisibility(
-                      View.SYSTEM_UI_FLAG_FULLSCREEN |
-                      View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                      View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                  );
-              }
-
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
@@ -86,27 +74,57 @@ jobs:
               @Override
               public void onWindowFocusChanged(boolean hasFocus) {
                   super.onWindowFocusChanged(hasFocus);
-                  if (hasFocus) hideSystemBars();
+                  if (hasFocus) {
+                      hideSystemBars();
+                  }
+              }
+
+              private void hideSystemBars() {
+                  WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+                  WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+                  controller.hide(WindowInsetsCompat.Type.systemBars());
+                  controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
               }
           }
           EOF
+          elif [[ "$MAIN_ACT" == *.kt ]]; then
+            cat << 'EOF' > "$MAIN_ACT"
+          package com.sada.voicechat
 
-          python3 - <<'EOF'
-          from pathlib import Path
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
-          if 'android:windowSoftInputMode="adjustResize"' not in s:
-              s = s.replace('android:exported="true"', 'android:exported="true"\n            android:windowSoftInputMode="adjustResize"', 1)
-          if 'android.permission.RECORD_AUDIO' not in s:
-              s = s.replace('<application', '<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <application', 1)
-          p.write_text(s)
+          import android.os.Bundle
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowInsetsControllerCompat
+          import com.getcapacitor.BridgeActivity
+
+          class MainActivity : BridgeActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  hideSystemBars()
+              }
+
+              override fun onWindowFocusChanged(hasFocus: Boolean) {
+                  super.onWindowFocusChanged(hasFocus)
+                  if (hasFocus) {
+                      hideSystemBars()
+                  }
+              }
+
+              private fun hideSystemBars() {
+                  WindowCompat.setDecorFitsSystemWindows(window, false)
+                  val controller = WindowInsetsControllerCompat(window, window.decorView)
+                  controller.hide(WindowInsetsCompat.Type.systemBars())
+                  controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+              }
+          }
           EOF
-
-      - name: Make Gradle wrapper executable
-        run: chmod +x android/gradlew
+          fi
 
       - name: Build Android APK
-        run: cd android && ./gradlew assembleDebug
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
