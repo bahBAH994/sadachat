@@ -22,6 +22,7 @@ import {
   getUserVipTierInfo,
   isFemaleVoiceLocked,
   makeConversationId,
+  PM_MESSAGE_COST,
   REFERRAL_WHEEL_SEGMENTS,
   rollLuckyGiftMultiplier,
 } from './sadaCatalog';
@@ -820,11 +821,24 @@ export async function getPmOverviewFromSupabase(user: User) {
     recipients,
     userFollows,
     gifts: getCachedGiftCatalog(),
-    pmMessageCost: state.settings.pmMessageCost,
+    pmMessageCost: PM_MESSAGE_COST,
     pmReplyDiamonds: state.settings.pmReplyDiamonds,
     pendingDiamondsTotal,
     canReceivePaidPm: isUserFemaleOrHost(user, hostedUserIds),
   };
+}
+
+export async function markPrivateMessagesReadInSupabase(
+  userId: string,
+  conversationId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('sada_private_messages')
+    .update({ is_read: true })
+    .eq('conversation_id', conversationId)
+    .eq('recipient_id', userId)
+    .eq('is_read', false);
+  if (error) throw new Error(error.message);
 }
 
 export async function sendPrivateMessageInSupabase(
@@ -867,7 +881,12 @@ export async function sendPrivateMessageInSupabase(
   );
   const isMutualFollow = followStatus.isMutual;
 
-  const cleanText = (payload.text || '').trim().slice(0, 400);
+  const rawText = (payload.text || '').trim();
+  const isImageMessage = /^data:image\/(?:jpeg|png|webp);base64,/i.test(rawText);
+  if (isImageMessage && rawText.length > 2_500_000) {
+    throw new Error('حجم الصورة بعد الضغط أكبر من الحد المسموح به.');
+  }
+  const cleanText = isImageMessage ? rawText : rawText.slice(0, 400);
   if (!cleanText && !payload.giftId) {
     throw new Error('يرجى كتابة رسالة أو اختيار هدية لإرسالها.');
   }
@@ -972,6 +991,7 @@ export async function sendPrivateMessageInSupabase(
       diamondsPotential: giftDiamondsAwarded,
       diamondsClaimed: true,
       diamondsAwarded: giftDiamondsAwarded,
+      isRead: false,
       giftId: selectedGift.id,
       giftName: qty > 1 ? `${selectedGift.name} ×${qty}` : selectedGift.name,
       giftGlyph: selectedGift.glyph,
@@ -1003,6 +1023,7 @@ export async function sendPrivateMessageInSupabase(
         diamonds_potential: pmGift.diamondsPotential,
         diamonds_claimed: true,
         diamonds_awarded: pmGift.diamondsAwarded,
+        is_read: false,
         gift_id: pmGift.giftId || null,
         gift_name: pmGift.giftName || null,
         gift_glyph: pmGift.giftGlyph || null,
@@ -1071,13 +1092,11 @@ export async function sendPrivateMessageInSupabase(
     };
   }
 
-  // Gender-based PM Billing:
-  // - Female -> Male is ALWAYS FREE (0 coins)
-  // - Mutual follow is ALWAYS FREE (0 coins)
-  // - Male -> Female (or non-mutual paid PM) charges pmCost and awards diamonds to recipient
-  const pmCost = Math.max(0, Number(state.settings.pmMessageCost ?? 50));
-  const isFemaleToMale = freshSender.gender === 'female' && recipient.gender === 'male';
-  const shouldChargeCoins = !isFemaleToMale && !isMutualFollow && pmCost > 0;
+  const pmCost = PM_MESSAGE_COST;
+  const shouldChargeCoins =
+    freshSender.gender === 'male' &&
+    recipient.gender === 'female' &&
+    !isMutualFollow;
 
   if (shouldChargeCoins && freshSender.coins < pmCost) {
     throw new Error(
@@ -1136,6 +1155,7 @@ export async function sendPrivateMessageInSupabase(
     diamondsPotential: immediatePmDiamondsAwarded,
     diamondsClaimed: true,
     diamondsAwarded: immediatePmDiamondsAwarded,
+    isRead: false,
     createdAt: now,
     repliedAt: shouldChargeCoins ? now : null,
   };
@@ -1160,6 +1180,7 @@ export async function sendPrivateMessageInSupabase(
       diamonds_potential: pm.diamondsPotential,
       diamonds_claimed: pm.diamondsClaimed,
       diamonds_awarded: pm.diamondsAwarded,
+      is_read: pm.isRead,
       created_at: now,
       replied_at: pm.repliedAt,
     }),

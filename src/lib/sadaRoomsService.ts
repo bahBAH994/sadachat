@@ -939,7 +939,7 @@ export async function sendRoomGiftInSupabase(
   let luckyMultiplier: number | null = null;
   let luckyBonusCoins = 0;
   if (gift.category === 'lucky') {
-    luckyMultiplier = rollLuckyGiftMultiplier(state.settings.luckyGiftMultipliers);
+    luckyMultiplier = rollLuckyGiftMultiplier();
     luckyBonusCoins = Math.round(gift.coinsCost * luckyMultiplier);
     freshSender.coins += luckyBonusCoins;
   }
@@ -1166,7 +1166,7 @@ export async function sendRoomGiftBatchInSupabase(
   let luckyMultiplier: number | null = null;
   let luckyBonusCoins = 0;
   if (gift.category === 'lucky') {
-    luckyMultiplier = rollLuckyGiftMultiplier(state.settings.luckyGiftMultipliers);
+    luckyMultiplier = rollLuckyGiftMultiplier();
     luckyBonusCoins = Math.round(totalCost * luckyMultiplier);
     freshSender.coins += luckyBonusCoins;
   }

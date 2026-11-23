@@ -56,7 +56,7 @@ import { DragonCinemaOverlay } from '../components/DragonCinemaOverlay';
 import { DragonStageBackdrop } from '../components/DragonStageBackdrop';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { Fluent3DAsset } from '../components/Fluent3DAsset';
-import { LuckyWheelModal } from '../components/LuckyWheelModal';
+import { LuckyWheelGame } from '../components/LuckyWheelGame';
 import { RoomContestModal } from '../components/RoomContestModal';
 import { RoomExitModal } from '../components/RoomExitModal';
 import { RoomGamesModal } from '../components/RoomGamesModal';
@@ -484,8 +484,6 @@ export const RoomPage: React.FC = () => {
     room,
     extras,
     gifts,
-    wheelSegments,
-    wheelCost,
     loading,
     error,
     clearError,
@@ -533,7 +531,6 @@ export const RoomPage: React.FC = () => {
     sendChat,
     sendGiftBatch,
     sendSeatEmoji,
-    updateRoomFromWheel,
     updateSettings,
     runAdminAction,
     clearRoomChat,
@@ -2300,10 +2297,10 @@ export const RoomPage: React.FC = () => {
             initialTargets={giftInitialTargets}
             sending={sendingGift}
             onSend={handleSendGiftBatch}
-            onOpenPM={(uid) => {
+            onOpenPM={() => {
               setShowGiftModal(false);
               window.dispatchEvent(new Event('sada:minimize'));
-              navigate(`/messages?to=${uid}`);
+              navigate('/messages');
             }}
             onRecharge={() => {
               setShowGiftModal(false);
@@ -2346,16 +2343,13 @@ export const RoomPage: React.FC = () => {
 
       {/* LUCKY WHEEL MODAL */}
       {showWheelModal && (
-        <LuckyWheelModal
+        <LuckyWheelGame
           roomId={room.id}
           userCoins={user?.coins ?? 0}
-          wheelCost={wheelCost}
-          segments={wheelSegments}
+          members={presenceMembers}
+          onPlaySpent={(coins) => void addPlayVolume(coins)}
+          onSendChat={sendChat}
           onClose={() => setShowWheelModal(false)}
-          onSpinComplete={(nextUser, nextRoom) => {
-            updateLocalUser(nextUser);
-            void updateRoomFromWheel(nextRoom, wheelCost);
-          }}
         />
       )}
 

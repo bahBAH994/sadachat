@@ -30,7 +30,7 @@ export const USDT_TO_COINS_RATE = 1000;
 export const DIAMONDS_PER_USDT = 100;
 export const COINS_PER_USDT_WITHDRAW = 1000;
 export const MIN_WITHDRAW_USDT = 5;
-export const PM_MESSAGE_COST = 50;
+export const PM_MESSAGE_COST = 150;
 export const PM_REPLY_DIAMONDS = 38;
 export const LUCKY_WHEEL_COST = 200;
 export const INITIAL_APP_PRIZE_POOL_COINS = 0;
@@ -336,7 +336,7 @@ export const VIP_TIER_CONFIGS: VipTierConfig[] = [
   {
     key: 'vip1',
     rank: 1,
-    minScore: 1000,
+    minScore: 100_000,
     label: 'VIP 1 البرونزي',
     shortLabel: 'VIP 1',
     arabicTitle: 'الإطار البرونزي المعدني',
@@ -348,7 +348,7 @@ export const VIP_TIER_CONFIGS: VipTierConfig[] = [
   {
     key: 'vip2',
     rank: 2,
-    minScore: 5000,
+    minScore: 300_000,
     label: 'VIP 2 الفضي',
     shortLabel: 'VIP 2',
     arabicTitle: 'الإطار الفضي الكرومي',
@@ -360,7 +360,7 @@ export const VIP_TIER_CONFIGS: VipTierConfig[] = [
   {
     key: 'vip3',
     rank: 3,
-    minScore: 20000,
+    minScore: 800_000,
     label: 'VIP 3 الملكي',
     shortLabel: 'VIP 3',
     arabicTitle: 'الإطار الذهبي الملكي',
@@ -372,7 +372,7 @@ export const VIP_TIER_CONFIGS: VipTierConfig[] = [
   {
     key: 'svip',
     rank: 4,
-    minScore: 50000,
+    minScore: 2_000_000,
     label: 'SVIP الإمبراطوري',
     shortLabel: 'SVIP',
     arabicTitle: 'الإمبراطور الألماسي',
@@ -392,12 +392,7 @@ export function getUserVipScore(
   user?: Partial<Pick<User, 'coins' | 'totalRecharged' | 'totalSpentCoins'>> | null
 ): number {
   if (!user) return 0;
-  return Math.max(
-    0,
-    Math.round(Number(user.totalRecharged || 0)),
-    Math.round(Number(user.totalSpentCoins || 0)),
-    Math.round(Number(user.coins || 0))
-  );
+  return Math.max(0, Math.round(Number(user.totalRecharged || 0)));
 }
 
 export function getVipTierFromScore(score: number): VipTierInfo {
@@ -642,12 +637,14 @@ const LUCKY_GIFT_RAW: Array<{
 ];
 
 export const LUCKY_GIFT_MULTIPLIERS: LuckyGiftMultiplierSetting[] = [
-  { multiplier: 1, weight: 32 },
-  { multiplier: 1.5, weight: 26 },
-  { multiplier: 2, weight: 22 },
-  { multiplier: 3, weight: 12 },
-  { multiplier: 5, weight: 6 },
-  { multiplier: 10, weight: 2 },
+  { multiplier: 0, weight: 34 },
+  { multiplier: 0.2, weight: 34 },
+  { multiplier: 0.5, weight: 11 },
+  { multiplier: 1, weight: 11 },
+  { multiplier: 1.5, weight: 4 },
+  { multiplier: 2, weight: 4 },
+  { multiplier: 3, weight: 1.8 },
+  { multiplier: 10, weight: 0.2 },
 ];
 
 export function rollLuckyGiftMultiplier(

@@ -536,8 +536,8 @@ export const ProfilePage: React.FC = () => {
                     onClick={() => navigate('/my-level')}
                     className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800 font-mono-num cursor-pointer"
                   >
-                    <Gift className="w-3 h-3 text-amber-300" />
-                    <span>داعم Lv.{giftLevels.sendLevel}</span>
+                    <Crown className="w-3 h-3 text-[#D4AF37]" />
+                    <span>Lv.{giftLevels.sendLevel}</span>
                   </button>
 
                   <button
@@ -545,8 +545,8 @@ export const ProfilePage: React.FC = () => {
                     onClick={() => navigate('/my-level')}
                     className="inline-flex items-center gap-1 rounded-full bg-sky-50 border border-sky-200 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-800 font-mono-num cursor-pointer"
                   >
-                    <Crown className="w-3 h-3 text-sky-300" />
-                    <span>مضيف Lv.{giftLevels.receiveLevel}</span>
+                    <Gift className="w-3 h-3 text-[#D4AF37]" />
+                    <span>Lv.{giftLevels.receiveLevel}</span>
                   </button>
                 </div>
 

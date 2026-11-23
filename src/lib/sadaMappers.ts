@@ -37,7 +37,7 @@ export const ROOM_MESSAGE_COLUMNS =
   'id, room_id, user_id, display_name, level, is_admin, vip_tier, host_badge, female_verified_badge, text, type, timestamp';
 
 export const PRIVATE_MESSAGE_COLUMNS =
-  'id, conversation_id, sender_id, recipient_id, text, coins_paid, diamonds_potential, diamonds_claimed, diamonds_awarded, gift_id, gift_name, gift_glyph, created_at, replied_at';
+  'id, conversation_id, sender_id, recipient_id, text, coins_paid, diamonds_potential, diamonds_claimed, diamonds_awarded, is_read, gift_id, gift_name, gift_glyph, created_at, replied_at';
 
 export const TRANSACTION_COLUMNS =
   'id, user_id, type, amount, currency, description, timestamp';
@@ -243,6 +243,7 @@ export function rowToPrivateMessage(pm: Record<string, unknown>): PrivateMessage
     diamondsPotential: Number(pm.diamonds_potential || 0),
     diamondsClaimed: Boolean(pm.diamonds_claimed),
     diamondsAwarded: Number(pm.diamonds_awarded || 0),
+    isRead: Boolean(pm.is_read),
     giftId: (pm.gift_id as string | undefined) || undefined,
     giftName: (pm.gift_name as string | undefined) || undefined,
     giftGlyph: (pm.gift_glyph as string | undefined) || undefined,
@@ -716,7 +717,8 @@ export async function recordTransaction(tx: Omit<Transaction, 'id' | 'timestamp'
     description: tx.description,
     timestamp: tx.timestamp || new Date().toISOString(),
   };
-  await supabase.from('sada_transactions').insert(row);
+  const { error } = await supabase.from('sada_transactions').insert(row);
+  if (error) throw new Error(error.message);
   return row;
 }
 

@@ -340,6 +340,7 @@ export interface PrivateMessage {
   diamondsPotential: number;
   diamondsClaimed: boolean;
   diamondsAwarded: number;
+  isRead: boolean;
   giftId?: string;
   giftName?: string;
   giftGlyph?: string;

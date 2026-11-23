@@ -432,36 +432,36 @@ export const WalletPage: React.FC = () => {
       )}
 
       {/* Fixed balance cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="royal-glass rounded-3xl p-6 flex flex-col justify-between gap-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-300">رصيد الكوينز الذهبي</span>
-              <Coins className="w-6 h-6 text-[#D4AF37]" />
+      <section className="grid grid-cols-2 gap-2">
+          <div className="royal-glass rounded-2xl p-2.5 flex flex-col justify-between gap-1.5">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[10px] sm:text-xs font-bold text-slate-300">رصيد الكوينز الذهبي</span>
+              <Coins className="w-4 h-4 text-[#D4AF37] shrink-0" />
             </div>
-            <div className="text-3xl sm:text-4xl font-extrabold font-mono-num text-[#FCE9A6]">
+            <div className="text-xl sm:text-2xl font-extrabold font-mono-num text-[#FCE9A6]">
               {user.coins.toLocaleString('en-US')}
             </div>
-            <p className="text-xs text-slate-400">
-              يُستخدم لإرسال الهدايا الملكية ودولاب الحظ والرسائل الخاصة
+            <p className="text-[9px] sm:text-[10px] text-slate-400 leading-tight line-clamp-2">
+              يُستخدم للهدايا ودولاب الحظ والرسائل الخاصة
             </p>
           </div>
 
-          <div className="royal-glass rounded-3xl p-6 flex flex-col justify-between gap-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-300">رصيد الألماس المكتسب</span>
+          <div className="royal-glass rounded-2xl p-2.5 flex flex-col justify-between gap-1.5">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[10px] sm:text-xs font-bold text-slate-300">رصيد الألماس المكتسب</span>
               {user.gender === 'female' && !user.is_admin && user.femaleVoiceStatus !== 'verified' ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/50 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold text-[#FCE9A6]">
-                  <Lock className="w-3 h-3" />
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/50 bg-amber-500/15 px-1.5 py-0.5 text-[8px] font-bold text-[#FCE9A6]">
+                  <Lock className="w-2.5 h-2.5" />
                   مقفل للتوثيق الصوتي
                 </span>
               ) : (
-                <Gem className="w-6 h-6 text-sky-400" />
+                <Gem className="w-4 h-4 text-sky-400 shrink-0" />
               )}
             </div>
-            <div className="text-3xl sm:text-4xl font-extrabold font-mono-num text-sky-200">
+            <div className="text-xl sm:text-2xl font-extrabold font-mono-num text-sky-200">
               {user.diamonds.toLocaleString('en-US')}
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="text-[9px] sm:text-[10px] text-slate-400 leading-tight line-clamp-2">
               {user.gender === 'female' && !user.is_admin && user.femaleVoiceStatus !== 'verified'
                 ? 'سيُفعّل رصيد الألماس واستقبال الرسائل المدفوعة فور اعتماد البصمة الصوتية من الإدارة.'
                 : `يُكتسب من الهدايا والرسائل الخاصة والعمولات (${eligibility.diamondsPerUsdt} 💎 = 1 USDT أو 1 💎 = ${diamondToCoinsRate} كوينز)`}
@@ -471,7 +471,7 @@ export const WalletPage: React.FC = () => {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y">
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 space-y-6">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-28 space-y-6">
       <form
         onSubmit={handleConvert}
         className="royal-glass rounded-3xl p-5 flex flex-col sm:flex-row sm:items-end gap-3"

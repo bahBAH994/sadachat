@@ -576,12 +576,18 @@ export async function purchaseStoreCoinItemInSupabase(
   const item = STORE_COIN_ITEMS.find((s) => s.id === itemId);
   if (!item) throw new Error('العنصر غير موجود في متجر الكوينز.');
 
-  const { data: userRow } = await supabase
+  const { data: userRow, error: userError } = await supabase
     .from('sada_users')
     .select(USER_COLUMNS)
     .eq('id', user.id)
     .maybeSingle();
-  const freshUser = userRow ? rowToUser(userRow) : { ...user };
+  if (userError) throw new Error(userError.message);
+  if (!userRow) throw new Error('تعذّر تحميل بيانات الحساب لإتمام الشراء.');
+  const freshUser = rowToUser(userRow);
+  const originalUser = {
+    ...freshUser,
+    unlockedFrames: [...freshUser.unlockedFrames],
+  };
   const alreadyOwned = freshUser.unlockedFrames.includes(item.id);
   const price = Math.max(0, Number(item.priceCoins || 0));
 
@@ -593,14 +599,6 @@ export async function purchaseStoreCoinItemInSupabase(
     }
     freshUser.coins -= price;
     freshUser.unlockedFrames = [...freshUser.unlockedFrames, item.id];
-    await recordTransaction({
-      userId: freshUser.id,
-      type: 'store_purchase',
-      amount: -price,
-      currency: 'coins',
-      description: `شراء وتفعيل ${item.name} من المتجر الملكي`,
-      timestamp: new Date().toISOString(),
-    });
   }
 
   freshUser.frameId = item.id;
@@ -620,7 +618,40 @@ export async function purchaseStoreCoinItemInSupabase(
     patch.temp_entry_expires_at = expiresAt;
   }
 
-  await supabase.from('sada_users').update(patch).eq('id', freshUser.id);
+  const { error: updateError } = await supabase
+    .from('sada_users')
+    .update(patch)
+    .eq('id', freshUser.id);
+  if (updateError) throw new Error(updateError.message);
+  if (!alreadyOwned) {
+    try {
+      await recordTransaction({
+        userId: freshUser.id,
+        type: 'store_purchase',
+        amount: -price,
+        currency: 'coins',
+        description: `شراء وتفعيل ${item.name} من المتجر الملكي`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      const { error: rollbackError } = await supabase
+        .from('sada_users')
+        .update({
+          coins: originalUser.coins,
+          unlocked_frames: originalUser.unlockedFrames,
+          frame_id: originalUser.frameId,
+          active_entry_id: originalUser.activeEntryId,
+          active_entry_name: originalUser.activeEntryName,
+          temp_entry_expires_at: originalUser.tempEntryExpiresAt,
+        })
+        .eq('id', freshUser.id)
+        .eq('coins', freshUser.coins);
+      if (rollbackError) {
+        console.error('Unable to rollback store item purchase:', rollbackError);
+      }
+      throw error;
+    }
+  }
   await syncUserOnActiveRoomSeats(freshUser);
   return freshUser;
 }
@@ -684,6 +715,103 @@ export async function purchaseVipIdInSupabase(
     p_item_id: vipId.id,
   });
   if (purchaseError) {
+    const isRpcMissing =
+      purchaseError.code === 'PGRST202' ||
+      /schema cache|could not find the function|function .* does not exist/i.test(
+        purchaseError.message
+      );
+    if (isRpcMissing) {
+      const [
+        { data: catalogItem, error: catalogError },
+        { data: userRow, error: userError },
+        state,
+      ] = await Promise.all([
+        supabase
+          .from('sada_vip_ids_catalog')
+          .select('id, number, price_coins, owner_id')
+          .eq('id', vipId.id)
+          .maybeSingle(),
+        supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
+        getPlatformState({ forceRefresh: true }),
+      ]);
+      if (catalogError) throw new Error(catalogError.message);
+      if (userError) throw new Error(userError.message);
+      if (!catalogItem || !userRow) throw new Error('الرقم أو الحساب غير موجود.');
+      if (catalogItem.owner_id && catalogItem.owner_id !== user.id) {
+        throw new Error('هذا الرقم مملوك بالفعل لمستخدم آخر.');
+      }
+
+      const freshUser = rowToUser(userRow);
+      const price = Number(catalogItem.price_coins);
+      const customVipIds = { ...(state.settings.customVipIds || {}) };
+      const currentOwner = Object.entries(customVipIds).find(
+        ([, number]) => number === catalogItem.number
+      );
+      if (currentOwner && currentOwner[0] !== user.id) {
+        throw new Error('هذا الرقم مملوك بالفعل لمستخدم آخر.');
+      }
+      if (!Number.isFinite(price) || price <= 0) {
+        throw new Error('سعر الرقم المميز غير صالح.');
+      }
+      if (freshUser.coins < price) {
+        throw new Error('رصيد الكوينز غير كافٍ لشراء هذا الرقم.');
+      }
+
+      const { data: updatedRow, error: balanceError } = await supabase
+        .from('sada_users')
+        .update({ coins: freshUser.coins - price })
+        .eq('id', user.id)
+        .eq('coins', freshUser.coins)
+        .select(USER_COLUMNS)
+        .maybeSingle();
+      if (balanceError) throw new Error(balanceError.message);
+      if (!updatedRow) throw new Error('تغيّر رصيدك أثناء الشراء. حدّث الصفحة وحاول مجدداً.');
+
+      const previousVipIds = { ...customVipIds };
+      customVipIds[user.id] = String(catalogItem.number);
+      try {
+        await savePlatformState({
+          settings: {
+            ...state.settings,
+            customVipIds,
+          },
+        });
+        await recordTransaction({
+          userId: user.id,
+          type: 'store_purchase',
+          amount: -price,
+          currency: 'coins',
+          description: `شراء رقم ID مميز: ${catalogItem.number}`,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        const { error: refundError } = await supabase
+          .from('sada_users')
+          .update({ coins: freshUser.coins })
+          .eq('id', user.id)
+          .eq('coins', freshUser.coins - price);
+        if (refundError) {
+          console.error('Unable to refund coins after VIP ID purchase failure:', refundError);
+        }
+        try {
+          const currentState = await getPlatformState({ forceRefresh: true });
+          if (currentState.settings.customVipIds?.[user.id] === String(catalogItem.number)) {
+            await savePlatformState({
+              settings: {
+                ...currentState.settings,
+                customVipIds: previousVipIds,
+              },
+            });
+          }
+        } catch (rollbackError) {
+          console.error('Unable to restore custom VIP IDs after purchase failure:', rollbackError);
+        }
+        throw error;
+      }
+
+      setCustomVipIdsCache(customVipIds);
+      return { user: rowToUser(updatedRow), customVipIds };
+    }
     if (purchaseError.message.includes('مملوك')) {
       throw new Error('هذا الرقم مملوك بالفعل لمستخدم آخر.');
     }
@@ -925,11 +1053,13 @@ export async function equipStoreOrBagItemInSupabase(
 
   const storeItem = STORE_3D_ITEMS.find((s) => s.id === itemId);
   if (storeItem) {
-    const { data: userRow } = await supabase
+    const { data: userRow, error: userError } = await supabase
       .from('sada_users')
       .select(USER_COLUMNS)
       .eq('id', user.id)
       .maybeSingle();
+    if (userError) throw new Error(userError.message);
+    if (!userRow) throw new Error('تعذّر تحميل بيانات الحساب.');
     const freshUser = userRow ? rowToUser(userRow) : { ...user };
     const { totalRechargedCoins } = await computeUserCumulativeRechargeCoins(freshUser);
 
@@ -969,7 +1099,11 @@ export async function equipStoreOrBagItemInSupabase(
       patch.temp_entry_expires_at = expiresAt;
     }
 
-    await supabase.from('sada_users').update(patch).eq('id', freshUser.id);
+    const { error: updateError } = await supabase
+      .from('sada_users')
+      .update(patch)
+      .eq('id', freshUser.id);
+    if (updateError) throw new Error(updateError.message);
     await syncUserOnActiveRoomSeats(freshUser);
     return freshUser;
   }

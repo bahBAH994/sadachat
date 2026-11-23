@@ -43,6 +43,7 @@ import {
   updateRoomSettingsInSupabase,
   voteRoomContestInSupabase,
 } from '../lib/sadaRoomsService';
+import { refreshGameUserFromSupabase } from '../lib/sadaGamesService';
 import { supabase } from '../lib/supabase';
 import { safeGetItem, safeSetItem } from '../lib/safeStorage';
 import type {
@@ -58,6 +59,7 @@ import type {
   RoomMessage,
   RoomMusicState,
   RoomSeat,
+  User,
   VipTierKey,
 } from '../types';
 
@@ -520,6 +522,43 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setFlyingGifts((prev) => prev.filter((item) => item.id !== flyData.id));
     }, 2500);
   }, []);
+
+  const pendingLuckyGiftBonusRef = useRef(0);
+  const updateGiftSenderBalance = useCallback(
+    (giftUser: User, gift: GiftItem, luckyBonusCoins: number) => {
+      if (gift.category !== 'lucky' || luckyBonusCoins <= 0) {
+        updateLocalUser(giftUser);
+        return;
+      }
+
+      pendingLuckyGiftBonusRef.current += luckyBonusCoins;
+      updateLocalUser({
+        ...giftUser,
+        coins: Math.max(0, giftUser.coins - pendingLuckyGiftBonusRef.current),
+      });
+      window.setTimeout(() => {
+        pendingLuckyGiftBonusRef.current = Math.max(
+          0,
+          pendingLuckyGiftBonusRef.current - luckyBonusCoins
+        );
+        void refreshGameUserFromSupabase(giftUser.id)
+          .then((freshUser) =>
+            updateLocalUser({
+              ...freshUser,
+              coins: Math.max(0, freshUser.coins - pendingLuckyGiftBonusRef.current),
+            })
+          )
+          .catch((refreshError: unknown) => {
+            setError(
+              refreshError instanceof Error
+                ? `تعذّر تحديث رصيد جائزة هدية الحظ: ${refreshError.message}`
+                : 'تعذّر تحديث رصيد جائزة هدية الحظ.'
+            );
+          });
+      }, 3500);
+    },
+    [updateLocalUser]
+  );
 
   const roomChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -1325,7 +1364,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         giftId,
         recipientId
       );
-      updateLocalUser(data.user);
+      updateGiftSenderBalance(data.user, data.gift, data.luckyBonusCoins);
       setRoom(data.room);
 
       const targetName =
@@ -1379,7 +1418,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const refreshed = await getRoomDetailsFromSupabase(room.id);
       setExtras(refreshed.extras);
     },
-    [dispatchTieredGiftEffects, room, showGlobalRoyalGift, updateLocalUser, user]
+    [dispatchTieredGiftEffects, room, showGlobalRoyalGift, updateGiftSenderBalance, user]
   );
 
   const sendGiftBatch = useCallback(
@@ -1399,7 +1438,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         quantity,
         comboCount
       );
-      updateLocalUser(data.user);
+      updateGiftSenderBalance(data.user, data.gift, data.luckyBonusCoins);
       setRoom(data.room);
       setExtras(data.extras);
 
@@ -1459,7 +1498,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
       }
     },
-    [dispatchTieredGiftEffects, room, showGlobalRoyalGift, updateLocalUser, user]
+    [dispatchTieredGiftEffects, room, showGlobalRoyalGift, updateGiftSenderBalance, user]
   );
 
   const sendSeatEmoji = useCallback(

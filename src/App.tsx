@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Component, useEffect, useRef } from 'react';
+import React, { Component, useEffect, useRef, useState } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import {
   HashRouter,
   Navigate,
@@ -187,6 +189,9 @@ const AuthenticatedAppShell: React.FC = () => {
     leaveActiveRoom,
   } = useActiveRoom();
   const location = useLocation();
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const currentPathRef = useRef(location.pathname);
+  currentPathRef.current = location.pathname;
   const isPrivateChatOpen =
     location.pathname === '/messages' && Boolean(new URLSearchParams(location.search).get('to'));
   const minimizeRoomRef = useRef(minimizeRoom);
@@ -214,6 +219,41 @@ const AuthenticatedAppShell: React.FC = () => {
       window.removeEventListener('sada:leave', handleLeaveEvent);
     };
   }, []);
+
+  useEffect(() => {
+    const handleBackNavigation = () => {
+      if (currentPathRef.current !== '/') return;
+      setShowExitConfirm(true);
+      window.history.pushState(
+        { ...(window.history.state || {}), sadaHomeBackGuard: true },
+        '',
+        window.location.href
+      );
+    };
+    window.addEventListener('popstate', handleBackNavigation);
+    return () => window.removeEventListener('popstate', handleBackNavigation);
+  }, []);
+
+  useEffect(() => {
+    if (location.pathname === '/') {
+      window.history.pushState(
+        { ...(window.history.state || {}), sadaHomeBackGuard: true },
+        '',
+        window.location.href
+      );
+    }
+  }, [location.pathname]);
+
+  const handleConfirmAppExit = () => {
+    setShowExitConfirm(false);
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorApp.exitApp().catch((error: unknown) => {
+        console.error('Unable to exit the app:', error);
+      });
+    } else {
+      window.close();
+    }
+  };
 
   if (loading && !user) {
     return (
@@ -295,6 +335,36 @@ const AuthenticatedAppShell: React.FC = () => {
       <GlobalRoyalGiftTicker />
       <FloatingMinimizedRoom />
       <UserMiniProfileModal />
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 p-5 backdrop-blur-sm">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exit-app-title"
+            className="w-full max-w-sm rounded-3xl border border-amber-200 bg-white p-6 text-center shadow-2xl"
+          >
+            <h2 id="exit-app-title" className="text-lg font-extrabold text-slate-900">
+              هل تريد الخروج من التطبيق؟
+            </h2>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={handleConfirmAppExit}
+                className="min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-extrabold text-white hover:bg-rose-700"
+              >
+                نعم
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowExitConfirm(false)}
+                className="min-h-11 rounded-xl bg-emerald-700 px-4 text-sm font-extrabold text-white hover:bg-emerald-800"
+              >
+                لا
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 };

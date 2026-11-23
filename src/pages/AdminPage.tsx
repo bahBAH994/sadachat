@@ -39,7 +39,7 @@ import {
   type AdminUserRoleChoice,
 } from '../components/admin/AdminUsersTab';
 import { resolveAsset } from '../lib/assets';
-import { isSuperAdminUser } from '../lib/sadaCatalog';
+import { isSuperAdminUser, PM_MESSAGE_COST } from '../lib/sadaCatalog';
 import {
   approveFemaleVoiceInSupabase,
   approveUsdtDepositInSupabase,
@@ -760,32 +760,15 @@ export const AdminPage: React.FC = () => {
     if (!settingsDraft) return;
     setSavingSettings(true);
     try {
-      const saved = await savePlatformSettingsInSupabase(settingsDraft);
+      const saved = await savePlatformSettingsInSupabase({
+        ...settingsDraft,
+        pmMessageCost: PM_MESSAGE_COST,
+      });
       setSettingsDraft(saved);
       showOk('تم حفظ وتطبيق كافة الإعدادات الاقتصادية والمكافآت فورياً على المنصة!');
       void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر حفظ الإعدادات.');
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
-  const handleQuickPmCostPreset = async (cost: number) => {
-    if (!settingsDraft) return;
-    setSavingSettings(true);
-    try {
-      const updated = {
-        ...settingsDraft,
-        pmMessageCost: cost,
-        pmReplyDiamonds: Math.round(cost * (settingsDraft.giftDiamondsRatio || 0.75)),
-      };
-      const saved = await savePlatformSettingsInSupabase(updated);
-      setSettingsDraft(saved);
-      showOk(`تم تعديل وحفظ سعر الرسالة الخاصة إلى ${cost} كوين فورياً!`);
-      void loadOverview('silent');
-    } catch (err) {
-      showErr(err, 'تعذّر حفظ السعر السريع.');
     } finally {
       setSavingSettings(false);
     }
@@ -2476,38 +2459,10 @@ export const AdminPage: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-slate-300 mb-1">
-                          تكلفة الرسالة الخاصة المدفوعة (كوينز) — قبل المتابعة المتبادلة
+                          تكلفة الرسالة من الذكر إلى الأنثى دون متابعة متبادلة
                         </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={settingsDraft.pmMessageCost}
-                          onChange={(e) =>
-                            setSettingsDraft({
-                              ...settingsDraft,
-                              pmMessageCost: Math.max(0, Number(e.target.value) || 0),
-                            })
-                          }
-                          dir="ltr"
-                          className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-white font-mono-num text-left"
-                        />
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <span className="text-[11px] text-slate-400">تطبيق سريع:</span>
-                          {[20, 50, 100].map((preset) => (
-                            <button
-                              key={preset}
-                              type="button"
-                              disabled={savingSettings}
-                              onClick={() => void handleQuickPmCostPreset(preset)}
-                              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold font-mono-num border cursor-pointer transition ${
-                                settingsDraft.pmMessageCost === preset
-                                  ? 'bg-[#D4AF37] border-[#D4AF37] text-[#070913]'
-                                  : 'bg-[#070913]/80 border-[#D4AF37]/30 text-[#FCE9A6] hover:bg-[#D4AF37]/15'
-                              }`}
-                            >
-                              {preset} كوين
-                            </button>
-                          ))}
+                        <div className="rounded-xl border border-[#D4AF37]/25 bg-[#070913]/85 px-3 py-2 text-sm font-mono-num font-extrabold text-[#FCE9A6]">
+                          150 كوينز — الحالات الأخرى مجانية
                         </div>
                       </div>
                       <div>

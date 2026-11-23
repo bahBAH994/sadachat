@@ -6,10 +6,12 @@ import {
   ArrowRight,
   Bell,
   Check,
+  CheckCheck,
   Coins,
   Crown,
   Gem,
   Gift,
+  ImagePlus,
   MessageCircle,
   MessageCircleHeart,
   Plus,
@@ -28,6 +30,7 @@ import { formatShortNumericId, getCachedGiftCatalog, getUserVipTierInfo } from '
 import {
   getFollowStatus,
   getPmOverviewFromSupabase,
+  markPrivateMessagesReadInSupabase,
   searchUsersForFriendInSupabase,
   sendPrivateMessageInSupabase,
   toggleFollowUserInSupabase,
@@ -49,6 +52,38 @@ type InboxFilter = 'كامل' | 'غير مقروء' | 'وجوه مألوفة' | 
 const QUANTITIES = [1, 9, 25, 50, 100] as const;
 const COMBO_DURATION_MS = 3000;
 
+function compressChatImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('تعذّرت قراءة الصورة المحددة.'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('تعذّر فتح الصورة المحددة.'));
+      image.onload = () => {
+        const maxSide = 1280;
+        const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) {
+          reject(new Error('تعذّر تجهيز الصورة للإرسال.'));
+          return;
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL('image/jpeg', 0.78);
+        if (compressed.length > 2_500_000) {
+          reject(new Error('حجم الصورة بعد الضغط أكبر من الحد المسموح به.'));
+          return;
+        }
+        resolve(compressed);
+      };
+      image.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 interface PmComboSession {
   gift: GiftItem;
   recipientId: string;
@@ -57,57 +92,70 @@ interface PmComboSession {
   expiresAt: number;
 }
 
-const PrivateChatMessageItem = memo<{ message: PrivateMessage; isMine: boolean }>(
-  ({ message: m, isMine }) => (
+const PrivateChatMessageItem = memo<{
+  message: PrivateMessage;
+  isMine: boolean;
+  onImageClick: (image: string) => void;
+}>(({ message: m, isMine, onImageClick }) => {
+  const isImage = m.text.startsWith('data:image/');
+  return (
     <div className={`flex flex-col ${isMine ? 'items-start' : 'items-end'}`}>
-      <div
-        className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm border ${
-          m.giftId
-            ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-300 text-amber-950'
-            : isMine
-            ? 'bg-emerald-700 border-emerald-700 text-white'
-            : 'bg-slate-100 border-slate-200 text-slate-900'
-        }`}
-      >
-        {m.giftId && (
-          <div className="flex items-center gap-2 mb-1.5 text-xs font-extrabold text-amber-900">
-            <Fluent3DAsset
-              glyph={m.giftGlyph || '🎁'}
-              alt={m.giftName || 'هدية'}
-              sizeClass="w-8 h-8"
-              fallbackTextClass="text-xl"
-            />
-            <span>{m.giftName}</span>
-          </div>
-        )}
-        <p className="leading-relaxed">{m.text}</p>
-        {(m.coinsPaid > 0 || m.diamondsPotential > 0) && (
-          <div
-            className={`mt-1.5 pt-1 border-t flex flex-wrap items-center gap-2 text-[10px] font-mono-num ${
-              isMine
-                ? 'border-white/20 text-emerald-50'
-                : 'border-slate-200 text-slate-500'
-            }`}
-          >
-            {m.coinsPaid > 0 && (
-              <span className="flex items-center gap-1">
-                <Coins className="w-3 h-3" />
-                {m.coinsPaid.toLocaleString('en-US')} كوينز
-              </span>
-            )}
-            {m.diamondsPotential > 0 && (
-              <span className="font-bold">
-                {m.diamondsClaimed
-                  ? `💎 +${(m.diamondsAwarded || m.diamondsPotential).toLocaleString('en-US')} ألماسة ✓`
-                  : `💎 +${m.diamondsPotential.toLocaleString('en-US')} ألماسة عند الرد`}
-              </span>
-            )}
-          </div>
+      <div className="flex items-end gap-1.5">
+        <div
+          className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm border ${
+            m.giftId
+              ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-300 text-amber-950'
+              : isMine
+              ? 'bg-emerald-700 border-emerald-700 text-white'
+              : 'bg-slate-100 border-slate-200 text-slate-900'
+          }`}
+        >
+          {m.giftId && (
+            <div className="flex items-center gap-2 mb-1.5 text-xs font-extrabold text-amber-900">
+              <Fluent3DAsset
+                glyph={m.giftGlyph || '🎁'}
+                alt={m.giftName || 'هدية'}
+                sizeClass="w-8 h-8"
+                fallbackTextClass="text-xl"
+              />
+              <span>{m.giftName}</span>
+            </div>
+          )}
+          {isImage ? (
+            <button
+              type="button"
+              onClick={() => onImageClick(m.text)}
+              className="block cursor-zoom-in"
+              aria-label="تكبير الصورة"
+            >
+              <img
+                src={m.text}
+                alt="صورة مرسلة في المحادثة"
+                className="max-h-64 max-w-full rounded-xl object-contain"
+              />
+            </button>
+          ) : (
+            <p className="leading-relaxed">{m.text}</p>
+          )}
+        </div>
+        {m.coinsPaid > 0 && m.diamondsAwarded > 0 && (
+          <span className="mb-1 inline-flex shrink-0 items-center gap-0.5 rounded-full border border-sky-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-sky-700 shadow-sm">
+            <Gem className="h-3 w-3" />
+            {m.diamondsAwarded.toLocaleString('en-US')}
+          </span>
         )}
       </div>
+      {isMine && (
+        <span
+          className={`mr-1 mt-0.5 ${m.isRead ? 'text-sky-400' : 'text-slate-400'}`}
+          aria-label={m.isRead ? 'تمت قراءة الرسالة' : 'تم إرسال الرسالة'}
+        >
+          <CheckCheck className="h-3.5 w-3.5" />
+        </span>
+      )}
     </div>
-  )
-);
+  );
+});
 
 const PmGiftItem = memo<{
   gift: GiftItem;
@@ -167,14 +215,15 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const [conversations, setConversations] = useState<PrivateConversation[]>([]);
   const [recipients, setRecipients] = useState<PrivateConversationPeer[]>([]);
   const [gifts, setGifts] = useState<GiftItem[]>(() => getCachedGiftCatalog());
-  const [pmCost, setPmCost] = useState(50);
+  const [pmCost, setPmCost] = useState(150);
   const [pendingDiamondsTotal, setPendingDiamondsTotal] = useState(0);
-  const [canReceivePaidPm, setCanReceivePaidPm] = useState(false);
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
   const [togglingFollow, setTogglingFollow] = useState(false);
 
-  const [selectedPeerId, setSelectedPeerId] = useState<string>(initialPeerId || '');
+  const [selectedPeerId, setSelectedPeerId] = useState<string | null>(initialPeerId || null);
   const privateMessageInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(Boolean(initialPeerId));
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isSmallViewport, setIsSmallViewport] = useState(
@@ -216,6 +265,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const messagesFeedRef = useRef<HTMLDivElement | null>(null);
+  const hasLoadedOverviewRef = useRef(false);
   const userRef = useRef(user);
   userRef.current = user;
   const queryTarget = !embedded ? searchParams.get('to') : null;
@@ -227,7 +277,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       setSelectedPeerId(queryTarget);
       setMobileChatOpen(true);
     } else {
-      setSelectedPeerId('');
+      setSelectedPeerId(null);
       setMobileChatOpen(false);
     }
   }, [embedded, queryTarget, user?.id]);
@@ -263,7 +313,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       setGifts(data.gifts);
       setPmCost(data.pmMessageCost);
       setPendingDiamondsTotal(data.pendingDiamondsTotal);
-      setCanReceivePaidPm(data.canReceivePaidPm);
       setUserFollows(data.userFollows || {});
 
       if (!embedded) {
@@ -274,19 +323,17 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             setShowGiftDrawer(true);
           }
         } else {
-          setSelectedPeerId('');
+          setSelectedPeerId(null);
           setMobileChatOpen(false);
         }
       } else if (initialPeerId && initialPeerId !== currentUser.id) {
         setSelectedPeerId(initialPeerId);
         setMobileChatOpen(true);
-      } else {
-        setSelectedPeerId((prev) => {
-          if (prev) return prev;
-          if (data.conversations[0]?.peer.id) return data.conversations[0].peer.id;
-          return data.recipients[0]?.id || '';
-        });
+      } else if (!hasLoadedOverviewRef.current) {
+        setSelectedPeerId(null);
+        setMobileChatOpen(false);
       }
+      hasLoadedOverviewRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'تعذّر تحميل الرسائل الخاصة.');
     } finally {
@@ -368,7 +415,10 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const filteredConversations = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return conversations.filter((c) => {
-      if (inboxFilter === 'غير مقروء' && c.pendingDiamondsForMe <= 0) return false;
+      if (
+        inboxFilter === 'غير مقروء' &&
+        !c.messages.some((m) => m.recipientId === user?.id && !m.isRead)
+      ) return false;
       if (inboxFilter === 'وجوه مألوفة' && c.messages.length < 2) return false;
       if (q) {
         const numId = formatShortNumericId(c.peer.id).toLowerCase();
@@ -383,7 +433,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     }).slice().sort((a, b) =>
       Date.parse(b.lastMessage?.createdAt || '') - Date.parse(a.lastMessage?.createdAt || '')
     );
-  }, [conversations, inboxFilter, searchQuery]);
+  }, [conversations, inboxFilter, searchQuery, user?.id]);
 
   const isPeerOnline = useCallback(
     (peer: PrivateConversationPeer) => {
@@ -413,6 +463,20 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       feed.scrollTo({ top: feed.scrollHeight, behavior: 'smooth' });
     }
   }, [activeConversation?.messages.length, mobileChatOpen]);
+
+  useEffect(() => {
+    if (!user?.id || !selectedPeerId || !activeConversation) return;
+    const hasUnreadIncoming = activeConversation.messages.some(
+      (message) => message.recipientId === user.id && !message.isRead
+    );
+    if (!hasUnreadIncoming) return;
+
+    void markPrivateMessagesReadInSupabase(user.id, activeConversation.id)
+      .then(() => loadOverview())
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'تعذّر تحديث حالة قراءة الرسائل.');
+      });
+  }, [activeConversation, loadOverview, selectedPeerId, user?.id]);
 
   const handleSelectPeer = (peerId: string) => {
     setSelectedPeerId(peerId);
@@ -444,25 +508,27 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     e?: React.FormEvent,
     giftId?: string,
     qty = 1,
-    comboCount = 1
+    comboCount = 1,
+    messageText?: string
   ) => {
     if (e) e.preventDefault();
     if (!user || !selectedPeerId) return;
-    if (!giftId && !text.trim()) return;
+    const outgoingText = messageText ?? text.trim();
+    if (!giftId && !outgoingText) return;
 
     setSending(true);
     setError(null);
     try {
       const res = await sendPrivateMessageInSupabase(user, {
         recipientId: selectedPeerId,
-        text: giftId ? '' : text.trim(),
+        text: giftId ? '' : outgoingText,
         giftId,
         quantity: qty,
         comboCount,
       });
 
       updateLocalUser(res.user);
-      if (!giftId) setText('');
+      if (!giftId && !messageText) setText('');
       if (giftId) {
         setShowGiftDrawer(false);
         const sentGift = gifts.find((g) => g.id === giftId);
@@ -551,13 +617,25 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       ? getFollowStatus(userFollows, user.id, activePeer.id)
       : { iFollowThem: false, theyFollowMe: false, isMutual: false };
   const isMutualFriends = followRel.isMutual;
-  const isFemaleToMale =
-    user?.gender === 'female' && activePeer?.gender === 'male';
-  const isPmFreeNow = isFemaleToMale || isMutualFriends || pmCost <= 0;
-  const isFreeReply =
-    !isPmFreeNow &&
-    canReceivePaidPm &&
-    Boolean(activeConversation?.messages.some((m) => m.senderId === selectedPeerId));
+  const isChargeablePm =
+    user?.gender === 'male' && activePeer?.gender === 'female' && !isMutualFriends;
+  const isPmFreeNow = !isChargeablePm;
+
+  const handleImageSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('يرجى اختيار ملف صورة صالح.');
+      return;
+    }
+    try {
+      const compressed = await compressChatImage(file);
+      await handleSend(undefined, undefined, 1, 1, compressed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذّر إرسال الصورة.');
+    }
+  };
 
   const giftTotalCost = selectedGift ? selectedGift.coinsCost * giftQuantity : 0;
   const canAffordGift = giftTotalCost <= (user?.coins ?? 0);
@@ -832,7 +910,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                           )}
                         </div>
                         <p className="text-xs text-slate-500 truncate mt-0.5">
-                          {conv.lastMessage?.text || ''}
+                          {conv.lastMessage?.text.startsWith('data:image/')
+                            ? '📷 صورة'
+                            : conv.lastMessage?.text || ''}
                         </p>
                       </div>
                     </div>
@@ -957,25 +1037,22 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 </div>
 
                 {/* Clear Top Gender-Based Billing Status Banner */}
-                {isFemaleToMale ? (
-                  <div className="mb-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-emerald-800 flex items-center justify-between gap-2 shrink-0">
-                    <span>✨ المراسلة من حسابك إلى الذكور مجانية بالكامل (0 كوين)</span>
-                    <span className="rounded-full bg-emerald-700 text-white px-2 py-0.5 text-[10px] font-mono-num shrink-0">
-                      0 كوين
-                    </span>
-                  </div>
-                ) : isMutualFriends ? (
+                {isMutualFriends ? (
                   <div className="mb-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-emerald-800 flex items-center justify-between gap-2 shrink-0">
                     <span>🤝 متابعة متبادلة (أصدقاء) — الرسائل مجانية بالكامل (0 كوين)</span>
                     <span className="rounded-full bg-emerald-700 text-white px-2 py-0.5 text-[10px] font-mono-num shrink-0">
                       0 كوين
                     </span>
                   </div>
-                ) : (
+                ) : isChargeablePm ? (
                   <div className="mb-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-3.5 py-2 text-[11px] sm:text-xs font-bold text-amber-900 flex items-center justify-between gap-2 shrink-0">
                     <span>
-                      الرسائل مدفوعة ({pmCost} كوين/رسالة) — تصبح مجانية فور متابعة الطرفين لبعضهما
+                      الرسائل مدفوعة (150 كوين/رسالة) — تصبح مجانية فور متابعة الطرفين لبعضهما
                     </span>
+                  </div>
+                ) : (
+                  <div className="mb-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-emerald-800 shrink-0">
+                    ✨ الرسائل الخاصة مجانية بالكامل (0 كوين)
                   </div>
                 )}
 
@@ -991,7 +1068,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                     <div className="h-full flex flex-col items-center justify-center text-center px-6 space-y-2">
                       <MessageCircleHeart className="w-10 h-10 text-emerald-500" />
                       <p className="text-sm font-extrabold text-slate-800">
-                        ابدأ محادثة خاصة مع {activePeer.displayName}
+                      ابدأ محادثة خاصة مع {activePeer.displayName}
                       </p>
                       <p className="text-xs text-slate-500 max-w-md">
                         {isPmFreeNow
@@ -1005,6 +1082,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                         key={m.id}
                         message={m}
                         isMine={m.senderId === user?.id}
+                        onImageClick={setZoomedImage}
                       />
                     ))
                   )}
@@ -1175,6 +1253,13 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                     onSubmit={(e) => handleSend(e)}
                     className="flex items-center gap-2"
                   >
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => void handleImageSelection(event)}
+                    />
                     <button
                       type="submit"
                       disabled={sending || !text.trim()}
@@ -1199,6 +1284,15 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                       placeholder="اكتب رسالة..."
                       className="flex-1 min-w-0 rounded-2xl bg-slate-100 border border-slate-200 px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-700"
                     />
+                    <button
+                      type="button"
+                      disabled={sending}
+                      onClick={() => imageInputRef.current?.click()}
+                      className="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer shrink-0 bg-slate-100 text-slate-600 disabled:opacity-50"
+                      aria-label="إرسال صورة من الاستوديو"
+                    >
+                      <ImagePlus className="w-5 h-5" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -1290,6 +1384,33 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           })()}
         </div>
       </div>
+
+      <AnimatePresence>
+        {zoomedImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/90 p-4"
+            onClick={() => setZoomedImage(null)}
+          >
+            <button
+              type="button"
+              onClick={() => setZoomedImage(null)}
+              className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white"
+              aria-label="إغلاق الصورة"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={zoomedImage}
+              alt="صورة المحادثة مكبرة"
+              className="max-h-full max-w-full rounded-xl object-contain"
+              onClick={(event) => event.stopPropagation()}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Add Friend Search Modal (Search Supabase Users by Name or Numeric ID) */}
       <AnimatePresence>
