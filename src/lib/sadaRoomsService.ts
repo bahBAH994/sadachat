@@ -44,6 +44,7 @@ export function createEmptyRoomExtras(): RoomExtrasConfig {
   return {
     deputyIds: [],
     moderatorIds: [],
+    requireMicPermission: false,
     kickedUserIds: [],
     kickedUserNames: {},
     mutedUserIds: [],
@@ -64,6 +65,7 @@ export async function getRoomExtrasFromSupabase(roomId: string): Promise<RoomExt
   return {
     ...base,
     ...raw,
+    requireMicPermission: raw.requireMicPermission === true,
     deputyIds: Array.isArray(raw.deputyIds) ? raw.deputyIds : [],
     moderatorIds: Array.isArray(raw.moderatorIds) ? raw.moderatorIds : [],
     kickedUserIds: Array.isArray(raw.kickedUserIds) ? raw.kickedUserIds : [],
@@ -286,9 +288,9 @@ export async function createRoomInSupabase(
     throw new Error('يرجى إدخال رمز سري للغرفة الخاصة (3 أرقام على الأقل).');
   }
 
-  const allowedCounts = [5, 10, 15, 20, 25, 30];
-  const requestedSeats = Number(payload.maxSeats || 15);
-  const seatsCount = allowedCounts.includes(requestedSeats) ? requestedSeats : 15;
+  const allowedCounts = [6, 12, 18, 24];
+  const requestedSeats = Number(payload.maxSeats || 12);
+  const seatsCount = allowedCounts.includes(requestedSeats) ? requestedSeats : 12;
   const now = new Date().toISOString();
   const roomId = genId('room');
   const seats = makeEmptySeats(seatsCount, user);
@@ -423,6 +425,35 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
 }
 
 export async function canClearRoomChatFromData(
+  room: Pick<Room, 'hostId'>,
+  user: Pick<User, 'id'>,
+  extras: Pick<RoomExtrasConfig, 'deputyIds'>
+): Promise<boolean> {
+  return hasAgencyRoomControlRole(room.hostId, user.id, extras.deputyIds);
+}
+
+export async function isRoomOrAgencyOwnerFromData(
+  room: Pick<Room, 'hostId'>,
+  user: Pick<User, 'id'>
+): Promise<boolean> {
+  if (room.hostId === user.id) return true;
+  const { data: hostUser, error: hostError } = await supabase
+    .from('sada_users')
+    .select('agency_id')
+    .eq('id', room.hostId)
+    .maybeSingle();
+  if (hostError) throw new Error(`تعذّر التحقق من وكالة الغرفة: ${hostError.message}`);
+  if (!hostUser?.agency_id) return false;
+  const { data: agency, error: agencyError } = await supabase
+    .from('sada_agencies')
+    .select('owner_id')
+    .eq('id', String(hostUser.agency_id))
+    .maybeSingle();
+  if (agencyError) throw new Error(`تعذّر التحقق من مالك الوكالة: ${agencyError.message}`);
+  return Boolean(agency && String(agency.owner_id) === user.id);
+}
+
+export async function canManageRoomMicRequestsFromData(
   room: Pick<Room, 'hostId'>,
   user: Pick<User, 'id'>,
   extras: Pick<RoomExtrasConfig, 'deputyIds'>
@@ -1445,6 +1476,7 @@ export async function updateRoomSettingsInSupabase(
     coverImage?: string;
     description?: string;
     title?: string;
+    requireMicPermission?: boolean;
   }
 ): Promise<Room> {
   const [{ data: roomRow }, extras] = await Promise.all([
@@ -1487,10 +1519,15 @@ export async function updateRoomSettingsInSupabase(
   }
 
   if (typeof patch.maxSeats === 'number') {
-    const allowed = [5, 10, 15, 20, 25, 30];
+    const allowed = [6, 12, 18, 24];
+    const requestedCount = patch.maxSeats;
     const targetCount = allowed.includes(patch.maxSeats)
       ? patch.maxSeats
-      : Math.min(30, Math.max(5, patch.maxSeats));
+      : allowed.reduce((closest, count) =>
+          Math.abs(count - requestedCount) < Math.abs(closest - requestedCount)
+            ? count
+            : closest
+        );
     const currentSeats = Array.isArray(roomRow.seats)
       ? (roomRow.seats as Room['seats'])
       : [];
@@ -1521,6 +1558,12 @@ export async function updateRoomSettingsInSupabase(
   if (Object.keys(updates).length > 0) {
     const { error } = await supabase.from('sada_rooms').update(updates).eq('id', roomId);
     if (error) throw new Error('تعذّر حفظ إعدادات الوكالة.');
+  }
+  if (typeof patch.requireMicPermission === 'boolean') {
+    await saveRoomExtrasConfig(roomId, (current) => ({
+      ...current,
+      requireMicPermission: patch.requireMicPermission,
+    }));
   }
 
   const updated = await getRoomDetailsFromSupabase(roomId);
@@ -1815,11 +1858,17 @@ export async function startRoomContestInSupabase(
     agencyQuiz?: RoomLiveContest['agencyQuiz'];
   }
 ): Promise<RoomExtrasConfig> {
-  await authorizeRoomControlAction(
+  const controlRoom = await authorizeRoomControlAction(
     roomId,
     actor,
     'إطلاق المسابقات مخصص لمدير الغرفة أو نائبه أو مضيفيها.'
   );
+  if (
+    payload.agencyQuiz &&
+    !(await isRoomOrAgencyOwnerFromData({ hostId: controlRoom.host_id }, { id: actor.id }))
+  ) {
+    throw new Error('إطلاق المسابقة الثقافية مخصص لصاحب الغرفة أو الوكالة فقط.');
+  }
 
   const cleanTitle = (payload.title || '').trim().slice(0, 80);
   if (cleanTitle.length < 3) {
@@ -1828,6 +1877,31 @@ export async function startRoomContestInSupabase(
 
   const cleanPrize = (payload.prizeLabel || '').trim().slice(0, 60) || 'لقب الفائز الملكي 🏆';
   const now = new Date().toISOString();
+  let agencyQuiz: RoomLiveContest['agencyQuiz'] = null;
+  if (payload.agencyQuiz) {
+    const questions = payload.agencyQuiz.questions;
+    if (!Array.isArray(questions) || questions.length === 0) {
+      throw new Error('أضف سؤالاً واحداً على الأقل للمسابقة الثقافية.');
+    }
+    if (
+      questions.some(
+        (question) =>
+          !question.question.trim() ||
+          question.options.length !== 4 ||
+          question.options.some((option) => !option.trim()) ||
+          question.correctIndex < 0 ||
+          question.correctIndex > 3
+      )
+    ) {
+      throw new Error('تأكد من كتابة السؤال والخيارات الأربعة وتحديد الإجابة الصحيحة.');
+    }
+    agencyQuiz = {
+      questions: questions.map((question) => ({ ...question, seconds: 8 })),
+      currentIndex: 0,
+      questionStartedAt: now,
+      answers: {},
+    };
+  }
 
   const contest: RoomLiveContest = {
     id: genId('contest'),
@@ -1843,7 +1917,7 @@ export async function startRoomContestInSupabase(
     winnerName: null,
     createdAt: now,
     endedAt: null,
-    agencyQuiz: payload.agencyQuiz || null,
+    agencyQuiz,
   };
 
   const nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
@@ -1851,7 +1925,7 @@ export async function startRoomContestInSupabase(
     activeContest: contest,
   }));
 
-  await supabase.from('sada_room_messages').insert({
+  const { error: messageError } = await supabase.from('sada_room_messages').insert({
     id: genId('msg'),
     room_id: roomId,
     user_id: actor.id,
@@ -1865,6 +1939,7 @@ export async function startRoomContestInSupabase(
     type: 'system',
     timestamp: now,
   });
+  if (messageError) throw new Error(`تعذّر نشر إعلان المسابقة: ${messageError.message}`);
 
   return nextExtras;
 }
@@ -1902,6 +1977,122 @@ export async function joinRoomContestInSupabase(
   });
 }
 
+export async function submitRoomQuizAnswerInSupabase(
+  roomId: string,
+  user: User,
+  answerIndex: number
+): Promise<RoomExtrasConfig> {
+  if (!Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex > 3) {
+    throw new Error('الإجابة المختارة غير صالحة.');
+  }
+  return saveRoomExtrasConfig(roomId, (cur) => {
+    const contest = cur.activeContest;
+    const quiz = contest?.agencyQuiz;
+    const question = quiz?.questions[quiz.currentIndex];
+    if (!contest || contest.status !== 'active' || !quiz || !question) {
+      throw new Error('لا توجد جولة ثقافية نشطة حالياً.');
+    }
+    if (quiz.answers?.[user.id] !== undefined) {
+      throw new Error('تم تسجيل إجابتك لهذه الجولة مسبقاً.');
+    }
+    const startedAt = Date.parse(quiz.questionStartedAt || contest.createdAt);
+    if (Date.now() >= startedAt + question.seconds * 1000) {
+      throw new Error('انتهى وقت الإجابة عن هذا السؤال.');
+    }
+    return {
+      ...cur,
+      activeContest: {
+        ...contest,
+        agencyQuiz: {
+          ...quiz,
+          answers: { ...(quiz.answers || {}), [user.id]: answerIndex },
+        },
+      },
+    };
+  });
+}
+
+export async function advanceRoomQuizQuestionInSupabase(
+  roomId: string,
+  actor: User
+): Promise<RoomExtrasConfig> {
+  const controlRoom = await authorizeRoomControlAction(
+    roomId,
+    actor,
+    'إدارة المسابقة الثقافية مخصصة لوكيل الغرفة فقط.'
+  );
+  if (!(await isRoomOrAgencyOwnerFromData({ hostId: controlRoom.host_id }, { id: actor.id }))) {
+    throw new Error('إدارة المسابقة الثقافية مخصصة لوكيل الغرفة فقط.');
+  }
+
+  let resultMessage = '';
+  const now = new Date().toISOString();
+  const nextExtras = await saveRoomExtrasConfig(roomId, (cur) => {
+    const contest = cur.activeContest;
+    const quiz = contest?.agencyQuiz;
+    const question = quiz?.questions[quiz.currentIndex];
+    if (!contest || contest.status !== 'active' || !quiz || !question) {
+      throw new Error('لا توجد جولة ثقافية نشطة حالياً.');
+    }
+    const startedAt = Date.parse(quiz.questionStartedAt || contest.createdAt);
+    if (Date.now() < startedAt + question.seconds * 1000) {
+      throw new Error('لم ينته وقت السؤال بعد.');
+    }
+
+    const answers = quiz.answers || {};
+    const answerCount = Object.values(answers).filter(
+      (answer) => answer === question.correctIndex
+    ).length;
+    const totalAnswers = Object.keys(answers).length;
+    resultMessage =
+      `✅ نتيجة السؤال ${quiz.currentIndex + 1}: الإجابة الصحيحة «${question.options[question.correctIndex]}»` +
+      ` · إجابات صحيحة ${answerCount}/${totalAnswers}`;
+
+    const nextIndex = quiz.currentIndex + 1;
+    if (nextIndex >= quiz.questions.length) {
+      return {
+        ...cur,
+        activeContest: {
+          ...contest,
+          status: 'ended',
+          endedAt: now,
+          winnerName: 'انتهت المسابقة الثقافية',
+          agencyQuiz: { ...quiz, answers: {} },
+        },
+      };
+    }
+    return {
+      ...cur,
+      activeContest: {
+        ...contest,
+        agencyQuiz: {
+          ...quiz,
+          currentIndex: nextIndex,
+          questionStartedAt: now,
+          answers: {},
+        },
+      },
+    };
+  });
+
+  const { error } = await supabase.from('sada_room_messages').insert({
+    id: genId('msg'),
+    room_id: roomId,
+    user_id: actor.id,
+    display_name: actor.displayName,
+    level: actor.level,
+    is_admin: actor.is_admin,
+    vip_tier: null,
+    host_badge: null,
+    female_verified_badge: null,
+    text: resultMessage,
+    type: 'system',
+    timestamp: now,
+  });
+  if (error) throw new Error(`تعذّر نشر نتيجة السؤال في دردشة الغرفة: ${error.message}`);
+  return nextExtras;
+}
+
 export async function voteRoomContestInSupabase(
   roomId: string,
   voter: User,
@@ -1934,10 +2125,14 @@ export async function finishRoomContestInSupabase(
   actor: User,
   winnerUserId?: string
 ): Promise<RoomExtrasConfig> {
-  await authorizeRoomControlAction(
+  const controlRoom = await authorizeRoomControlAction(
     roomId,
     actor,
     'إنهاء المسابقة مخصص لمدير الغرفة أو نائبه أو مضيفيها.'
+  );
+  const isQuizOwner = await isRoomOrAgencyOwnerFromData(
+    { hostId: controlRoom.host_id },
+    { id: actor.id }
   );
 
   let chosenWinnerName: string | null = null;
@@ -1946,6 +2141,9 @@ export async function finishRoomContestInSupabase(
   const nextExtras = await saveRoomExtrasConfig(roomId, (cur) => {
     const contest = cur.activeContest;
     if (!contest) return cur;
+    if (contest.agencyQuiz && !isQuizOwner) {
+      throw new Error('إدارة المسابقة الثقافية مخصصة لوكيل الغرفة فقط.');
+    }
     contestTitle = contest.title;
 
     const sortedEntries = [...contest.entries].sort((a, b) => (b.votes || 0) - (a.votes || 0));
@@ -1966,7 +2164,7 @@ export async function finishRoomContestInSupabase(
   });
 
   if (contestTitle) {
-    await supabase.from('sada_room_messages').insert({
+    const { error } = await supabase.from('sada_room_messages').insert({
       id: genId('msg'),
       room_id: roomId,
       user_id: actor.id,
@@ -1982,6 +2180,7 @@ export async function finishRoomContestInSupabase(
       type: 'system',
       timestamp: new Date().toISOString(),
     });
+    if (error) throw new Error(`تعذّر نشر نتيجة المسابقة في دردشة الغرفة: ${error.message}`);
   }
 
   return nextExtras;
@@ -1991,14 +2190,20 @@ export async function clearRoomContestInSupabase(
   roomId: string,
   actor: User
 ): Promise<RoomExtrasConfig> {
-  await authorizeRoomControlAction(
+  const controlRoom = await authorizeRoomControlAction(
     roomId,
     actor,
     'إغلاق المسابقة مخصص لمدير الغرفة أو نائبه أو مضيفيها.'
   );
+  const isQuizOwner = await isRoomOrAgencyOwnerFromData(
+    { hostId: controlRoom.host_id },
+    { id: actor.id }
+  );
 
-  return saveRoomExtrasConfig(roomId, (cur) => ({
-    ...cur,
-    activeContest: null,
-  }));
+  return saveRoomExtrasConfig(roomId, (cur) => {
+    if (cur.activeContest?.agencyQuiz && !isQuizOwner) {
+      throw new Error('إدارة المسابقة الثقافية مخصصة لوكيل الغرفة فقط.');
+    }
+    return { ...cur, activeContest: null };
+  });
 }

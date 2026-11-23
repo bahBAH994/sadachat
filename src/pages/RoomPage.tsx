@@ -22,7 +22,6 @@ import {
   Smile,
   Sparkles,
   Trophy,
-  Trash2,
   UserMinus,
   Users,
   Volume2,
@@ -43,7 +42,10 @@ import {
 } from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
 import { toggleFollowAgencyInSupabase } from '../lib/sadaSocialService';
-import { canClearRoomChatFromData } from '../lib/sadaRoomsService';
+import {
+  canClearRoomChatFromData,
+  isRoomOrAgencyOwnerFromData,
+} from '../lib/sadaRoomsService';
 import type { GiftItem, RoomMessage, RoomSeat, User, VipTierKey } from '../types';
 import type {
   RoomSeatEmojiEvent,
@@ -64,6 +66,7 @@ import { RoomSettingsModal } from '../components/RoomSettingsModal';
 import { Royal3DDieFaceBadge } from '../components/Royal3DDice';
 import { TieredGiftEffectsOverlay } from '../components/TieredGiftEffectsOverlay';
 import { VipEntranceOverlay } from '../components/VipEntranceOverlay';
+import { safeGetItem } from '../lib/safeStorage';
 
 const COMBO_DURATION_MS = 3000;
 
@@ -543,6 +546,8 @@ export const RoomPage: React.FC = () => {
     voteContest,
     finishContest,
     clearContest,
+    submitContestQuizAnswer,
+    advanceContestQuizQuestion,
     giftTargetRequest,
     clearGiftTargetRequest,
   } = useActiveRoom();
@@ -554,6 +559,7 @@ export const RoomPage: React.FC = () => {
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [visualViewportTop, setVisualViewportTop] = useState(0);
   const [canManageRoomActions, setCanManageRoomActions] = useState(false);
+  const [isAgencyOwner, setIsAgencyOwner] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [giftInitialTargets, setGiftInitialTargets] = useState<string[] | undefined>(
@@ -663,9 +669,35 @@ export const RoomPage: React.FC = () => {
     };
   }, [extras.deputyIds, room?.hostId, showToast, user?.id]);
 
+  useEffect(() => {
+    let active = true;
+    setIsAgencyOwner(false);
+    if (!room?.hostId || !user?.id) return;
+
+    void isRoomOrAgencyOwnerFromData({ hostId: room.hostId }, { id: user.id })
+      .then((allowed) => {
+        if (active) setIsAgencyOwner(allowed);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        showToast(
+          err instanceof Error ? err.message : 'تعذّر التحقق من صلاحية الوكيل.',
+          'error'
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [room?.hostId, showToast, user?.id]);
+
   const registerSeatRef = useCallback((seatIndex: number, el: HTMLDivElement | null) => {
     seatRefs.current[seatIndex] = el;
   }, []);
+  const equippedFrameId = user
+    ? safeGetItem('sada_equipped_frame') || user.frameId
+    : undefined;
+  const canApproveMicRequests = canManageRoomActions;
 
   const userProfileLookup = useMemo(() => {
     const map = new Map<
@@ -698,13 +730,13 @@ export const RoomPage: React.FC = () => {
       const prev = map.get(user.id);
       map.set(user.id, {
         avatarUrl: user.avatarUrl || prev?.avatarUrl,
-        frameId: user.frameId || prev?.frameId,
+        frameId: equippedFrameId || prev?.frameId,
         vipLevel: myVip !== 'none' ? myVip : prev?.vipLevel,
         displayName: user.displayName || prev?.displayName,
       });
     }
     return map;
-  }, [presenceMembers, room?.seats, user]);
+  }, [equippedFrameId, presenceMembers, room?.seats, user]);
 
   const unifiedPresenceList = useMemo(() => {
     const map = new Map<
@@ -754,13 +786,13 @@ export const RoomPage: React.FC = () => {
         userId: user.id,
         displayName: user.displayName,
         avatarUrl: user.avatarUrl,
-        frameId: user.frameId,
+        frameId: equippedFrameId,
         vipLevel: profile?.vipLevel || getUserVipTierInfo(user).key,
         onSeat: false,
       });
     }
     return Array.from(map.values());
-  }, [presenceMembers, room?.seats, user, userProfileLookup]);
+  }, [equippedFrameId, presenceMembers, room?.seats, user, userProfileLookup]);
 
   const supportersLeaderboard = useMemo(
     () =>
@@ -814,6 +846,16 @@ export const RoomPage: React.FC = () => {
     }
   }, [micApprovedRequest, room, user, handleSeatClick, showToast]);
 
+  useEffect(() => {
+    if (extras.activeContest?.status === 'active' && extras.activeContest.agencyQuiz) {
+      setShowContestModal(true);
+    }
+  }, [
+    extras.activeContest?.agencyQuiz?.currentIndex,
+    extras.activeContest?.id,
+    extras.activeContest?.status,
+  ]);
+
   const handleSeatInteraction = useCallback(
     async (seat: RoomSeat) => {
       if (!user || !room) return;
@@ -826,7 +868,7 @@ export const RoomPage: React.FC = () => {
       }
 
       if (!seat.userId) {
-        if (canManage) {
+        if (!extras.requireMicPermission || canApproveMicRequests) {
           await handleSeatClick(seat.seatIndex);
         } else {
           await handleRequestMicAccess();
@@ -855,6 +897,8 @@ export const RoomPage: React.FC = () => {
       handleToggleLock,
       showToast,
       handleSeatClick,
+      canApproveMicRequests,
+      extras.requireMicPermission,
       handleRequestMicAccess,
       openMiniProfile,
     ]
@@ -1121,7 +1165,6 @@ export const RoomPage: React.FC = () => {
     };
   };
 
-  const isAgencyOwner = Boolean(room && user && user.id === room.hostId);
   const roomNumericId = room?.id ? formatShortNumericId(room.id).slice(0, 6) : '000000';
   const comboProgress = Math.max(0, Math.min(1, comboRemainingMs / COMBO_DURATION_MS));
   const comboCircleRadius = 31;
@@ -1336,7 +1379,7 @@ export const RoomPage: React.FC = () => {
           </div>
         </header>
 
-        {/* SUB-HEADER ROW: Trophy Leaderboard + Wheel + Mute Room | Device Music + Agent Mod Log */}
+        {/* SUB-HEADER ROW: Trophy Leaderboard + Mute Room | Device Music + Agent Mod Log */}
         <div className="flex items-center justify-between gap-1.5 mt-1.5 mb-1.5 shrink-0 flex-wrap">
           <div className="flex items-center gap-1.5">
             <button
@@ -1360,6 +1403,21 @@ export const RoomPage: React.FC = () => {
               <Sparkles className="w-3 h-3 text-amber-200" />
               <span>دولاب حظ</span>
             </button>
+
+            {isAgencyOwner && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSettingsInitialTab('contests');
+                  setShowSettingsModal(true);
+                }}
+                className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-emerald-600/85 to-teal-700/85 border border-emerald-300/60 px-2.5 py-1 text-[10px] font-extrabold text-white hover:brightness-110 cursor-pointer"
+                title="إدارة المسابقة الثقافية"
+              >
+                <Trophy className="w-3 h-3 text-[#FCE9A6]" />
+                <span>مسابقة</span>
+              </button>
+            )}
 
             {/* One-tap Mute Room Audio Toggle */}
             <button
@@ -1385,47 +1443,11 @@ export const RoomPage: React.FC = () => {
               )}
               <span>{roomAudioMuted ? 'صوت مكتوم' : 'كتم الروم'}</span>
             </button>
-            {canManageRoomActions && (
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!window.confirm('هل تريد مسح جميع رسائل الدردشة في هذه الغرفة؟')) {
-                    return;
-                  }
-                  try {
-                    await clearRoomChat();
-                    showToast('تم مسح الدردشة بواسطة الإدارة');
-                  } catch (err) {
-                    showToast(
-                      err instanceof Error
-                        ? err.message
-                        : 'تعذّر مسح دردشة الغرفة.',
-                      'error'
-                    );
-                  }
-                }}
-                className="inline-flex items-center gap-1 rounded-xl border border-rose-400/60 bg-rose-950/50 px-2 py-1 text-[10px] font-extrabold text-rose-100 transition hover:bg-rose-900/70 cursor-pointer"
-                title="مسح رسائل الدردشة"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>مسح الشات</span>
-              </button>
-            )}
           </div>
 
           <div className="flex items-center gap-1.5">
             {canManageRoomActions && (
               <>
-                <button
-                  type="button"
-                  onClick={() => setShowContestModal(true)}
-                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-emerald-600/85 to-teal-700/85 border border-emerald-300/60 px-2.5 py-1 text-[10px] font-extrabold text-white hover:brightness-110 cursor-pointer"
-                  title="إطلاق أو إدارة مسابقة داخل الوكالة"
-                >
-                  <Trophy className="w-3 h-3 text-[#FCE9A6]" />
-                  <span>مسابقة</span>
-                </button>
-
                 <button
                   type="button"
                   onClick={() => {
@@ -1541,13 +1563,17 @@ export const RoomPage: React.FC = () => {
             return (
               <RoomSeatItem
                 key={seat.seatIndex}
-                seat={seat}
                 isMe={seat.userId === user?.id}
                 isTop1={Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex)}
                 isHost={Boolean(seat.userId && seat.userId === room.hostId)}
                 isHero5={false}
                 vipLevel={seatLookup?.vipLevel || seat.vipLevel || 'none'}
-                sizeClass="w-9 h-9"
+                sizeClass="w-11 h-11"
+                seat={
+                  seat.userId === user?.id && equippedFrameId
+                    ? { ...seat, frameId: equippedFrameId }
+                    : seat
+                }
                 seatEmoji={seat.userId ? seatEmojis[seat.userId] : undefined}
                 seatGiftReaction={seat.userId ? seatGiftReactions[seat.userId] : undefined}
                 seatHaloActive={Boolean(seat.userId && seatHaloEffects[seat.userId])}
@@ -1710,7 +1736,7 @@ export const RoomPage: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {micRequest && canManage && (
+        {micRequest && canApproveMicRequests && (
           <div className="mb-1.5 rounded-2xl border border-[#D4AF37]/50 bg-[#15100A]/95 px-3 py-2 flex items-center justify-between gap-2 shrink-0">
             <div className="min-w-0">
               <p className="text-[10px] font-extrabold text-[#FCE9A6] truncate">
@@ -2623,6 +2649,7 @@ export const RoomPage: React.FC = () => {
           presenceMembers={presenceMembers}
           isOwnerOrAdmin={isOwnerOrAdmin}
           isAgencyOwner={isAgencyOwner}
+          canClearRoomChat={canManageRoomActions}
           initialTab={settingsInitialTab}
           ownedBackgrounds={ownedBackgrounds}
           onOpenStore={() => {
@@ -2639,8 +2666,16 @@ export const RoomPage: React.FC = () => {
             );
           }}
           onUpdateSettings={updateSettings}
+          onClearRoomChat={async () => {
+            await clearRoomChat();
+            showToast('تم مسح الدردشة بواسطة الإدارة');
+          }}
           onAdminAction={runAdminAction}
-          onStartAgencyContest={startContest}
+          onStartAgencyContest={async (payload) => {
+            await startContest(payload);
+            setShowSettingsModal(false);
+            setShowContestModal(true);
+          }}
           onClose={() => setShowSettingsModal(false)}
         />
       )}
@@ -2649,13 +2684,19 @@ export const RoomPage: React.FC = () => {
       {showContestModal && (
         <RoomContestModal
           contest={extras.activeContest || null}
-          canManageContest={canManageRoomActions}
+          canManageContest={
+            extras.activeContest?.agencyQuiz
+              ? isAgencyOwner
+              : canManageRoomActions
+          }
           currentUserId={user?.id}
           onStartContest={startContest}
           onJoinContest={joinContest}
           onVoteContest={voteContest}
           onFinishContest={finishContest}
           onClearContest={clearContest}
+          onSubmitQuizAnswer={submitContestQuizAnswer}
+          onAdvanceQuizQuestion={advanceContestQuizQuestion}
           onClose={() => setShowContestModal(false)}
         />
       )}
@@ -2689,7 +2730,7 @@ export const RoomPage: React.FC = () => {
             const free = (Array.isArray(room?.seats) ? room.seats : []).find(
               (s) => !s?.userId && !s?.isLocked
             );
-            if (free) void handleSeatClick?.(free.seatIndex);
+            if (free) void handleSeatInteraction(free);
           }}
           onClose={() => setShowMusicModal(false)}
         />

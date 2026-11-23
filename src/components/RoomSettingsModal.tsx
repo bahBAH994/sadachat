@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Ban,
   ClipboardList,
@@ -13,6 +13,7 @@ import {
   Sparkles,
   Store,
   Trophy,
+  Trash2,
   Upload,
   UserMinus,
   Users,
@@ -32,6 +33,7 @@ interface RoomSettingsModalProps {
   presenceMembers: RoomPresenceMember[];
   isOwnerOrAdmin: boolean;
   isAgencyOwner?: boolean;
+  canClearRoomChat?: boolean;
   initialTab?: 'agency' | 'members' | 'logs' | 'contests';
   ownedBackgrounds?: string[];
   onOpenStore?: () => void;
@@ -43,7 +45,9 @@ interface RoomSettingsModalProps {
     coverImage?: string;
     description?: string;
     title?: string;
+    requireMicPermission?: boolean;
   }) => Promise<void>;
+  onClearRoomChat?: () => Promise<void>;
   onAdminAction: (
     action:
       | { type: 'mute_all' }
@@ -72,7 +76,7 @@ interface RoomSettingsModalProps {
   onClose: () => void;
 }
 
-const SEAT_OPTIONS = [5, 10, 15, 20, 25, 30];
+const SEAT_OPTIONS = [6, 12, 18, 24];
 
 export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   room,
@@ -80,12 +84,14 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   presenceMembers,
   isOwnerOrAdmin,
   isAgencyOwner = false,
+  canClearRoomChat = false,
   initialTab = 'agency',
   ownedBackgrounds = [],
   onOpenStore,
   effectsMuted = false,
   onToggleEffectsMuted,
   onUpdateSettings,
+  onClearRoomChat,
   onAdminAction,
   onStartAgencyContest,
   onClose,
@@ -96,7 +102,10 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   );
   const [titleInput, setTitleInput] = useState(room.title);
   const [announcement, setAnnouncement] = useState(room.description || '');
-  const [seatCount, setSeatCount] = useState<number>(room.maxSeats || 15);
+  const [seatCount, setSeatCount] = useState<number>(room.maxSeats || 12);
+  const [requireMicPermission, setRequireMicPermission] = useState(
+    Boolean(extras.requireMicPermission)
+  );
   const [avatarUrl, setAvatarUrl] = useState(room.hostAvatar);
   const [coverImage, setCoverImage] = useState(room.coverImage || 'dragon_dark');
   const [saving, setSaving] = useState(false);
@@ -117,6 +126,10 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
     { question: 'ما اسم مجموعة أقدم قصص عربية شعبية؟', options: ['ألف ليلة وليلة', 'المعلقات', 'السيرة الهلالية', 'كليلة ودمنة'], correctIndex: 0, seconds: 8 },
     { question: 'ما الكوكب الأحمر؟', options: ['المريخ', 'الزهرة', 'المشتري', 'زحل'], correctIndex: 0, seconds: 8 },
   ]);
+
+  useEffect(() => {
+    setRequireMicPermission(Boolean(extras.requireMicPermission));
+  }, [extras.requireMicPermission]);
 
   const readImageFile = (
     file: File,
@@ -162,13 +175,20 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
     setSaving(true);
     setFeedback(null);
     try {
-      await onUpdateSettings({
+      const patch: {
+        maxSeats?: number;
+        hostAvatar: string;
+        coverImage: string;
+        description: string;
+        title: string;
+      } = {
         title: titleInput,
         description: announcement,
-        maxSeats: seatCount,
         hostAvatar: avatarUrl,
         coverImage,
-      });
+      };
+      if (SEAT_OPTIONS.includes(seatCount)) patch.maxSeats = seatCount;
+      await onUpdateSettings(patch);
       setFeedback('تم حفظ إعدادات الوكالة وتحديثها فوراً للجميع!');
     } catch (err) {
       setFeedback(err instanceof Error ? err.message : 'تعذّر حفظ الإعدادات.');
@@ -185,6 +205,41 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
       setFeedback(`تم تحديث عدد المايكات إلى ${count} مايك فوراً.`);
     } catch (err) {
       setFeedback(err instanceof Error ? err.message : 'تعذّر تحديث المايكات.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMicPermissionChange = async () => {
+    const nextPermission = !requireMicPermission;
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await onUpdateSettings({ requireMicPermission: nextPermission });
+      setRequireMicPermission(nextPermission);
+      setFeedback(
+        nextPermission
+          ? 'تم تفعيل إذن الصعود على المايك.'
+          : 'تم إيقاف إذن الصعود، ويمكن للأعضاء الصعود بحرية.'
+      );
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : 'تعذّر تحديث إذن المايك.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClearRoomChat = async () => {
+    if (!onClearRoomChat || !window.confirm('هل تريد مسح جميع رسائل الدردشة في هذه الغرفة؟')) {
+      return;
+    }
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await onClearRoomChat();
+      setFeedback('تم مسح دردشة الغرفة.');
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : 'تعذّر مسح دردشة الغرفة.');
     } finally {
       setSaving(false);
     }
@@ -553,10 +608,22 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
             )}
 
             {/* Active Mic Grid Size Selector */}
+            {canClearRoomChat && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void handleClearRoomChat()}
+                className="w-full min-h-[46px] rounded-xl border border-rose-400/70 bg-rose-600/25 text-rose-100 hover:bg-rose-600/40 text-sm font-extrabold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                مسح الدردشة من الروم
+              </button>
+            )}
+
             <div className="space-y-2">
               <label className="text-xs font-bold text-[#F3D37A] flex items-center gap-1.5">
                 <Mic className="w-3.5 h-3.5" />
-                <span>عدد المايكات النشطة (توزيع هندسي متدرج)</span>
+                <span>عدد المايكات النشطة (بحد أقصى 24)</span>
               </label>
               <div className="grid grid-cols-6 gap-1.5">
                 {SEAT_OPTIONS.map((cnt) => (
@@ -575,6 +642,43 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/30 p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                    requireMicPermission
+                      ? 'bg-amber-500/20 text-[#FCE9A6] border border-amber-400/40'
+                      : 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/40'
+                  }`}
+                >
+                  <Mic className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold text-white">
+                    تفعيل إذن الصعود على المايك
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    {requireMicPermission
+                      ? 'يتطلب الصعود موافقة الوكيل أو نائبه أو المضيف'
+                      : 'يمكن للأعضاء والزوار الصعود بحرية'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={saving}
+                aria-pressed={requireMicPermission}
+                onClick={() => void handleMicPermissionChange()}
+                className={`min-h-[42px] px-3.5 rounded-xl text-xs font-extrabold shrink-0 transition cursor-pointer disabled:opacity-50 ${
+                  requireMicPermission
+                    ? 'bg-amber-500 text-[#070913]'
+                    : 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-200'
+                }`}
+              >
+                {requireMicPermission ? 'مُفعّل' : 'مُتوقف'}
+              </button>
             </div>
 
             {/* Agency Title */}

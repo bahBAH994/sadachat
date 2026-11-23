@@ -16,7 +16,7 @@ import {
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ActiveRoomProvider, useActiveRoom } from './context/ActiveRoomContext';
 import { MiniProfileProvider } from './context/MiniProfileContext';
-import { safeClearKeysMatching, safeClearSessionStorage } from './lib/safeStorage';
+import { safeClearSessionStorage, safeRemoveItem } from './lib/safeStorage';
 import { isSuperAdminUser } from './lib/sadaCatalog';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
@@ -35,6 +35,7 @@ import { BagPage } from './pages/BagPage';
 import { DiamondWalletPage } from './pages/DiamondWalletPage';
 import { MyLevelPage } from './pages/MyLevelPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { PublicProfilePage } from './pages/PublicProfilePage';
 import { MessagesPage } from './pages/MessagesPage';
 import { AgencyPage } from './pages/AgencyPage';
 import { GamesCenterPage } from './pages/GamesCenterPage';
@@ -76,14 +77,6 @@ class AppErrorBoundary extends Component<
             <button
               type="button"
               onClick={() => {
-                safeClearKeysMatching((key) => {
-                  const lower = key.toLowerCase();
-                  return (
-                    lower.includes('room') ||
-                    lower.includes('sada_active') ||
-                    lower.includes('agency')
-                  );
-                });
                 safeClearSessionStorage();
                 try {
                   if ('serviceWorker' in navigator) {
@@ -211,6 +204,7 @@ const AuthenticatedAppShell: React.FC = () => {
     };
     const handleLeaveEvent = () => {
       setExitModalOpenRef.current(false);
+      safeRemoveItem('sada_active_room_id');
       void leaveActiveRoomRef.current();
     };
     window.addEventListener('sada:minimize', handleMinimizeEvent);
@@ -278,6 +272,7 @@ const AuthenticatedAppShell: React.FC = () => {
             <Route path="/my-level" element={<MyLevelPage />} />
             <Route path="/wallet" element={<WalletPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/profile/:id" element={<PublicProfilePage />} />
             <Route path="/svip" element={<SvipPage />} />
             <Route path="/messages" element={<MessagesPage />} />
             <Route path="/agency" element={<AgencyPage />} />

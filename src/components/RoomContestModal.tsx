@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Award, CheckCircle2, Crown, Plus, Sparkles, Trash2, Trophy, Users, Vote, X } from 'lucide-react';
 import { AvatarWithFrame } from './AvatarWithFrame';
 import type { RoomLiveContest } from '../types';
@@ -17,6 +17,8 @@ interface RoomContestModalProps {
   onVoteContest: (contestantUserId: string) => Promise<void>;
   onFinishContest: (winnerUserId?: string) => Promise<void>;
   onClearContest: () => Promise<void>;
+  onSubmitQuizAnswer: (answerIndex: number) => Promise<void>;
+  onAdvanceQuizQuestion: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -44,6 +46,8 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
   onVoteContest,
   onFinishContest,
   onClearContest,
+  onSubmitQuizAnswer,
+  onAdvanceQuizQuestion,
   onClose,
 }) => {
   const [title, setTitle] = useState('');
@@ -53,6 +57,64 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
   const [showCreateForm, setShowCreateForm] = useState(!contest);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [quizSecondsRemaining, setQuizSecondsRemaining] = useState(0);
+  const advancingQuizKeyRef = useRef<string | null>(null);
+  const activeQuiz = contest?.agencyQuiz;
+  const activeQuestion = activeQuiz?.questions[activeQuiz.currentIndex];
+  const quizAnswer = currentUserId ? activeQuiz?.answers?.[currentUserId] : undefined;
+
+  useEffect(() => {
+    if (contest?.status !== 'active' || !activeQuiz || !activeQuestion) {
+      setQuizSecondsRemaining(0);
+      return;
+    }
+    const startedAt = Date.parse(activeQuiz.questionStartedAt || contest.createdAt);
+    const updateRemaining = () => {
+      setQuizSecondsRemaining(
+        Math.max(0, Math.ceil((startedAt + activeQuestion.seconds * 1000 - Date.now()) / 1000))
+      );
+    };
+    updateRemaining();
+    const timerId = window.setInterval(updateRemaining, 150);
+    return () => window.clearInterval(timerId);
+  }, [
+    activeQuestion,
+    activeQuiz,
+    contest?.createdAt,
+    contest?.status,
+  ]);
+
+  useEffect(() => {
+    const endsAt = activeQuiz && activeQuestion
+      ? Date.parse(activeQuiz.questionStartedAt || contest?.createdAt || '') +
+        activeQuestion.seconds * 1000
+      : Number.POSITIVE_INFINITY;
+    if (
+      contest?.status !== 'active' ||
+      !activeQuiz ||
+      !activeQuestion ||
+      Date.now() < endsAt ||
+      contest.hostId !== currentUserId
+    ) {
+      return;
+    }
+    const quizKey = `${contest.id}:${activeQuiz.currentIndex}`;
+    if (advancingQuizKeyRef.current === quizKey) return;
+    advancingQuizKeyRef.current = quizKey;
+    void onAdvanceQuizQuestion().catch((err: unknown) => {
+      advancingQuizKeyRef.current = null;
+      setFeedback(err instanceof Error ? err.message : 'تعذّر إنهاء الجولة.');
+    });
+  }, [
+    activeQuestion,
+    activeQuiz,
+    contest?.hostId,
+    contest?.id,
+    contest?.status,
+    currentUserId,
+    onAdvanceQuizQuestion,
+    quizSecondsRemaining,
+  ]);
 
   const sortedEntries = useMemo(() => {
     if (!contest) return [];
@@ -126,6 +188,18 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
       setShowCreateForm(true);
     } catch (err) {
       setFeedback(err instanceof Error ? err.message : 'تعذّر حذف المسابقة.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleQuizAnswer = async (answerIndex: number) => {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await onSubmitQuizAnswer(answerIndex);
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : 'تعذّر تسجيل إجابتك.');
     } finally {
       setBusy(false);
     }
@@ -301,6 +375,44 @@ export const RoomContestModal: React.FC<RoomContestModalProps> = ({
                   <p className="text-[11px] font-bold text-amber-200">الفائز المعلن في المسابقة</p>
                   <p className="text-sm font-black text-white">🏆 {contest.winnerName}</p>
                 </div>
+              </div>
+            )}
+
+            {contest.status === 'active' && activeQuestion && activeQuiz && (
+              <div className="rounded-2xl border border-emerald-400/40 bg-emerald-950/25 p-3.5 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-extrabold text-emerald-100">
+                    الجولة {activeQuiz.currentIndex + 1} من {activeQuiz.questions.length}
+                  </span>
+                  <span className="rounded-full border border-amber-300/40 bg-amber-400/15 px-2.5 py-1 text-xs font-mono-num font-black text-[#FCE9A6]">
+                    {quizSecondsRemaining} ث
+                  </span>
+                </div>
+                <h4 className="text-sm font-extrabold leading-relaxed text-white">
+                  {activeQuestion.question}
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {activeQuestion.options.slice(0, 4).map((option, index) => (
+                    <button
+                      key={`${activeQuiz.currentIndex}_${index}`}
+                      type="button"
+                      disabled={busy || quizAnswer !== undefined || quizSecondsRemaining === 0}
+                      onClick={() => void handleQuizAnswer(index)}
+                      className={`min-h-[44px] rounded-xl border px-2 py-2 text-xs font-bold transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-70 ${
+                        quizAnswer === index
+                          ? 'border-emerald-300 bg-emerald-500/25 text-emerald-100'
+                          : 'border-white/15 bg-black/25 text-slate-100 hover:border-[#FCE9A6]/60'
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+                {quizAnswer !== undefined && (
+                  <p className="text-[11px] font-bold text-emerald-200">
+                    تم تسجيل إجابتك، انتظر إعلان النتيجة في شات الغرفة.
+                  </p>
+                )}
               </div>
             )}
 

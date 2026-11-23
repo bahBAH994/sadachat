@@ -222,12 +222,15 @@ export interface RoomLiveContest {
       seconds: number;
     }>;
     currentIndex: number;
+    questionStartedAt?: string;
+    answers?: Record<string, number>;
   } | null;
 }
 
 export interface RoomExtrasConfig {
   deputyIds: string[];
   moderatorIds: string[];
+  requireMicPermission?: boolean;
   kickedUserIds: string[];
   kickedUserNames?: Record<string, string>;
   mutedUserIds: string[];

@@ -302,7 +302,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[#0d111e]"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-transparent backdrop-blur-none"
       onClick={onClose}
     >
       {insufficientNotice && (
@@ -513,7 +513,7 @@ export const RoomGiftDrawer: React.FC<RoomGiftDrawerProps> = memo(({
         {/* Gifts Grid OR History */}
         <div className="flex-1 min-h-0 flex flex-col px-2 py-1">
           {giftTab === 'history' ? (
-            <div className="space-y-2 py-2">
+            <div className="space-y-2 py-2 max-h-[34vh] overflow-y-auto overscroll-y-contain touch-pan-y pr-1">
               {room.messages.filter((m) => m.type === 'gift').length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-10">
                   لم تُرسل هدايا في هذه الجلسة بعد.

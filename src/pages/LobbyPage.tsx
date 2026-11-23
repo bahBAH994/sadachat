@@ -6,7 +6,6 @@ import {
   Flame,
   Headphones,
   Heart,
-  Gift,
   Lock,
   MessageCircle,
   Mic,
@@ -254,7 +253,7 @@ export const LobbyPage: React.FC = () => {
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState<Room['category']>('حوار');
   const [newDesc, setNewDesc] = useState('');
-  const [newSeats, setNewSeats] = useState<number>(15);
+  const [newSeats, setNewSeats] = useState<number>(12);
   const [newPrivate, setNewPrivate] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [creating, setCreating] = useState(false);
@@ -882,7 +881,7 @@ export const LobbyPage: React.FC = () => {
 
       {mainTab === 'party' && (
         <div className="w-full max-w-3xl mx-auto shrink-0 px-3.5 sm:px-4 pt-3 space-y-3">
-          <section className="grid grid-cols-3 gap-2">
+          <section className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => navigate('/agency')}
@@ -895,19 +894,6 @@ export const LobbyPage: React.FC = () => {
               <div>
                 <span className="block text-xs font-extrabold text-slate-800">الوكالات</span>
                 <span className="block text-[10px] text-rose-500 font-semibold">المضيفون</span>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/competitions?tab=referral')}
-              className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-emerald-300 transition shadow-sm"
-            >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-lime-400 to-emerald-500 flex items-center justify-center text-white shadow-sm">
-                <Gift className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">عجلة الحظ من دعوات الصديق</span>
-                <span className="block text-[10px] text-slate-400 font-semibold">ادعُ واربح جوائز</span>
               </div>
             </button>
             <button
@@ -1303,12 +1289,10 @@ export const LobbyPage: React.FC = () => {
                     onChange={(e) => setNewSeats(Number(e.target.value))}
                     className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   >
-                    <option value={5}>5 مايكات (صف واحد)</option>
-                    <option value={10}>10 مايكات (صفان)</option>
-                    <option value={15}>15 مايك (3 صفوف)</option>
-                    <option value={20}>20 مايك (4 صفوف)</option>
-                    <option value={25}>25 مايك (5 صفوف)</option>
-                    <option value={30}>30 مايك (6 صفوف)</option>
+                    <option value={6}>6 مايكات</option>
+                    <option value={12}>12 مايك</option>
+                    <option value={18}>18 مايك</option>
+                    <option value={24}>24 مايك</option>
                   </select>
                 </div>
               </div>

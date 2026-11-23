@@ -10,8 +10,6 @@ import React, {
 import { useAuth } from './AuthContext';
 import {
   getEffectsMutedSetting,
-  playLightGiftCoinChime,
-  playMediumGiftCelebrationSound,
   setAudioMuted,
   setEffectsMuted as setAudioEffectsMuted,
 } from '../lib/sadaAudio';
@@ -22,6 +20,7 @@ import {
 } from '../lib/sadaCatalog';
 import {
   adminControlRoomInSupabase,
+  canManageRoomMicRequestsFromData,
   clearRoomChatInSupabase,
   canManageRoom,
   clearRoomContestInSupabase,
@@ -37,12 +36,15 @@ import {
   sendRoomGiftBatchInSupabase,
   sendRoomGiftInSupabase,
   startRoomContestInSupabase,
+  submitRoomQuizAnswerInSupabase,
+  advanceRoomQuizQuestionInSupabase,
   updateRoomMusicInSupabase,
   updateRoomSeatInSupabase,
   updateRoomSettingsInSupabase,
   voteRoomContestInSupabase,
 } from '../lib/sadaRoomsService';
 import { supabase } from '../lib/supabase';
+import { safeGetItem, safeSetItem } from '../lib/safeStorage';
 import type {
   GiftItem,
   GlobalAdminAnnouncement,
@@ -148,8 +150,8 @@ interface ActiveRoomContextValue {
   manualSpeakPulse: boolean;
   micRequest: { userId: string; displayName: string; nonce: number } | null;
   micApprovedRequest: { userId: string; nonce: number } | null;
-  approveMicRequest: (request: { userId: string; displayName: string; nonce: number }) => void;
-  denyMicRequest: (request: { userId: string; displayName: string; nonce: number }) => void;
+  approveMicRequest: (request: { userId: string; displayName: string; nonce: number }) => Promise<void>;
+  denyMicRequest: (request: { userId: string; displayName: string; nonce: number }) => Promise<void>;
   presenceMembers: RoomPresenceMember[];
   liveListenersCount: number;
   topGifters: RoomGifterEntry[];
@@ -217,6 +219,7 @@ interface ActiveRoomContextValue {
     coverImage?: string;
     description?: string;
     title?: string;
+    requireMicPermission?: boolean;
   }) => Promise<void>;
   runAdminAction: (
     action:
@@ -243,12 +246,15 @@ interface ActiveRoomContextValue {
   voteContest: (contestantUserId: string) => Promise<void>;
   finishContest: (winnerUserId?: string) => Promise<void>;
   clearContest: () => Promise<void>;
+  submitContestQuizAnswer: (answerIndex: number) => Promise<void>;
+  advanceContestQuizQuestion: () => Promise<void>;
   giftTargetRequest: { userId: string; nonce: number } | null;
   requestGiftForUser: (userId: string) => void;
   clearGiftTargetRequest: () => void;
 }
 
 const ActiveRoomContext = createContext<ActiveRoomContextValue | undefined>(undefined);
+const ACTIVE_ROOM_STORAGE_KEY = 'sada_active_room_id';
 
 export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, updateLocalUser } = useAuth();
@@ -306,6 +312,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [effectsMuted, setEffectsMutedState] = useState<boolean>(() =>
     getEffectsMutedSetting()
   );
+
   const [giftTargetRequest, setGiftTargetRequest] = useState<{
     userId: string;
     nonce: number;
@@ -492,6 +499,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const dispatchTieredGiftEffects = useCallback((rawFly: RoomFlyingGiftEvent) => {
     if (!rawFly?.id || !rawFly?.gift) return;
+    if (rawFly.gift.category === 'lucky') return;
     if (processedGiftIdsRef.current.has(rawFly.id)) return;
     processedGiftIdsRef.current.add(rawFly.id);
     if (processedGiftIdsRef.current.size > 120) {
@@ -510,113 +518,13 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setFlyingGifts((prev) => [...prev, flyData]);
     window.setTimeout(() => {
       setFlyingGifts((prev) => prev.filter((item) => item.id !== flyData.id));
-    }, 1700);
-
-    // 2) Tier-specific visual & audio effects
-    if (tierLevel === 1) {
-      // Tier 1 (<100 coins): 3D gift above recipient mic + side combo banner + soft coin chime
-      playLightGiftCoinChime(flyData.comboCount || 1);
-
-      flyData.recipientIds.forEach((uid) => {
-        if (!uid) return;
-        const reaction: SeatGiftReactionEvent = {
-          id: flyData.id,
-          gift: flyData.gift,
-          senderName: flyData.senderName,
-          quantity: flyData.quantity,
-          comboCount: flyData.comboCount,
-          tierLevel: 1,
-        };
-        setSeatGiftReactions((prev) => ({ ...prev, [uid]: reaction }));
-        window.setTimeout(() => {
-          setSeatGiftReactions((prev) => {
-            if (prev[uid]?.id !== flyData.id) return prev;
-            const copy = { ...prev };
-            delete copy[uid];
-            return copy;
-          });
-        }, 2600);
-      });
-
-      const recipientLabel =
-        flyData.recipientNames.length > 1
-          ? `الجميع (${flyData.recipientNames.length})`
-          : flyData.recipientNames[0] || 'المتواجدين';
-      const comboKey = `${flyData.senderId}_${flyData.gift.id}_${recipientLabel}`;
-      const noticeId = flyData.id;
-
-      setTier1SideNotices((prev) => {
-        const existingIdx = prev.findIndex((n) => n.comboKey === comboKey);
-        const nextNotice: Tier1SideNotice = {
-          id: noticeId,
-          comboKey,
-          gift: flyData.gift,
-          senderId: flyData.senderId,
-          senderName: flyData.senderName,
-          recipientName: recipientLabel,
-          quantity: flyData.quantity,
-          comboCount: Math.max(1, flyData.comboCount || 1),
-          luckyMultiplier: flyData.luckyMultiplier,
-        };
-        if (existingIdx !== -1) {
-          const updated = [...prev];
-          updated[existingIdx] = nextNotice;
-          return updated;
-        }
-        return [nextNotice, ...prev].slice(0, 3);
-      });
-
-      window.setTimeout(() => {
-        setTier1SideNotices((prev) => prev.filter((n) => n.id !== noticeId));
-      }, 3200);
-    } else if (tierLevel === 2) {
-      // Tier 2 (100-999 coins): 3s center-screen glowing card + golden particles + mic halo + celebratory sound
-      playMediumGiftCelebrationSound();
-
-      setMediumCelebrationGift(flyData);
-      window.setTimeout(() => {
-        setMediumCelebrationGift((curr) => (curr?.id === flyData.id ? null : curr));
-      }, 3000);
-
-      flyData.recipientIds.forEach((uid) => {
-        if (!uid) return;
-        setSeatHaloEffects((prev) => ({ ...prev, [uid]: flyData.id }));
-        const reaction: SeatGiftReactionEvent = {
-          id: flyData.id,
-          gift: flyData.gift,
-          senderName: flyData.senderName,
-          quantity: flyData.quantity,
-          comboCount: flyData.comboCount,
-          tierLevel: 2,
-        };
-        setSeatGiftReactions((prev) => ({ ...prev, [uid]: reaction }));
-        window.setTimeout(() => {
-          setSeatHaloEffects((prev) => {
-            if (prev[uid] !== flyData.id) return prev;
-            const copy = { ...prev };
-            delete copy[uid];
-            return copy;
-          });
-          setSeatGiftReactions((prev) => {
-            if (prev[uid]?.id !== flyData.id) return prev;
-            const copy = { ...prev };
-            delete copy[uid];
-            return copy;
-          });
-        }, 3000);
-      });
-    } else {
-      // Tier 3 (>=1000 coins): 4.5s Full-Screen Cinema Overlay (audio & confetti triggered inside overlay)
-      setFullscreenGift(flyData);
-      window.setTimeout(() => {
-        setFullscreenGift((curr) => (curr?.id === flyData.id ? null : curr));
-      }, 4500);
-    }
+    }, 2500);
   }, []);
 
   const roomChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const activeRoomIdRef = useRef<string | null>(null);
+  const restoredRoomKeyRef = useRef<string | null>(null);
 
   // Mic monitoring refs
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -696,6 +604,12 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setActiveRoomId(null);
     setRoom(null);
     setError(null);
+    setFlyingGifts([]);
+    setTier1SideNotices([]);
+    setMediumCelebrationGift(null);
+    setFullscreenGift(null);
+    setSeatGiftReactions({});
+    setSeatHaloEffects({});
 
     try {
       cleanupMicMonitor();
@@ -710,7 +624,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     async (roomId: string) => {
       const currentUser = userRef.current;
       if (!currentUser) return;
-      if (activeRoomIdRef.current === roomId && roomRef.current) {
+      if (activeRoomIdRef.current === roomId) {
         setIsMinimized(false);
         return;
       }
@@ -722,6 +636,12 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setLoading(true);
       setError(null);
       setIsMinimized(false);
+      setFlyingGifts([]);
+      setTier1SideNotices([]);
+      setMediumCelebrationGift(null);
+      setFullscreenGift(null);
+      setSeatGiftReactions({});
+      setSeatHaloEffects({});
       setActiveRoomId(roomId);
       activeRoomIdRef.current = roomId;
 
@@ -873,7 +793,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           )
           .on('broadcast', { event: 'room:gift' }, ({ payload }) => {
             const giftData = payload as NonNullable<ActiveRoomContextValue['giftBanner']>;
-            if (giftData?.gift) {
+            if (giftData?.gift && giftData.gift.category !== 'lucky') {
               setGiftBanner(giftData);
               setTimeout(() => setGiftBanner(null), 3500);
             }
@@ -1002,6 +922,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         // Join room & emit entry banner
         const joinRes = await joinRoomInSupabase(roomId, userRef.current || currentUser);
         if (activeRoomIdRef.current !== roomId) return;
+        safeSetItem(ACTIVE_ROOM_STORAGE_KEY, roomId);
         setRoom(joinRes.room);
         setExtras(joinRes.extras);
         if (joinRes.entryEvent) {
@@ -1028,6 +949,19 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     },
     [leaveActiveRoom, showTimedEntryBanner, teardownActiveChannels]
   );
+
+  useEffect(() => {
+    if (!user?.id) {
+      restoredRoomKeyRef.current = null;
+      return;
+    }
+    const savedRoomId = safeGetItem(ACTIVE_ROOM_STORAGE_KEY);
+    if (!savedRoomId) return;
+    const restoreKey = `${user.id}:${savedRoomId}`;
+    if (restoredRoomKeyRef.current === restoreKey) return;
+    restoredRoomKeyRef.current = restoreKey;
+    void enterRoom(savedRoomId);
+  }, [enterRoom, user?.id]);
 
   // Auto-eject if kicked from agency by manager
   useEffect(() => {
@@ -1298,13 +1232,19 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [room, user]);
 
   const approveMicRequest = useCallback(
-    (request: { userId: string; displayName: string; nonce: number }) => {
+    async (request: { userId: string; displayName: string; nonce: number }) => {
       if (!room || !user) return;
-      const manager =
-        user.is_admin ||
-        room.hostId === user.id ||
-        extras.deputyIds.includes(user.id) ||
-        extras.moderatorIds.includes(user.id);
+      let manager = false;
+      try {
+        manager = await canManageRoomMicRequestsFromData(
+          { hostId: room.hostId },
+          { id: user.id },
+          { deputyIds: extras.deputyIds }
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'تعذّر التحقق من صلاحية الموافقة.');
+        return;
+      }
       if (!manager) return;
       const approval = { userId: request.userId, nonce: request.nonce };
       setMicRequest(null);
@@ -1318,13 +1258,19 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   );
 
   const denyMicRequest = useCallback(
-    (request: { userId: string; displayName: string; nonce: number }) => {
+    async (request: { userId: string; displayName: string; nonce: number }) => {
       if (!room || !user) return;
-      const manager =
-        user.is_admin ||
-        room.hostId === user.id ||
-        extras.deputyIds.includes(user.id) ||
-        extras.moderatorIds.includes(user.id);
+      let manager = false;
+      try {
+        manager = await canManageRoomMicRequestsFromData(
+          { hostId: room.hostId },
+          { id: user.id },
+          { deputyIds: extras.deputyIds }
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'تعذّر التحقق من صلاحية رفض الطلب.');
+        return;
+      }
       if (!manager) return;
       setMicRequest(null);
       void roomChannelRef.current?.send({
@@ -1357,8 +1303,15 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!room || !user) {
       throw new Error('يجب دخول الغرفة قبل مسح الدردشة.');
     }
-    const notice = await clearRoomChatInSupabase(room.id);
-    setRoom((prev) => (prev ? { ...prev, messages: [notice] } : prev));
+    const previousMessages = room.messages;
+    setRoom((prev) => (prev ? { ...prev, messages: [] } : prev));
+    try {
+      const notice = await clearRoomChatInSupabase(room.id);
+      setRoom((prev) => (prev ? { ...prev, messages: [notice] } : prev));
+    } catch (err) {
+      setRoom((prev) => (prev ? { ...prev, messages: previousMessages } : prev));
+      throw err;
+    }
   }, [room, user]);
 
   const sendGift = useCallback(
@@ -1401,7 +1354,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         payload: flyEvent,
       });
 
-      if (data.gift.coinsCost >= 5000) {
+      if (data.gift.category !== 'lucky' && data.gift.coinsCost >= 5000) {
         const globalPayload: GlobalRoyalGiftAnnouncement = {
           id: `groyal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           senderId: data.user.id,
@@ -1477,7 +1430,10 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       const totalBatchCoins =
         data.gift.coinsCost * data.quantity * Math.max(1, data.recipientIds.length);
-      if (Math.max(data.gift.coinsCost, totalBatchCoins) >= 5000) {
+      if (
+        data.gift.category !== 'lucky' &&
+        Math.max(data.gift.coinsCost, totalBatchCoins) >= 5000
+      ) {
         const recipientLabel =
           data.recipientNames.length > 1
             ? `الجميع على المايك (${data.recipientNames.length})`
@@ -1556,10 +1512,14 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       coverImage?: string;
       description?: string;
       title?: string;
+      requireMicPermission?: boolean;
     }) => {
       if (!room || !user) return;
       const updatedRoom = await updateRoomSettingsInSupabase(room.id, user, patch);
       setRoom(updatedRoom);
+      if (typeof patch.requireMicPermission === 'boolean') {
+        setExtras(await getRoomExtrasFromSupabase(room.id));
+      }
     },
     [room, user]
   );
@@ -1710,6 +1670,23 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     broadcastContest(null);
   }, [broadcastContest, room, user]);
 
+  const submitContestQuizAnswer = useCallback(
+    async (answerIndex: number) => {
+      if (!room || !user) return;
+      const next = await submitRoomQuizAnswerInSupabase(room.id, user, answerIndex);
+      setExtras(next);
+      broadcastContest(next.activeContest || null);
+    },
+    [broadcastContest, room, user]
+  );
+
+  const advanceContestQuizQuestion = useCallback(async () => {
+    if (!room || !user) return;
+    const next = await advanceRoomQuizQuestionInSupabase(room.id, user);
+    setExtras(next);
+    broadcastContest(next.activeContest || null);
+  }, [broadcastContest, room, user]);
+
   const canManage = useMemo(
     () => (room ? canManageRoom(room, extras, user) : false),
     [extras, room, user]
@@ -1851,6 +1828,8 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         voteContest,
         finishContest,
         clearContest,
+        submitContestQuizAnswer,
+        advanceContestQuizQuestion,
         giftTargetRequest,
         requestGiftForUser,
         clearGiftTargetRequest,
