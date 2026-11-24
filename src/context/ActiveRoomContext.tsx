@@ -69,6 +69,7 @@ export interface RoomPresenceMember {
   displayName: string;
   avatarUrl: string;
   frameId?: string;
+  gender?: User['gender'];
   level?: number;
   vipLevel?: VipTierKey;
 }
@@ -945,6 +946,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                       displayName: activeUser.displayName,
                       avatarUrl: activeUser.avatarUrl,
                       frameId: activeUser.frameId,
+                      gender: activeUser.gender,
                       level: activeUser.level,
                       vipLevel: getUserVipTierInfo(activeUser).key,
                     });

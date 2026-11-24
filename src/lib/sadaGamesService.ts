@@ -740,6 +740,21 @@ export async function getRoomGameRoundFromSupabase(
   return parseRoomGameRoundState(data);
 }
 
+export async function revealRoomGameRoundInSupabase(
+  roomId: string,
+  gameKind: RoomGameKind,
+  roundNumber: number,
+  userId: string
+): Promise<void> {
+  const { error } = await supabase.rpc('sada_reveal_room_game_round', {
+    p_room_id: roomId,
+    p_game_kind: gameKind,
+    p_round_number: roundNumber,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message || 'تعذّر إتمام تسوية جولة الغرفة.');
+}
+
 async function placeRoomGameBetFallback(
   roomId: string,
   gameKind: RoomGameKind,
@@ -928,6 +943,42 @@ async function applyGameBalance(
   return rowToUser(updated);
 }
 
+export async function settleGamePayoutInSupabase(
+  userId: string,
+  payout: number,
+  winDesc: string,
+  winType: Transaction['type'] = 'game_win'
+): Promise<User> {
+  if (!Number.isSafeInteger(payout) || payout < 0) {
+    throw new Error('قيمة الجائزة غير صالحة.');
+  }
+  if (payout === 0) return fetchFreshUser(userId);
+
+  const freshUser = await fetchFreshUser(userId);
+  const now = new Date().toISOString();
+  const { data: updated, error } = await supabase
+    .from('sada_users')
+    .update({ coins: freshUser.coins + payout, last_seen: now })
+    .eq('id', userId)
+    .select(USER_COLUMNS)
+    .single();
+
+  if (error || !updated) {
+    throw new Error('توقفت الحركة، لكن تعذّر إضافة الجائزة إلى رصيدك.');
+  }
+
+  await recordTransaction({
+    userId,
+    type: winType,
+    amount: payout,
+    currency: 'coins',
+    description: winDesc,
+    timestamp: now,
+  });
+
+  return rowToUser(updated);
+}
+
 export async function spinSlotMachineInSupabase(
   userId: string,
   gameId: SlotGameId,
@@ -969,7 +1020,7 @@ export async function spinSlotMachineInSupabase(
   const updatedUser = await applyGameBalance(
     freshUser,
     bet,
-    payout,
+    0,
     xpGain,
     'slot_spin',
     'slot_win',
@@ -1004,20 +1055,8 @@ export async function playStandardDiceInSupabase(
   const bet = Math.floor(Number(betInput) || 0);
   if (bet < 10) throw new Error('الحد الأدنى للرهان 10 كوينز.');
 
-  const [freshUser, state] = await Promise.all([
-    fetchFreshUser(userId),
-    getPlatformState(),
-  ]);
+  const freshUser = await fetchFreshUser(userId);
   if (freshUser.coins < bet) throw new Error('رصيد الكوينز غير كافٍ.');
-
-  const rates = state.settings.gameRates;
-  const winRatePct =
-    gameId === 'double_dice'
-      ? Number(rates?.doubleDiceWinRate ?? 42)
-      : gameId === 'prediction_dice'
-      ? Number(rates?.predictionDiceWinRate ?? 40)
-      : Number(rates?.speedDiceWinRate ?? 44);
-  const wantWin = Math.random() * 100 < Math.max(5, Math.min(95, winRatePct));
 
   const diceCount = gameId === 'double_dice' ? 2 : gameId === 'prediction_dice' ? 1 : 3;
 
@@ -1026,99 +1065,52 @@ export async function playStandardDiceInSupabase(
     if (gameId === 'double_dice') {
       if (pick === 'high') {
         const won = sum >= 8;
-        return { won, multiplier: won ? 1.95 : 0, label: `مجموع النردين ${sum} (${won ? 'عالي ✓' : 'أقل من 8'})` };
+        return { won, multiplier: won ? 1.46 : 0, label: `مجموع النردين ${sum} (${won ? 'عالي ✓' : 'أقل من 8'})` };
       }
       if (pick === 'low') {
         const won = sum <= 6;
-        return { won, multiplier: won ? 1.95 : 0, label: `مجموع النردين ${sum} (${won ? 'منخفض ✓' : 'أعلى من 6'})` };
+        return { won, multiplier: won ? 1.46 : 0, label: `مجموع النردين ${sum} (${won ? 'منخفض ✓' : 'أعلى من 6'})` };
       }
       if (pick === 'seven') {
         const won = sum === 7;
-        return { won, multiplier: won ? 4.2 : 0, label: `مجموع النردين ${sum} (${won ? 'السبعة الذهبية ✓' : 'لم تصب 7'})` };
+        return { won, multiplier: won ? 3.15 : 0, label: `مجموع النردين ${sum} (${won ? 'السبعة الذهبية ✓' : 'لم تصب 7'})` };
       }
       const won = dice[0] === dice[1];
-      return { won, multiplier: won ? 4.8 : 0, label: won ? `تطابق رائع (${dice[0]}-${dice[1]})!` : `النردان (${dice[0]}-${dice[1]})` };
+      return { won, multiplier: won ? 3.6 : 0, label: won ? `تطابق رائع (${dice[0]}-${dice[1]})!` : `النردان (${dice[0]}-${dice[1]})` };
     }
     if (gameId === 'prediction_dice') {
       const val = dice[0];
       if (pick === 'even') {
         const won = val % 2 === 0;
-        return { won, multiplier: won ? 1.92 : 0, label: `النتيجة ${val} (${val % 2 === 0 ? 'زوجي' : 'فردي'})` };
+        return { won, multiplier: won ? 1.75 : 0, label: `النتيجة ${val} (${val % 2 === 0 ? 'زوجي' : 'فردي'})` };
       }
       if (pick === 'odd') {
         const won = val % 2 === 1;
-        return { won, multiplier: won ? 1.92 : 0, label: `النتيجة ${val} (${val % 2 === 1 ? 'فردي' : 'زوجي'})` };
+        return { won, multiplier: won ? 1.75 : 0, label: `النتيجة ${val} (${val % 2 === 1 ? 'فردي' : 'زوجي'})` };
       }
       const target = Number(pick.replace('exact_', '')) || 6;
       const won = val === target;
-      return { won, multiplier: won ? 5.2 : 0, label: `ظهر الرقم ${val} (توقعك: ${target})` };
+      return { won, multiplier: won ? 3.9 : 0, label: `ظهر الرقم ${val} (توقعك: ${target})` };
     }
     // speed_dice
     if (pick === 'under_10') {
       const won = sum <= 10;
-      return { won, multiplier: won ? 1.9 : 0, label: `مجموع السرعة ${sum}` };
+      return { won, multiplier: won ? 1.43 : 0, label: `مجموع السرعة ${sum}` };
     }
     if (pick === 'over_11') {
       const won = sum >= 11;
-      return { won, multiplier: won ? 1.9 : 0, label: `مجموع السرعة ${sum}` };
+      return { won, multiplier: won ? 1.43 : 0, label: `مجموع السرعة ${sum}` };
     }
     if (pick === 'lucky_16') {
       const won = sum >= 16;
-      return { won, multiplier: won ? 4.5 : 0, label: `مجموع السرعة ${sum}` };
+      return { won, multiplier: won ? 3.38 : 0, label: `مجموع السرعة ${sum}` };
     }
     const won = dice[0] === dice[1] && dice[1] === dice[2];
-    return { won, multiplier: won ? 12 : 0, label: won ? `ثلاثية متطابقة (${dice[0]})!` : `النتائج ${dice.join(' - ')}` };
+    return { won, multiplier: won ? 9 : 0, label: won ? `ثلاثية متطابقة (${dice[0]})!` : `النتائج ${dice.join(' - ')}` };
   };
 
-  let chosenDice = Array.from({ length: diceCount }, () => 1 + Math.floor(Math.random() * 6));
-  let outcome = evalDice(chosenDice);
-
-  if (bet >= 5000) {
-    let minimumPayout = Number.POSITIVE_INFINITY;
-    const leastLiabilityRolls: Array<{
-      dice: number[];
-      outcome: ReturnType<typeof evalDice>;
-      payout: number;
-    }> = [];
-    const outcomeCount = 6 ** diceCount;
-    for (let encoded = 0; encoded < outcomeCount; encoded++) {
-      let value = encoded;
-      const candidate = Array.from({ length: diceCount }, () => {
-        const face = (value % 6) + 1;
-        value = Math.floor(value / 6);
-        return face;
-      });
-      const candidateOutcome = evalDice(candidate);
-      const candidatePayout = candidateOutcome.won
-        ? Math.round(bet * candidateOutcome.multiplier)
-        : 0;
-      if (candidatePayout < minimumPayout) {
-        minimumPayout = candidatePayout;
-        leastLiabilityRolls.length = 0;
-      }
-      if (candidatePayout === minimumPayout) {
-        leastLiabilityRolls.push({
-          dice: candidate,
-          outcome: candidateOutcome,
-          payout: candidatePayout,
-        });
-      }
-    }
-    const chosen =
-      leastLiabilityRolls[Math.floor(Math.random() * leastLiabilityRolls.length)];
-    chosenDice = chosen.dice;
-    outcome = chosen.outcome;
-  } else {
-    for (let i = 0; i < 120; i++) {
-      const candidate = Array.from({ length: diceCount }, () => 1 + Math.floor(Math.random() * 6));
-      const res = evalDice(candidate);
-      if (res.won === wantWin) {
-        chosenDice = candidate;
-        outcome = res;
-        break;
-      }
-    }
-  }
+  const chosenDice = Array.from({ length: diceCount }, () => 1 + Math.floor(Math.random() * 6));
+  const outcome = evalDice(chosenDice);
 
   const payout = Math.round(bet * outcome.multiplier);
   const xpGain = Math.max(8, Math.round(bet * 0.06) + (outcome.won ? 20 : 0));
@@ -1132,7 +1124,7 @@ export async function playStandardDiceInSupabase(
   const updatedUser = await applyGameBalance(
     freshUser,
     bet,
-    payout,
+    0,
     xpGain,
     'game_bet',
     'game_win',
@@ -1165,10 +1157,7 @@ export async function playLadderActionInSupabase(
   action: 'roll' | 'cashout',
   betInput: number
 ): Promise<LadderActionResponse> {
-  const [freshUser, state] = await Promise.all([
-    fetchFreshUser(userId),
-    getPlatformState(),
-  ]);
+  const freshUser = await fetchFreshUser(userId);
   const ladderSessions = { ...(state.ladderSessions || {}) };
   let session = ladderSessions[userId] || null;
 
@@ -1334,27 +1323,24 @@ export async function spinRouletteInSupabase(
   if (selections.length === 0) throw new Error('اختر رهاناً واحداً على الأقل.');
   const bet = amountPerSelection * selections.length;
 
-  const [freshUser, state] = await Promise.all([
-    fetchFreshUser(userId),
-    getPlatformState(),
-  ]);
+  const freshUser = await fetchFreshUser(userId);
   if (freshUser.coins < bet) throw new Error('رصيد الكوينز غير كافٍ.');
 
   const payoutForNumber = (n: number): number =>
     selections.reduce((total, selection) => {
       let multiplier = 0;
-      if (selection.betType === 'zero' && n === 0) multiplier = 28;
+      if (selection.betType === 'zero' && n === 0) multiplier = 21;
       else if (
         selection.betType === 'straight' &&
         n === Math.max(1, Math.min(36, Math.floor(Number(selection.targetNumber) || 7)))
-      ) multiplier = 32;
-      else if (n !== 0 && selection.betType === 'red' && ROULETTE_REDS.has(n)) multiplier = 2;
-      else if (n !== 0 && selection.betType === 'black' && !ROULETTE_REDS.has(n)) multiplier = 2;
-      else if (n !== 0 && selection.betType === 'even' && n % 2 === 0) multiplier = 2;
-      else if (n !== 0 && selection.betType === 'odd' && n % 2 === 1) multiplier = 2;
-      else if (selection.betType === 'dozen_1' && n >= 1 && n <= 12) multiplier = 3;
-      else if (selection.betType === 'dozen_2' && n >= 13 && n <= 24) multiplier = 3;
-      else if (selection.betType === 'dozen_3' && n >= 25 && n <= 36) multiplier = 3;
+      ) multiplier = 28;
+      else if (n !== 0 && selection.betType === 'red' && ROULETTE_REDS.has(n)) multiplier = 1.75;
+      else if (n !== 0 && selection.betType === 'black' && !ROULETTE_REDS.has(n)) multiplier = 1.75;
+      else if (n !== 0 && selection.betType === 'even' && n % 2 === 0) multiplier = 1.75;
+      else if (n !== 0 && selection.betType === 'odd' && n % 2 === 1) multiplier = 1.75;
+      else if (selection.betType === 'dozen_1' && n >= 1 && n <= 12) multiplier = 2.25;
+      else if (selection.betType === 'dozen_2' && n >= 13 && n <= 24) multiplier = 2.25;
+      else if (selection.betType === 'dozen_3' && n >= 25 && n <= 36) multiplier = 2.25;
       return total + Math.round(amountPerSelection * multiplier);
     }, 0);
 
@@ -1362,17 +1348,7 @@ export async function spinRouletteInSupabase(
     number,
     payout: payoutForNumber(number),
   }));
-  const lowestPayout = Math.min(...payouts.map((entry) => entry.payout));
-  const largeStake = bet >= 5000;
-  const winRate = Math.max(5, Math.min(95, Number(state.settings.gameRates?.rouletteWinRate ?? 45)));
-  const wantWin = Math.random() * 100 < winRate;
-  const candidates = payouts.filter((entry) =>
-    largeStake
-      ? entry.payout === lowestPayout
-      : (entry.payout > 0) === wantWin
-  );
-  const pool = candidates.length > 0 ? candidates : payouts;
-  const winningNumber = pool[Math.floor(Math.random() * pool.length)].number;
+  const winningNumber = payouts[Math.floor(Math.random() * payouts.length)].number;
   const wheelIndex = ROULETTE_WHEEL_ORDER.indexOf(winningNumber);
   const winningColor: 'red' | 'black' | 'green' =
     winningNumber === 0 ? 'green' : ROULETTE_REDS.has(winningNumber) ? 'red' : 'black';
@@ -1384,7 +1360,7 @@ export async function spinRouletteInSupabase(
   const updatedUser = await applyGameBalance(
     freshUser,
     bet,
-    payout,
+    0,
     xpGain,
     'game_bet',
     'game_win',
@@ -1414,7 +1390,10 @@ export async function openMysteryBoxInSupabase(
   const chosenIndex = Math.max(0, Math.min(8, Math.floor(Number(boxIndexInput) || 0)));
   if (bet < 10) throw new Error('الحد الأدنى للرهان 10 كوينز.');
 
-  const freshUser = await fetchFreshUser(userId);
+  const [freshUser, state] = await Promise.all([
+    fetchFreshUser(userId),
+    getPlatformState(),
+  ]);
   if (freshUser.coins < bet) throw new Error('رصيد الكوينز غير كافٍ.');
 
   const winRatePct = Math.max(
@@ -1515,12 +1494,6 @@ const RPS_WIN_MAP: Record<RpsMove, RpsMove> = {
   scissors: 'paper',
 };
 
-const RPS_LOSE_MAP: Record<RpsMove, RpsMove> = {
-  rock: 'paper',
-  paper: 'scissors',
-  scissors: 'rock',
-};
-
 export async function playRpsInSupabase(
   userId: string,
   betInput: number,
@@ -1532,29 +1505,23 @@ export async function playRpsInSupabase(
   const freshUser = await fetchFreshUser(userId);
   if (freshUser.coins < bet) throw new Error('رصيد الكوينز غير كافٍ.');
 
-  const roll = Math.random() * 100;
-  let outcome: 'win' | 'draw' | 'lose';
-  let botMove: RpsMove;
+  const moves: RpsMove[] = ['rock', 'paper', 'scissors'];
+  const botMove = moves[Math.floor(Math.random() * moves.length)];
+  const outcome =
+    botMove === playerMove
+      ? 'draw'
+      : botMove === RPS_WIN_MAP[playerMove]
+      ? 'win'
+      : 'lose';
 
-  if (roll < 55) {
-    outcome = 'lose';
-    botMove = RPS_LOSE_MAP[playerMove];
-  } else if (roll < 75) {
-    outcome = 'draw';
-    botMove = playerMove;
-  } else {
-    outcome = 'win';
-    botMove = RPS_WIN_MAP[playerMove];
-  }
-
-  const multiplier = outcome === 'win' ? 1.9 : outcome === 'draw' ? 1 : 0;
+  const multiplier = outcome === 'win' ? 1.8 : outcome === 'draw' ? 1 : 0;
   const payout = Math.round(bet * multiplier);
   const xpGain = Math.max(8, Math.round(bet * 0.06) + (outcome === 'win' ? 20 : 0));
 
   const updatedUser = await applyGameBalance(
     freshUser,
     bet,
-    payout,
+    0,
     xpGain,
     'game_bet',
     'game_win',

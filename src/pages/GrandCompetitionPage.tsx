@@ -1,14 +1,23 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
-  BadgeCheck,
   CalendarDays,
   Coins,
   Crown,
+  LoaderCircle,
   ShieldCheck,
   Trophy,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import {
+  getGrandCompetitionSettings,
+  getGrandCompetitionShare,
+  GRAND_COMPETITION_PACKAGES,
+  subscribeToGrandCompetitionPackage,
+} from '../lib/sadaGrandCompetitionService';
+import { supabase } from '../lib/supabase';
+import type { GrandCompetitionSettings } from '../types';
 
 const CompetitionInfoCard: React.FC<{
   icon: React.ReactNode;
@@ -29,6 +38,77 @@ const CompetitionInfoCard: React.FC<{
 
 export const GrandCompetitionPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user, updateLocalUser } = useAuth();
+  const [competition, setCompetition] = useState<GrandCompetitionSettings | null>(null);
+  const [userShare, setUserShare] = useState({ participantWeight: 0, sharePercent: 0 });
+  const [selectedPackage, setSelectedPackage] = useState<number>(20_000);
+  const [purchasing, setPurchasing] = useState(false);
+  const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const userId = user?.id;
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const settings = await getGrandCompetitionSettings();
+        if (active) setCompetition(settings);
+        if (userId) {
+          const share = await getGrandCompetitionShare();
+          if (active) setUserShare(share);
+        } else if (active) {
+          setUserShare({ participantWeight: 0, sharePercent: 0 });
+        }
+      } catch (error) {
+        if (active) {
+          setNotice({
+            type: 'err',
+            text: error instanceof Error ? error.message : 'تعذّر تحميل بيانات المسابقة.',
+          });
+        }
+      }
+    };
+
+    void load();
+    const channel = supabase
+      .channel('grand-competition-state')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_platform_state', filter: 'id=eq.global' },
+        () => void load()
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  const handleSubscribe = async () => {
+    if (!user || purchasing) return;
+    setPurchasing(true);
+    setNotice(null);
+    try {
+      const result = await subscribeToGrandCompetitionPackage(user.id, selectedPackage);
+      updateLocalUser({ ...user, coins: result.coins });
+      setCompetition(result.settings);
+      setUserShare({
+        participantWeight: result.participantWeight,
+        sharePercent: result.sharePercent,
+      });
+      setNotice({
+        type: 'ok',
+        text: `تم الاشتراك بنجاح. أصبحت حصتك الموزونة من مخزون الجوائز ${result.sharePercent.toFixed(2)}٪.`,
+      });
+    } catch (error) {
+      setNotice({
+        type: 'err',
+        text: error instanceof Error ? error.message : 'تعذّر إتمام الاشتراك.',
+      });
+    } finally {
+      setPurchasing(false);
+    }
+  };
 
   return (
     <div className="min-h-full bg-gradient-to-b from-emerald-50 via-slate-50 to-slate-50 px-4 pb-8 pt-5">
@@ -87,9 +167,8 @@ export const GrandCompetitionPage: React.FC = () => {
             title="جوائز الختام الشهري"
             tone="bg-violet-50 text-violet-700"
           >
-            <p className="text-xs leading-6 text-slate-600">
-              يعلن المنظمون جوائز الكوينز والأوسمة وشروط الفوز للدورة الشهرية عند فتحها. لا تعرض
-              المنصة حالياً مبالغ أو أوسمة شهرية مؤكدة.
+            <p className="whitespace-pre-line text-xs leading-6 text-slate-600">
+              {competition?.monthlyClosingPrizes || 'جارٍ تحميل إعدادات المسابقة...'}
             </p>
           </CompetitionInfoCard>
         </section>
@@ -99,11 +178,9 @@ export const GrandCompetitionPage: React.FC = () => {
           title="شروط التأهل والمشاركة"
           tone="bg-sky-50 text-sky-700"
         >
-          <ul className="space-y-2 text-xs leading-6 text-slate-600">
-            <li className="flex gap-2"><BadgeCheck className="mt-1 h-4 w-4 shrink-0 text-emerald-600" />الدخول إلى حساب صدى والمشاركة من التحدي المفتوح داخل صفحة المسابقات.</li>
-            <li className="flex gap-2"><BadgeCheck className="mt-1 h-4 w-4 shrink-0 text-emerald-600" />الالتزام بتعليمات كل جولة ومواعيدها كما تظهر في إعلانها الرسمي.</li>
-            <li className="flex gap-2"><BadgeCheck className="mt-1 h-4 w-4 shrink-0 text-emerald-600" />تُحتسب النتائج والأهلية وفق قواعد الدورة المنشورة؛ لا تُعد هذه الصفحة بديلاً عن شروط الإعلان.</li>
-          </ul>
+          <p className="whitespace-pre-line text-xs leading-6 text-slate-600">
+            {competition?.participationTerms || 'جارٍ تحميل إعدادات المسابقة...'}
+          </p>
         </CompetitionInfoCard>
 
         <CompetitionInfoCard
@@ -111,31 +188,90 @@ export const GrandCompetitionPage: React.FC = () => {
           title="جدول المواعيد"
           tone="bg-rose-50 text-rose-700"
         >
-          <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <div className="grid grid-cols-3 bg-slate-50 px-3 py-2 text-[10px] font-extrabold text-slate-600">
-              <span>الدورة</span><span>التكرار</span><span>الموعد</span>
-            </div>
-            <div className="grid grid-cols-3 border-t border-slate-100 px-3 py-3 text-[11px] text-slate-700">
-              <span className="font-bold">التحدي الأسبوعي</span><span>أسبوعياً</span><span>يُعلن داخل التطبيق</span>
-            </div>
-            <div className="grid grid-cols-3 border-t border-slate-100 px-3 py-3 text-[11px] text-slate-700">
-              <span className="font-bold">الختام الشهري</span><span>شهرياً</span><span>يُعلن داخل التطبيق</span>
-            </div>
-          </div>
-          <p className="mt-2 text-[10px] leading-5 text-slate-500">
-            لا يوجد حالياً تقويم أو توقيت رسمي محدد في إعدادات المنصة؛ تعتمد المواعيد على الإعلان
-            المنشور لكل دورة.
+          <p className="whitespace-pre-line text-xs leading-6 text-slate-600">
+            {competition?.schedule || 'جارٍ تحميل إعدادات المسابقة...'}
           </p>
         </CompetitionInfoCard>
 
-        <button
-          type="button"
-          onClick={() => navigate('/competitions')}
-          className="emerald-btn flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold"
-        >
-          <Trophy className="h-4 w-4" />
-          استعراض المسابقات المتاحة
-        </button>
+        <section className="rounded-3xl border border-emerald-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-black text-slate-900">الاشتراك في المسابقة</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                يُخصم 20٪ عمولة للمنصة، ويُضاف 80٪ من قيمة الاشتراك إلى مخزون الجوائز. الباقات الأعلى
+                تمنح وزناً تصاعدياً أكبر في حصة المشاركين.
+              </p>
+            </div>
+            <Coins className="mt-1 h-5 w-5 shrink-0 text-emerald-700" />
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-center">
+            <p className="text-xs font-bold text-emerald-800">مخزون الجوائز الحالي</p>
+            <p className="mt-1 text-2xl font-black text-emerald-900">
+              {(competition?.prizePoolCoins || 0).toLocaleString('en-US')} كوينز
+            </p>
+            <p className="mt-1 text-[11px] text-emerald-700">
+              إجمالي الاشتراكات: {(competition?.totalSubscriptionsCoins || 0).toLocaleString('en-US')} كوينز
+              {userShare.participantWeight > 0 &&
+                ` · حصتك الحالية من مخزون الجوائز: ${
+                  userShare.sharePercent < 0.01
+                    ? userShare.sharePercent.toFixed(4)
+                    : userShare.sharePercent.toFixed(2)
+                }٪`}
+            </p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {GRAND_COMPETITION_PACKAGES.map((subscription) => (
+              <button
+                key={subscription.coins}
+                type="button"
+                onClick={() => setSelectedPackage(subscription.coins)}
+                aria-pressed={selectedPackage === subscription.coins}
+                className={`min-h-[76px] rounded-2xl border px-2 py-3 text-center transition ${
+                  selectedPackage === subscription.coins
+                    ? 'border-emerald-600 bg-emerald-50 text-emerald-900'
+                    : 'border-slate-200 bg-white text-slate-700'
+                }`}
+              >
+                <span className="block text-sm font-black">
+                  {subscription.coins.toLocaleString('en-US')}
+                </span>
+                <span className="mt-1 block text-[10px]">كوينز · وزن ×{subscription.weight}</span>
+              </button>
+            ))}
+          </div>
+
+          {notice && (
+            <p
+              role="status"
+              className={`mt-3 rounded-xl px-3 py-2 text-xs ${
+                notice.type === 'ok'
+                  ? 'bg-emerald-50 text-emerald-800'
+                  : 'bg-rose-50 text-rose-700'
+              }`}
+            >
+              {notice.text}
+            </p>
+          )}
+
+          <button
+            type="button"
+            disabled={!user || purchasing || !competition}
+            onClick={() => void handleSubscribe()}
+            className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-700 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {purchasing && <LoaderCircle className="h-4 w-4 animate-spin" />}
+            {user ? 'اشتراك الآن' : 'سجّل الدخول للاشتراك'}
+            {user && ` · ${selectedPackage.toLocaleString('en-US')} كوينز`}
+          </button>
+          {user && (
+            <p className="mt-2 text-center text-[11px] text-slate-500">
+              رصيدك: {user.coins.toLocaleString('en-US')} كوينز
+            </p>
+          )}
+        </section>
+
       </div>
     </div>
   );

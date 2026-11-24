@@ -462,6 +462,10 @@ function normalizePlatformState(
           : {},
       latestAdminAnnouncement: rawSettings.latestAdminAnnouncement ?? null,
       globalZeroResetV1Applied: Boolean(rawSettings.globalZeroResetV1Applied),
+      grandCompetition: {
+        ...defs.grandCompetition!,
+        ...(rawSettings.grandCompetition || {}),
+      },
     },
     quizSessions: (quizSessionsInput as Record<string, QuizSessionRecord>) || {},
     votedKeys: (votedKeysInput as Record<string, boolean>) || {},

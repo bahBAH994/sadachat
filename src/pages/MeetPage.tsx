@@ -21,8 +21,7 @@ import { supabase } from '../lib/supabase';
 import type { User } from '../types';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
-
-const RECENT_ONLINE_WINDOW_MS = 5 * 60 * 1000;
+import { GenderBadge } from '../components/GenderBadge';
 
 export const MeetPage: React.FC = () => {
   const { user, onlineUserIds } = useAuth();
@@ -31,7 +30,6 @@ export const MeetPage: React.FC = () => {
 
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
-  const [seatedUserIds, setSeatedUserIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAllDirectory, setShowAllDirectory] = useState(false);
   const [togglingFollowId, setTogglingFollowId] = useState<string | null>(null);
@@ -43,7 +41,6 @@ export const MeetPage: React.FC = () => {
       const dirRes = await getDiscoveryDirectoryFromSupabase(user.id);
       setAllUsers(dirRes.users);
       setUserFollows(dirRes.userFollows);
-      setSeatedUserIds(dirRes.seatedUserIds);
     } finally {
       setLoading(false);
     }
@@ -75,22 +72,18 @@ export const MeetPage: React.FC = () => {
 
   const targetGender: 'male' | 'female' = user?.gender === 'female' ? 'male' : 'female';
   const targetLabel = targetGender === 'female' ? 'البنات المتصلات حالياً' : 'الشباب المتصلين حالياً';
+  const directoryLabel = showAllDirectory ? 'الأعضاء المتصلون حالياً' : targetLabel;
 
   const onlineIdSet = useMemo(() => {
-    const s = new Set<string>([...onlineUserIds, ...seatedUserIds]);
-    return s;
-  }, [onlineUserIds, seatedUserIds]);
+    return new Set<string>(onlineUserIds);
+  }, [onlineUserIds]);
 
   const isUserLiveOnline = useCallback(
-    (u: User) => {
-      if (onlineIdSet.has(u.id)) return true;
-      const lastSeenMs = new Date(u.lastSeen).getTime();
-      return Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs <= RECENT_ONLINE_WINDOW_MS;
-    },
+    (u: User) => onlineIdSet.has(u.id),
     [onlineIdSet]
   );
 
-  const { onlineOpposite, searchableOfflineOpposite } = useMemo(() => {
+  const { onlineUsers, searchableOfflineUsers, onlineCount } = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const oppositePool = allUsers.filter((u) => u.gender === targetGender);
     const activePool = showAllDirectory ? allUsers : oppositePool;
@@ -115,10 +108,13 @@ export const MeetPage: React.FC = () => {
       .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
 
     return {
-      onlineOpposite: online,
-      searchableOfflineOpposite: offline,
+      onlineUsers: online,
+      searchableOfflineUsers: offline,
+      onlineCount: showAllDirectory
+        ? Math.max(0, onlineIdSet.size - Number(Boolean(user?.id && onlineIdSet.has(user.id))))
+        : activePool.filter((u) => isUserLiveOnline(u)).length,
     };
-  }, [allUsers, targetGender, showAllDirectory, searchQuery, isUserLiveOnline]);
+  }, [allUsers, onlineIdSet, targetGender, showAllDirectory, searchQuery, isUserLiveOnline, user?.id]);
 
   const handleToggleFollow = async (targetUserId: string) => {
     if (!user?.id) return;
@@ -174,6 +170,7 @@ export const MeetPage: React.FC = () => {
               <p className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
                 <VipUserName name={u.displayName} vipTier={vipInfo.key} />
               </p>
+              <GenderBadge gender={u.gender} />
               <VipTierBadge vipTier={vipInfo.key} compact />
               {u.femaleVerifiedBadge && <FemaleVerifiedBadge badge={u.femaleVerifiedBadge} />}
             </div>
@@ -278,7 +275,7 @@ export const MeetPage: React.FC = () => {
           <div className="flex items-center justify-between gap-2 text-[11px]">
             <span className="font-extrabold text-emerald-700 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>{targetLabel} ({onlineOpposite.length})</span>
+              <span>{directoryLabel} ({onlineCount})</span>
             </span>
             <button
               type="button"
@@ -295,7 +292,7 @@ export const MeetPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <h1 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
               <Users className="w-4 h-4 text-emerald-600" />
-              <span>{targetLabel}</span>
+              <span>{directoryLabel}</span>
             </h1>
             <span className="text-[11px] font-semibold text-slate-500">
               توثيق حقيقي ومتابعة متبادلة للدردشة المجانية
@@ -308,10 +305,14 @@ export const MeetPage: React.FC = () => {
                 <div key={i} className="light-card rounded-2xl h-32 animate-pulse" />
               ))}
             </div>
-          ) : onlineOpposite.length === 0 ? (
+          ) : onlineUsers.length === 0 ? (
             <div className="light-card rounded-2xl p-6 text-center space-y-2">
               <p className="text-xs sm:text-sm font-bold text-slate-700">
-                لا يوجد حسابات {targetGender === 'female' ? 'بنات' : 'شباب'} متصلة الآن في هذه اللحظة.
+                {searchQuery.trim()
+                  ? 'لا توجد نتائج متصلة تطابق البحث.'
+                  : showAllDirectory
+                  ? 'لا يوجد أعضاء متصلون الآن.'
+                  : `لا يوجد حسابات ${targetGender === 'female' ? 'بنات' : 'شباب'} متصلة الآن في هذه اللحظة.`}
               </p>
               <p className="text-[11px] text-slate-500">
                 يمكنك البحث بالاسم أو الـ ID أعلاه للوصول إلى جميع الأعضاء المسجلين.
@@ -319,20 +320,22 @@ export const MeetPage: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {onlineOpposite.map((u) => renderUserCard(u, true))}
+              {onlineUsers.map((u) => renderUserCard(u, true))}
             </div>
           )}
 
           {/* Offline searchable members when filtering or available */}
-          {searchableOfflineOpposite.length > 0 && (
+          {searchableOfflineUsers.length > 0 && (
             <div className="pt-2 space-y-2.5">
               <h2 className="text-xs font-extrabold text-slate-500">
                 {searchQuery.trim()
-                  ? `نتائج البحث من الأعضاء المسجلين (${searchableOfflineOpposite.length})`
-                  : `أعضاء ${targetGender === 'female' ? 'البنات' : 'الشباب'} المسجلون (${searchableOfflineOpposite.length})`}
+                  ? `نتائج البحث من الأعضاء المسجلين (${searchableOfflineUsers.length})`
+                  : showAllDirectory
+                  ? `الأعضاء المسجلون (${searchableOfflineUsers.length})`
+                  : `أعضاء ${targetGender === 'female' ? 'البنات' : 'الشباب'} المسجلون (${searchableOfflineUsers.length})`}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {searchableOfflineOpposite.slice(0, searchQuery.trim() ? 20 : 8).map((u) =>
+                {searchableOfflineUsers.slice(0, searchQuery.trim() ? 20 : 8).map((u) =>
                   renderUserCard(u, false)
                 )}
               </div>

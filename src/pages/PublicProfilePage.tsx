@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowRight, MapPin, UserRound } from 'lucide-react';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
+import { GenderBadge } from '../components/GenderBadge';
 import { ARAB_COUNTRIES, getUserVipTierInfo } from '../lib/sadaCatalog';
 import { getUserPublicProfileFromSupabase } from '../lib/sadaAuth';
 import { safeGetItem } from '../lib/safeStorage';
@@ -88,9 +89,12 @@ export const PublicProfilePage: React.FC = () => {
                 size="xl"
               />
               <div className="space-y-1">
-                <h1 className="text-xl font-extrabold">
-                  <VipUserName name={profile.displayName} vipTier={profile.vipLevel} />
-                </h1>
+                <div className="flex items-center justify-center gap-1">
+                  <h1 className="text-xl font-extrabold">
+                    <VipUserName name={profile.displayName} vipTier={profile.vipLevel} />
+                  </h1>
+                  <GenderBadge gender={profile.gender} />
+                </div>
                 <div className="flex items-center justify-center gap-2">
                   <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-mono-num">
                     <UserRound className="w-3.5 h-3.5" />

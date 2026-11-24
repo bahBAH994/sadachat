@@ -752,7 +752,7 @@ export const RoomGamesModal: React.FC<RoomGamesModalProps> = ({
                           حجر ورقة مقص 3D
                         </span>
                         <span className="block text-[9px] text-[#FEF08A] font-mono-num">
-                          جديد · مضاعف فوري ×1.95
+                          جديد · مضاعف الفوز ×1.8
                         </span>
                       </div>
                     </div>

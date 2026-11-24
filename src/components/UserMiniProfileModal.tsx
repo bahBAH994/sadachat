@@ -35,6 +35,7 @@ import {
 } from '../lib/sadaSocialService';
 import type { User } from '../types';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from './AvatarWithFrame';
+import { GenderBadge } from './GenderBadge';
 import { FemaleVerifiedBadge } from './FemaleVoiceVerificationCard';
 
 export const UserMiniProfileModal: React.FC = () => {
@@ -204,6 +205,7 @@ export const UserMiniProfileModal: React.FC = () => {
                 <h3 className="text-lg font-extrabold text-white">
                   <VipUserName name={profile.displayName} vipTier={resolvedVipTier} />
                 </h3>
+                <GenderBadge gender={profile.gender} />
                 <VipTierBadge vipTier={resolvedVipTier} />
                 {profile.is_admin && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#D4AF37]/25 border border-[#D4AF37]/60 px-2 py-0.5 text-[10px] font-bold text-[#FCE9A6]">

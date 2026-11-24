@@ -182,8 +182,14 @@ CREATE TABLE IF NOT EXISTS public.sada_room_game_rounds (
   round_ends_at TIMESTAMPTZ NOT NULL,
   result JSONB,
   settled_at TIMESTAMPTZ,
+  payout_claimable BOOLEAN NOT NULL DEFAULT FALSE,
+  announced_at TIMESTAMPTZ,
   UNIQUE (room_id, game_kind, round_number)
 );
+ALTER TABLE public.sada_room_game_rounds
+  ADD COLUMN IF NOT EXISTS payout_claimable BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.sada_room_game_rounds
+  ADD COLUMN IF NOT EXISTS announced_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS public.sada_room_game_bets (
   id TEXT PRIMARY KEY,
@@ -196,9 +202,12 @@ CREATE TABLE IF NOT EXISTS public.sada_room_game_bets (
   is_winner BOOLEAN NOT NULL DEFAULT FALSE,
   multiplier NUMERIC(10, 2) NOT NULL DEFAULT 0,
   payout BIGINT NOT NULL DEFAULT 0,
+  revealed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (round_id, user_id)
 );
+ALTER TABLE public.sada_room_game_bets
+  ADD COLUMN IF NOT EXISTS revealed_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_sada_room_game_bets_round
   ON public.sada_room_game_bets(round_id, created_at);
@@ -331,6 +340,14 @@ CREATE TABLE IF NOT EXISTS public.sada_platform_state (
   ladder_sessions JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS public.sada_grand_competition_entries (
+  user_id TEXT PRIMARY KEY REFERENCES public.sada_users(id) ON DELETE CASCADE,
+  weight BIGINT NOT NULL CHECK (weight > 0)
+);
+
+ALTER TABLE public.sada_grand_competition_entries ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.sada_grand_competition_entries FROM PUBLIC, anon, authenticated;
 
 CREATE TABLE IF NOT EXISTS public.sada_vip_ids_catalog (
   id TEXT PRIMARY KEY,
@@ -580,20 +597,10 @@ DECLARE
   v_won BOOLEAN;
   v_multiplier NUMERIC(10, 2);
   v_payout BIGINT;
-  v_candidate_number INTEGER;
-  v_candidate_payout BIGINT;
-  v_minimum_payout BIGINT;
-  v_total_bets BIGINT;
-  v_die_one INTEGER;
-  v_die_two INTEGER;
-  v_die_three INTEGER;
   v_roulette_bet JSONB;
   v_bet_amount BIGINT;
   v_selection_total BIGINT;
-  v_winner_names TEXT := '';
-  v_has_bets BOOLEAN := FALSE;
   v_result JSONB;
-  v_announcement TEXT;
   v_red_numbers INTEGER[] := ARRAY[
     1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36
   ];
@@ -622,56 +629,6 @@ BEGIN
 
   IF p_game_kind = 'roulette' THEN
     v_number := floor(random() * 37)::INTEGER;
-    SELECT coalesce(sum(amount), 0) INTO v_total_bets
-    FROM public.sada_room_game_bets
-    WHERE round_id = v_round.id;
-    IF v_total_bets >= 5000 THEN
-      FOR v_candidate_number IN 0..36 LOOP
-        SELECT coalesce(sum(
-          CASE
-            WHEN item.value->>'betType' = 'zero' AND v_candidate_number = 0
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, b.amount) * 28
-            WHEN item.value->>'betType' = 'straight'
-              AND v_candidate_number = coalesce(nullif(item.value->>'targetNumber', '')::INTEGER, 0)
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, b.amount) * 32
-            WHEN item.value->>'betType' = 'red' AND v_candidate_number <> 0
-              AND v_candidate_number = ANY(v_red_numbers)
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, b.amount) * 2
-            WHEN item.value->>'betType' = 'black' AND v_candidate_number <> 0
-              AND NOT (v_candidate_number = ANY(v_red_numbers))
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, b.amount) * 2
-            WHEN item.value->>'betType' = 'even' AND v_candidate_number <> 0
-              AND mod(v_candidate_number, 2) = 0
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, b.amount) * 2
-            WHEN item.value->>'betType' = 'odd' AND v_candidate_number <> 0
-              AND mod(v_candidate_number, 2) = 1
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, b.amount) * 2
-            WHEN item.value->>'betType' = 'dozen_1' AND v_candidate_number BETWEEN 1 AND 12
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, b.amount) * 3
-            WHEN item.value->>'betType' = 'dozen_2' AND v_candidate_number BETWEEN 13 AND 24
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, b.amount) * 3
-            WHEN item.value->>'betType' = 'dozen_3' AND v_candidate_number BETWEEN 25 AND 36
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, b.amount) * 3
-            ELSE 0
-          END
-        ), 0)::BIGINT INTO v_candidate_payout
-        FROM public.sada_room_game_bets b
-        CROSS JOIN LATERAL jsonb_array_elements(
-          CASE
-            WHEN jsonb_typeof(b.selection->'bets') = 'array' THEN b.selection->'bets'
-            ELSE jsonb_build_array(b.selection)
-          END
-        ) AS item(value)
-        WHERE b.round_id = v_round.id;
-
-        IF v_minimum_payout IS NULL OR v_candidate_payout < v_minimum_payout THEN
-          v_minimum_payout := v_candidate_payout;
-          v_number := v_candidate_number;
-        ELSIF v_candidate_payout = v_minimum_payout AND random() < 0.5 THEN
-          v_number := v_candidate_number;
-        END IF;
-      END LOOP;
-    END IF;
     v_color := CASE
       WHEN v_number = 0 THEN 'green'
       WHEN v_number = ANY(v_red_numbers) THEN 'red'
@@ -684,113 +641,57 @@ BEGIN
       'wheel_index', v_wheel_index
     );
   ELSE
-    SELECT coalesce(sum(amount), 0) INTO v_total_bets
-    FROM public.sada_room_game_bets
-    WHERE round_id = v_round.id;
     v_dice := ARRAY[
       floor(random() * 6)::INTEGER + 1,
       floor(random() * 6)::INTEGER + 1,
       floor(random() * 6)::INTEGER + 1
     ];
-    IF v_total_bets >= 5000 THEN
-      v_minimum_payout := NULL;
-      FOR v_die_one IN 1..6 LOOP
-        FOR v_die_two IN 1..6 LOOP
-          FOR v_die_three IN 1..6 LOOP
-            SELECT coalesce(sum(b.amount * CASE
-              WHEN b.selection->>'gameId' = 'double_dice'
-                AND b.selection->>'pick' = 'high' AND v_die_one + v_die_two >= 8
-                THEN 1.95
-              WHEN b.selection->>'gameId' = 'double_dice'
-                AND b.selection->>'pick' = 'low' AND v_die_one + v_die_two <= 6
-                THEN 1.95
-              WHEN b.selection->>'gameId' = 'double_dice'
-                AND b.selection->>'pick' = 'seven' AND v_die_one + v_die_two = 7
-                THEN 4.2
-              WHEN b.selection->>'gameId' = 'double_dice'
-                AND b.selection->>'pick' = 'doubles' AND v_die_one = v_die_two
-                THEN 4.8
-              WHEN b.selection->>'gameId' = 'prediction_dice'
-                AND b.selection->>'pick' = 'even' AND mod(v_die_one, 2) = 0 THEN 1.92
-              WHEN b.selection->>'gameId' = 'prediction_dice'
-                AND b.selection->>'pick' = 'odd' AND mod(v_die_one, 2) = 1 THEN 1.92
-              WHEN b.selection->>'gameId' = 'prediction_dice'
-                AND b.selection->>'pick' ~ '^exact_[1-6]$'
-                AND v_die_one = substring(b.selection->>'pick' FROM 7)::INTEGER THEN 5.2
-              WHEN b.selection->>'gameId' = 'speed_dice'
-                AND b.selection->>'pick' = 'under_10'
-                AND v_die_one + v_die_two + v_die_three <= 10 THEN 1.9
-              WHEN b.selection->>'gameId' = 'speed_dice'
-                AND b.selection->>'pick' = 'over_11'
-                AND v_die_one + v_die_two + v_die_three >= 11 THEN 1.9
-              WHEN b.selection->>'gameId' = 'speed_dice'
-                AND b.selection->>'pick' = 'lucky_16'
-                AND v_die_one + v_die_two + v_die_three >= 16 THEN 4.5
-              WHEN b.selection->>'gameId' = 'speed_dice'
-                AND b.selection->>'pick' = 'triple'
-                AND v_die_one = v_die_two AND v_die_two = v_die_three THEN 12
-              ELSE 0
-            END), 0)::BIGINT INTO v_candidate_payout
-            FROM public.sada_room_game_bets b
-            WHERE b.round_id = v_round.id;
-            IF v_minimum_payout IS NULL OR v_candidate_payout < v_minimum_payout THEN
-              v_minimum_payout := v_candidate_payout;
-              v_dice := ARRAY[v_die_one, v_die_two, v_die_three];
-            ELSIF v_candidate_payout = v_minimum_payout AND random() < 0.5 THEN
-              v_dice := ARRAY[v_die_one, v_die_two, v_die_three];
-            END IF;
-          END LOOP;
-        END LOOP;
-      END LOOP;
-    END IF;
     v_sum := v_dice[1] + v_dice[2] + v_dice[3];
     v_total_sum := v_sum;
     v_result := jsonb_build_object('dice', v_dice, 'sum', v_sum);
   END IF;
 
   FOR v_bet IN
-    SELECT b.*, coalesce(u.display_name, b.display_name) AS winner_name
+    SELECT b.*
     FROM public.sada_room_game_bets b
-    LEFT JOIN public.sada_users u ON u.id = b.user_id
     WHERE b.round_id = v_round.id
     ORDER BY b.created_at, b.id
     FOR UPDATE OF b
   LOOP
-    v_has_bets := TRUE;
     v_won := FALSE;
     v_multiplier := 0;
     v_payout := 0;
 
     IF p_game_kind = 'roulette' THEN
       IF jsonb_typeof(v_bet.selection->'bets') = 'array' THEN
-        SELECT coalesce(sum(
+        SELECT coalesce(sum(round(
           CASE
             WHEN item.value->>'betType' = 'zero' AND v_number = 0
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 28
+              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 21
             WHEN item.value->>'betType' = 'straight'
               AND v_number = coalesce(nullif(item.value->>'targetNumber', '')::INTEGER, 0)
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 32
+              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 28
             WHEN item.value->>'betType' = 'red' AND v_number <> 0
               AND v_number = ANY(v_red_numbers)
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 2
+              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 1.75
             WHEN item.value->>'betType' = 'black' AND v_number <> 0
               AND NOT (v_number = ANY(v_red_numbers))
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 2
+              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 1.75
             WHEN item.value->>'betType' = 'even' AND v_number <> 0
               AND mod(v_number, 2) = 0
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 2
+              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 1.75
             WHEN item.value->>'betType' = 'odd' AND v_number <> 0
               AND mod(v_number, 2) = 1
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 2
+              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 1.75
             WHEN item.value->>'betType' = 'dozen_1' AND v_number BETWEEN 1 AND 12
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 3
+              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 2.25
             WHEN item.value->>'betType' = 'dozen_2' AND v_number BETWEEN 13 AND 24
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 3
+              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 2.25
             WHEN item.value->>'betType' = 'dozen_3' AND v_number BETWEEN 25 AND 36
-              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 3
+              THEN coalesce(nullif(item.value->>'amount', '')::BIGINT, v_bet.amount) * 2.25
             ELSE 0
           END
-        ), 0)::BIGINT INTO v_payout
+        )), 0)::BIGINT INTO v_payout
         FROM jsonb_array_elements(v_bet.selection->'bets') AS item(value);
         v_won := v_payout > 0;
         IF v_won THEN
@@ -801,31 +702,31 @@ BEGIN
         CASE v_bet_type
           WHEN 'zero' THEN
             v_won := v_number = 0;
-            IF v_won THEN v_multiplier := 28; END IF;
+            IF v_won THEN v_multiplier := 21; END IF;
           WHEN 'straight' THEN
             v_won := v_number = (v_bet.selection ->> 'targetNumber')::INTEGER;
-            IF v_won THEN v_multiplier := 32; END IF;
+            IF v_won THEN v_multiplier := 28; END IF;
           WHEN 'red' THEN
             v_won := v_number <> 0 AND v_number = ANY(v_red_numbers);
-            IF v_won THEN v_multiplier := 2; END IF;
+            IF v_won THEN v_multiplier := 1.75; END IF;
           WHEN 'black' THEN
             v_won := v_number <> 0 AND NOT (v_number = ANY(v_red_numbers));
-            IF v_won THEN v_multiplier := 2; END IF;
+            IF v_won THEN v_multiplier := 1.75; END IF;
           WHEN 'even' THEN
             v_won := v_number <> 0 AND mod(v_number, 2) = 0;
-            IF v_won THEN v_multiplier := 2; END IF;
+            IF v_won THEN v_multiplier := 1.75; END IF;
           WHEN 'odd' THEN
             v_won := v_number <> 0 AND mod(v_number, 2) = 1;
-            IF v_won THEN v_multiplier := 2; END IF;
+            IF v_won THEN v_multiplier := 1.75; END IF;
           WHEN 'dozen_1' THEN
             v_won := v_number BETWEEN 1 AND 12;
-            IF v_won THEN v_multiplier := 3; END IF;
+            IF v_won THEN v_multiplier := 2.25; END IF;
           WHEN 'dozen_2' THEN
             v_won := v_number BETWEEN 13 AND 24;
-            IF v_won THEN v_multiplier := 3; END IF;
+            IF v_won THEN v_multiplier := 2.25; END IF;
           WHEN 'dozen_3' THEN
             v_won := v_number BETWEEN 25 AND 36;
-            IF v_won THEN v_multiplier := 3; END IF;
+            IF v_won THEN v_multiplier := 2.25; END IF;
           ELSE
             RAISE EXCEPTION 'نوع رهان روليت غير صالح.';
         END CASE;
@@ -837,26 +738,26 @@ BEGIN
       IF v_game_id = 'double_dice' THEN
         v_sum := v_dice[1] + v_dice[2];
         CASE v_pick
-          WHEN 'high' THEN v_won := v_sum >= 8; v_multiplier := 1.95;
-          WHEN 'low' THEN v_won := v_sum <= 6; v_multiplier := 1.95;
-          WHEN 'seven' THEN v_won := v_sum = 7; v_multiplier := 4.2;
-          WHEN 'doubles' THEN v_won := v_dice[1] = v_dice[2]; v_multiplier := 4.8;
+          WHEN 'high' THEN v_won := v_sum >= 8; v_multiplier := 1.46;
+          WHEN 'low' THEN v_won := v_sum <= 6; v_multiplier := 1.46;
+          WHEN 'seven' THEN v_won := v_sum = 7; v_multiplier := 3.15;
+          WHEN 'doubles' THEN v_won := v_dice[1] = v_dice[2]; v_multiplier := 3.6;
           ELSE RAISE EXCEPTION 'توقع نرد غير صالح.';
         END CASE;
       ELSIF v_game_id = 'prediction_dice' THEN
         CASE v_pick
-          WHEN 'even' THEN v_won := mod(v_dice[1], 2) = 0; v_multiplier := 1.92;
-          WHEN 'odd' THEN v_won := mod(v_dice[1], 2) = 1; v_multiplier := 1.92;
+          WHEN 'even' THEN v_won := mod(v_dice[1], 2) = 0; v_multiplier := 1.75;
+          WHEN 'odd' THEN v_won := mod(v_dice[1], 2) = 1; v_multiplier := 1.75;
           ELSE
             v_won := v_dice[1] = substring(v_pick FROM 7)::INTEGER;
-            v_multiplier := 5.2;
+            v_multiplier := 3.9;
         END CASE;
       ELSIF v_game_id = 'speed_dice' THEN
         CASE v_pick
-          WHEN 'under_10' THEN v_won := v_sum <= 10; v_multiplier := 1.9;
-          WHEN 'over_11' THEN v_won := v_sum >= 11; v_multiplier := 1.9;
-          WHEN 'lucky_16' THEN v_won := v_sum >= 16; v_multiplier := 4.5;
-          WHEN 'triple' THEN v_won := v_dice[1] = v_dice[2] AND v_dice[2] = v_dice[3]; v_multiplier := 12;
+          WHEN 'under_10' THEN v_won := v_sum <= 10; v_multiplier := 1.43;
+          WHEN 'over_11' THEN v_won := v_sum >= 11; v_multiplier := 1.43;
+          WHEN 'lucky_16' THEN v_won := v_sum >= 16; v_multiplier := 3.38;
+          WHEN 'triple' THEN v_won := v_dice[1] = v_dice[2] AND v_dice[2] = v_dice[3]; v_multiplier := 9;
           ELSE RAISE EXCEPTION 'توقع نرد غير صالح.';
         END CASE;
       ELSE
@@ -872,25 +773,6 @@ BEGIN
       IF NOT (p_game_kind = 'roulette' AND jsonb_typeof(v_bet.selection->'bets') = 'array') THEN
         v_payout := round(v_bet.amount * v_multiplier)::BIGINT;
       END IF;
-      UPDATE public.sada_users
-      SET coins = coins + v_payout
-      WHERE id = v_bet.user_id;
-      INSERT INTO public.sada_transactions (
-        id, user_id, type, amount, currency, description, timestamp
-      ) VALUES (
-        'room_win_' || md5(v_round.id || ':' || v_bet.user_id),
-        v_bet.user_id,
-        'game_win',
-        v_payout,
-        'coins',
-        'ربح جولة ألعاب الغرفة (' || p_game_kind || ')',
-        v_now
-      ) ON CONFLICT (id) DO NOTHING;
-      v_winner_names := concat_ws(
-        '، ',
-        nullif(v_winner_names, ''),
-        v_bet.winner_name || ' (+' || v_payout::TEXT || ')'
-      );
     END IF;
 
     UPDATE public.sada_room_game_bets
@@ -898,23 +780,119 @@ BEGIN
     WHERE id = v_bet.id;
   END LOOP;
 
-  IF p_game_kind = 'roulette' THEN
-    v_announcement := '🎡 انتهت جولة الروليت: الرقم #' || v_number ||
-      ' (' || v_color || '). ';
-  ELSE
-    v_announcement := '🎲 انتهت جولة النرد: ' || array_to_string(v_dice, ' - ') ||
-      ' (المجموع ' || v_total_sum || '). ';
-  END IF;
-  v_announcement := v_announcement || CASE
-    WHEN v_winner_names = '' THEN 'لا يوجد فائزون هذه المرة.'
-    ELSE 'الفائزون: ' || v_winner_names
-  END;
-
   UPDATE public.sada_room_game_rounds
-  SET result = v_result, settled_at = v_now
+  SET result = v_result, settled_at = v_now, payout_claimable = TRUE
   WHERE id = v_round.id;
 
-  IF v_has_bets THEN
+  RETURN v_result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_reveal_room_game_round(
+  p_room_id TEXT,
+  p_game_kind TEXT,
+  p_round_number BIGINT,
+  p_user_id TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  v_round public.sada_room_game_rounds%ROWTYPE;
+  v_bet public.sada_room_game_bets%ROWTYPE;
+  v_now TIMESTAMPTZ := clock_timestamp();
+  v_payout BIGINT := 0;
+  v_winner_names TEXT;
+  v_announcement TEXT;
+BEGIN
+  IF p_game_kind NOT IN ('roulette', 'dice') THEN
+    RAISE EXCEPTION 'نوع لعبة غير صالح.';
+  END IF;
+  IF auth.uid() IS NULL OR auth.uid()::TEXT IS DISTINCT FROM p_user_id THEN
+    RAISE EXCEPTION 'لا يمكن تسوية جولة لحساب آخر.';
+  END IF;
+
+  SELECT * INTO v_round
+  FROM public.sada_room_game_rounds
+  WHERE room_id = p_room_id
+    AND game_kind = p_game_kind
+    AND round_number = p_round_number
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_round.result IS NULL OR NOT v_round.payout_claimable THEN
+    RAISE EXCEPTION 'نتيجة الجولة غير متاحة للتسوية.';
+  END IF;
+
+  SELECT * INTO v_bet
+  FROM public.sada_room_game_bets
+  WHERE round_id = v_round.id
+    AND user_id = p_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'لا يوجد رهان مسجل لك في هذه الجولة.';
+  END IF;
+
+  IF v_bet.revealed_at IS NULL THEN
+    IF v_bet.payout > 0 THEN
+      UPDATE public.sada_users
+      SET coins = coins + v_bet.payout
+      WHERE id = p_user_id;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'تعذّر تحديث رصيد الفائز.';
+      END IF;
+
+      INSERT INTO public.sada_transactions (
+        id, user_id, type, amount, currency, description, timestamp
+      ) VALUES (
+        'room_win_' || md5(v_round.id || ':' || p_user_id),
+        p_user_id,
+        'game_win',
+        v_bet.payout,
+        'coins',
+        'ربح جولة ألعاب الغرفة (' || p_game_kind || ')',
+        v_now
+      ) ON CONFLICT (id) DO NOTHING;
+      v_payout := v_bet.payout;
+    END IF;
+
+    UPDATE public.sada_room_game_bets
+    SET revealed_at = v_now
+    WHERE id = v_bet.id;
+  END IF;
+
+  IF v_round.announced_at IS NULL AND NOT EXISTS (
+    SELECT 1
+    FROM public.sada_room_game_bets
+    WHERE round_id = v_round.id AND revealed_at IS NULL
+  ) THEN
+    SELECT string_agg(
+      display_name || ' (+' || payout::TEXT || ')',
+      '، ' ORDER BY created_at, id
+    ) INTO v_winner_names
+    FROM public.sada_room_game_bets
+    WHERE round_id = v_round.id AND is_winner;
+
+    IF p_game_kind = 'roulette' THEN
+      v_announcement := '🎡 انتهت جولة الروليت: الرقم #' ||
+        (v_round.result->>'number') || ' (' || (v_round.result->>'color') || '). ';
+    ELSE
+      v_announcement := '🎲 انتهت جولة النرد: ' ||
+        array_to_string(ARRAY(
+          SELECT jsonb_array_elements_text(v_round.result->'dice')
+        ), ' - ') || ' (المجموع ' || (v_round.result->>'sum') || '). ';
+    END IF;
+    v_announcement := v_announcement || CASE
+      WHEN coalesce(v_winner_names, '') = '' THEN 'لا يوجد فائزون هذه المرة.'
+      ELSE 'الفائزون: ' || v_winner_names
+    END;
+
+    UPDATE public.sada_room_game_rounds
+    SET announced_at = v_now
+    WHERE id = v_round.id;
+
     INSERT INTO public.sada_room_messages (
       id, room_id, user_id, display_name, level, is_admin, text, type, timestamp
     ) VALUES (
@@ -930,7 +908,7 @@ BEGIN
     ) ON CONFLICT (id) DO NOTHING;
   END IF;
 
-  RETURN v_result;
+  RETURN jsonb_build_object('payout', v_payout);
 END;
 $$;
 
@@ -1185,9 +1163,13 @@ REVOKE ALL ON FUNCTION public.sada_get_room_game_round(TEXT, TEXT, TEXT)
   FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_place_room_game_bet(TEXT, TEXT, BIGINT, TEXT, BIGINT, JSONB)
   FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_reveal_room_game_round(TEXT, TEXT, BIGINT, TEXT)
+  FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.sada_get_room_game_round(TEXT, TEXT, TEXT)
   TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.sada_place_room_game_bet(TEXT, TEXT, BIGINT, TEXT, BIGINT, JSONB)
+  TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.sada_reveal_room_game_round(TEXT, TEXT, BIGINT, TEXT)
   TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.sada_create_room_lucky_wheel(
@@ -1772,6 +1754,7 @@ BEGIN
   DELETE FROM public.sada_usdt_deposits;
   DELETE FROM public.sada_usdt_withdrawals;
   DELETE FROM public.sada_female_voice_requests;
+  DELETE FROM public.sada_grand_competition_entries;
   DELETE FROM public.sada_platform_state;
   INSERT INTO public.sada_platform_state (
     id,
@@ -1916,16 +1899,298 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.sada_join_grand_competition(
+  p_user_id TEXT,
+  p_package_coins BIGINT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_id TEXT := auth.uid()::TEXT;
+  package_weight BIGINT;
+  platform_commission BIGINT;
+  coins_left BIGINT;
+  settings_doc JSONB;
+  competition_doc JSONB;
+  total_subscriptions BIGINT;
+  prize_pool BIGINT;
+  commission_total BIGINT;
+  participant_weight BIGINT;
+  total_weight NUMERIC;
+  share_percent NUMERIC;
+BEGIN
+  IF caller_id IS NULL OR caller_id <> p_user_id THEN
+    RAISE EXCEPTION 'لا يمكن الاشتراك لحساب آخر.';
+  END IF;
+
+  package_weight := CASE p_package_coins
+    WHEN 20000 THEN 1
+    WHEN 50000 THEN 3
+    WHEN 100000 THEN 7
+    WHEN 200000 THEN 16
+    ELSE NULL
+  END;
+  IF package_weight IS NULL THEN
+    RAISE EXCEPTION 'باقة الاشتراك غير صالحة.';
+  END IF;
+
+  INSERT INTO public.sada_platform_state (id, settings)
+  VALUES ('global', '{}'::jsonb)
+  ON CONFLICT (id) DO NOTHING;
+  SELECT settings INTO settings_doc
+  FROM public.sada_platform_state
+  WHERE id = 'global'
+  FOR UPDATE;
+
+  UPDATE public.sada_users
+  SET coins = coins - p_package_coins
+  WHERE id = p_user_id AND coins >= p_package_coins
+  RETURNING coins INTO coins_left;
+  IF coins_left IS NULL THEN
+    RAISE EXCEPTION 'رصيد الكوينز غير كافٍ.';
+  END IF;
+
+  competition_doc := CASE
+    WHEN jsonb_typeof(settings_doc -> 'grandCompetition') = 'object'
+      THEN settings_doc -> 'grandCompetition'
+    ELSE '{}'::jsonb
+  END;
+  INSERT INTO public.sada_grand_competition_entries (user_id, weight)
+  VALUES (p_user_id, package_weight)
+  ON CONFLICT (user_id) DO UPDATE
+  SET weight = public.sada_grand_competition_entries.weight + EXCLUDED.weight
+  RETURNING weight INTO participant_weight;
+
+  total_subscriptions := COALESCE(
+    NULLIF(competition_doc ->> 'totalSubscriptionsCoins', '')::BIGINT,
+    0
+  ) + p_package_coins;
+  platform_commission := p_package_coins / 5;
+  prize_pool := COALESCE(NULLIF(competition_doc ->> 'prizePoolCoins', '')::BIGINT, 0)
+    + p_package_coins - platform_commission;
+  commission_total := COALESCE(
+    NULLIF(competition_doc ->> 'platformCommissionCoins', '')::BIGINT,
+    0
+  ) + platform_commission;
+
+  SELECT COALESCE(SUM(weight::NUMERIC), 0)
+  INTO total_weight
+  FROM public.sada_grand_competition_entries;
+  share_percent := CASE
+    WHEN total_weight > 0 THEN ROUND(participant_weight * 100 / total_weight, 4)
+    ELSE 0
+  END;
+
+  competition_doc := competition_doc || jsonb_build_object(
+    'totalSubscriptionsCoins', total_subscriptions,
+    'prizePoolCoins', prize_pool,
+    'platformCommissionCoins', commission_total,
+    'totalParticipationWeight', total_weight
+  );
+  UPDATE public.sada_platform_state
+  SET settings = jsonb_set(
+    COALESCE(settings, '{}'::jsonb),
+    '{grandCompetition}',
+    competition_doc,
+    TRUE
+  ),
+  updated_at = NOW()
+  WHERE id = 'global';
+
+  INSERT INTO public.sada_transactions (id, user_id, type, amount, currency, description, timestamp)
+  VALUES (
+    'tx_' || replace(gen_random_uuid()::TEXT, '-', ''),
+    p_user_id,
+    'competition_subscription',
+    -p_package_coins,
+    'coins',
+    'اشتراك في مسابقة صدى الكبرى',
+    NOW()
+  );
+
+  RETURN jsonb_build_object(
+    'coins', coins_left,
+    'participant_weight', participant_weight,
+    'share_percent', share_percent,
+    'grand_competition', competition_doc
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_get_my_grand_competition_share()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_id TEXT := auth.uid()::TEXT;
+  participant_weight BIGINT := 0;
+  total_weight NUMERIC := 0;
+  share_percent NUMERIC := 0;
+BEGIN
+  IF caller_id IS NULL THEN
+    RAISE EXCEPTION 'يجب تسجيل الدخول لعرض حصة المشاركة.';
+  END IF;
+
+  SELECT
+    COALESCE(entries.weight, 0),
+    COALESCE(
+      NULLIF(state.settings -> 'grandCompetition' ->> 'totalParticipationWeight', '')::NUMERIC,
+      0
+    )
+  INTO participant_weight, total_weight
+  FROM (SELECT 1) AS source
+  LEFT JOIN public.sada_grand_competition_entries AS entries
+    ON entries.user_id = caller_id
+  LEFT JOIN public.sada_platform_state AS state
+    ON state.id = 'global';
+  total_weight := COALESCE(total_weight, 0);
+  IF total_weight > 0 THEN
+    share_percent := ROUND(participant_weight * 100 / total_weight, 4);
+  END IF;
+
+  RETURN jsonb_build_object(
+    'participant_weight', participant_weight,
+    'total_weight', total_weight,
+    'share_percent', share_percent
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_admin_save_grand_competition(
+  p_monthly_closing_prizes TEXT,
+  p_participation_terms TEXT,
+  p_schedule TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  settings_doc JSONB;
+  competition_doc JSONB;
+BEGIN
+  IF auth.uid() IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public.sada_users
+    WHERE id = auth.uid()::TEXT AND is_admin = TRUE
+  ) THEN
+    RAISE EXCEPTION 'هذه الإعدادات مخصصة للإدارة فقط.';
+  END IF;
+  IF length(p_monthly_closing_prizes) > 20000
+    OR length(p_participation_terms) > 20000
+    OR length(p_schedule) > 20000 THEN
+    RAISE EXCEPTION 'نص إعداد المسابقة طويل جداً.';
+  END IF;
+
+  INSERT INTO public.sada_platform_state (id, settings)
+  VALUES ('global', '{}'::jsonb)
+  ON CONFLICT (id) DO NOTHING;
+  SELECT settings INTO settings_doc
+  FROM public.sada_platform_state
+  WHERE id = 'global'
+  FOR UPDATE;
+
+  competition_doc := (
+    CASE
+      WHEN jsonb_typeof(settings_doc -> 'grandCompetition') = 'object'
+        THEN settings_doc -> 'grandCompetition'
+      ELSE '{}'::jsonb
+    END
+  ) ||
+    jsonb_build_object(
+      'monthlyClosingPrizes', p_monthly_closing_prizes,
+      'participationTerms', p_participation_terms,
+      'schedule', p_schedule
+    );
+  UPDATE public.sada_platform_state
+  SET settings = jsonb_set(
+    COALESCE(settings, '{}'::jsonb),
+    '{grandCompetition}',
+    competition_doc,
+    TRUE
+  ),
+  updated_at = NOW()
+  WHERE id = 'global';
+
+  RETURN jsonb_build_object('saved', TRUE);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_admin_reset_grand_competition_cycle()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  settings_doc JSONB;
+  competition_doc JSONB;
+BEGIN
+  IF auth.uid() IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public.sada_users
+    WHERE id = auth.uid()::TEXT AND is_admin = TRUE
+  ) THEN
+    RAISE EXCEPTION 'هذه العملية مخصصة للإدارة فقط.';
+  END IF;
+
+  INSERT INTO public.sada_platform_state (id, settings)
+  VALUES ('global', '{}'::jsonb)
+  ON CONFLICT (id) DO NOTHING;
+  SELECT settings INTO settings_doc
+  FROM public.sada_platform_state
+  WHERE id = 'global'
+  FOR UPDATE;
+
+  DELETE FROM public.sada_grand_competition_entries;
+  competition_doc := (
+    CASE
+      WHEN jsonb_typeof(settings_doc -> 'grandCompetition') = 'object'
+        THEN settings_doc -> 'grandCompetition'
+      ELSE '{}'::jsonb
+    END
+  ) ||
+    jsonb_build_object(
+      'totalSubscriptionsCoins', 0,
+      'prizePoolCoins', 0,
+      'totalParticipationWeight', 0
+    );
+  UPDATE public.sada_platform_state
+  SET settings = jsonb_set(
+    COALESCE(settings, '{}'::jsonb),
+    '{grandCompetition}',
+    competition_doc,
+    TRUE
+  ),
+  updated_at = NOW()
+  WHERE id = 'global';
+
+  RETURN jsonb_build_object('reset', TRUE);
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.sada_can_clear_room_chat(TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_clear_room_chat(TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_admin_reset_all_except_super_admin() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_purchase_vip_id(TEXT, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_activate_svip(TEXT, SMALLINT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_join_grand_competition(TEXT, BIGINT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_get_my_grand_competition_share() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_admin_save_grand_competition(TEXT, TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_admin_reset_grand_competition_cycle() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.sada_can_clear_room_chat(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_clear_room_chat(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_admin_reset_all_except_super_admin() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_purchase_vip_id(TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_activate_svip(TEXT, SMALLINT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_join_grand_competition(TEXT, BIGINT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_get_my_grand_competition_share() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_admin_save_grand_competition(TEXT, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_admin_reset_grand_competition_cycle() TO authenticated;
 
 -- ============================================================================
 -- تفعيل المزامنة الفورية (Supabase Realtime) للجداول التفاعلية

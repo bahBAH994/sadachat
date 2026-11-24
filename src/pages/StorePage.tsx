@@ -20,12 +20,18 @@ import {
   getStoreAndBagOverviewFromSupabase,
   purchaseRoomBackgroundInSupabase,
   purchaseStoreCoinItemInSupabase,
-  purchaseVipIdInSupabase,
 } from '../lib/sadaWalletService';
-import { getPlatformState } from '../lib/sadaMappers';
+import {
+  getPlatformState,
+  recordTransaction,
+  rowToUser,
+  savePlatformState,
+  USER_COLUMNS,
+} from '../lib/sadaMappers';
 import { VIP_IDS_CATALOG, type VipIdItem } from '../lib/sadaCatalog';
 import type { Store3DItem, StoreBackgroundItem } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import { supabase } from '../lib/supabase';
 
 const RoyalBackdropPreview: React.FC<{ backgroundId: string }> = ({ backgroundId }) => {
   const isEmerald = backgroundId === 'bg_emerald_palace';
@@ -238,10 +244,114 @@ export const StorePage: React.FC = () => {
     setBusyId(vipId.id);
     setFeedback(null);
     try {
-      const result = await purchaseVipIdInSupabase(user, vipId);
-      updateLocalUser(result.user);
-      setCustomVipIds(result.customVipIds);
-      setFeedback({ type: 'ok', text: `تم شراء ID ${vipId.number} وتفعيله على حسابك.` });
+      const [
+        { data: catalogItem, error: catalogError },
+        { data: userRow, error: userError },
+        state,
+      ] = await Promise.all([
+        supabase
+          .from('sada_vip_ids_catalog')
+          .select('id, number, price_coins, owner_id')
+          .eq('id', vipId.id)
+          .maybeSingle(),
+        supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
+        getPlatformState({ forceRefresh: true }),
+      ]);
+      if (catalogError) throw new Error(catalogError.message);
+      if (userError) throw new Error(userError.message);
+      if (!catalogItem || !userRow) throw new Error('الرقم أو الحساب غير موجود.');
+      if (catalogItem.owner_id && catalogItem.owner_id !== user.id) {
+        throw new Error('هذا الرقم مملوك بالفعل لمستخدم آخر.');
+      }
+
+      const freshUser = rowToUser(userRow);
+      const price = Number(catalogItem.price_coins);
+      const customVipIds = { ...(state.settings.customVipIds || {}) };
+      const currentOwner = Object.entries(customVipIds).find(
+        ([, number]) => number === catalogItem.number
+      );
+      if (currentOwner && currentOwner[0] !== user.id) {
+        throw new Error('هذا الرقم مملوك بالفعل لمستخدم آخر.');
+      }
+      if (customVipIds[user.id] === String(catalogItem.number)) {
+        throw new Error('هذا الرقم مملوك لك بالفعل.');
+      }
+      if (!Number.isFinite(price) || price <= 0) {
+        throw new Error('سعر الرقم المميز غير صالح.');
+      }
+      if (freshUser.coins < price) {
+        throw new Error('رصيد الكوينز غير كافٍ لشراء هذا الرقم.');
+      }
+
+      const { data: updatedRow, error: balanceError } = await supabase
+        .from('sada_users')
+        .update({ coins: freshUser.coins - price })
+        .eq('id', user.id)
+        .eq('coins', freshUser.coins)
+        .select(USER_COLUMNS)
+        .maybeSingle();
+      if (balanceError) throw new Error(balanceError.message);
+      if (!updatedRow) {
+        throw new Error('تغيّر رصيدك أثناء الشراء. حدّث الصفحة وحاول مجدداً.');
+      }
+
+      const previousVipId = customVipIds[user.id];
+      customVipIds[user.id] = String(catalogItem.number);
+      try {
+        await savePlatformState({
+          settings: {
+            ...state.settings,
+            customVipIds,
+          },
+        });
+        await recordTransaction({
+          userId: user.id,
+          type: 'store_purchase',
+          amount: -price,
+          currency: 'coins',
+          description: `شراء رقم ID مميز: ${catalogItem.number}`,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (purchaseError) {
+        try {
+          const currentState = await getPlatformState({ forceRefresh: true });
+          const restoredVipIds = { ...(currentState.settings.customVipIds || {}) };
+          if (restoredVipIds[user.id] === String(catalogItem.number)) {
+            if (previousVipId) restoredVipIds[user.id] = previousVipId;
+            else delete restoredVipIds[user.id];
+            await savePlatformState({
+              settings: {
+                ...currentState.settings,
+                customVipIds: restoredVipIds,
+              },
+            });
+          }
+        } catch (rollbackError) {
+          console.error('Unable to restore custom VIP ID after purchase failure:', rollbackError);
+        }
+
+        const { data: refundedRow, error: refundError } = await supabase
+          .from('sada_users')
+          .update({ coins: freshUser.coins })
+          .eq('id', user.id)
+          .eq('coins', freshUser.coins - price)
+          .select('id')
+          .maybeSingle();
+        if (refundError || !refundedRow) {
+          console.error(
+            'Unable to refund coins after VIP ID purchase failure:',
+            refundError || new Error('The user balance changed before refunding.')
+          );
+        }
+        throw purchaseError;
+      }
+
+      updateLocalUser(rowToUser(updatedRow));
+      setCustomVipIds(customVipIds);
+      setFeedback({
+        type: 'ok',
+        text: 'مبروك! تم شراء وتفعيل رقم ID المميز بنجاح',
+      });
     } catch (err) {
       setFeedback({
         type: 'err',

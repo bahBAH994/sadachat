@@ -25,6 +25,7 @@ import {
   setAudioMuted,
 } from '../lib/sadaAudio';
 import {
+  settleGamePayoutInSupabase,
   spinSlotMachineInSupabase,
   type SlotGameId,
   type SpinResultPayload,
@@ -298,26 +299,48 @@ export const InRoomSlot5x3Player: React.FC<InRoomSlot5x3PlayerProps> = ({
               window.clearInterval(intervalRef.current);
               intervalRef.current = null;
             }
-            setIsSpinning(false);
-            setLastResult(result);
-            setLastWin(result.payout);
-            setLightningMap(strikes);
-            updateLocalUser(result.user);
-            onJackpotRefresh?.();
+            void (async () => {
+              let settledUser = result.user;
+              let payoutCredited = result.payout === 0;
+              try {
+                if (result.payout > 0) {
+                  settledUser = await settleGamePayoutInSupabase(
+                    user.id,
+                    result.payout,
+                    `ربح ${theme.title} (×${result.multiplier})`,
+                    'slot_win'
+                  );
+                  payoutCredited = true;
+                }
+              } catch (err) {
+                setErrorMsg(
+                  err instanceof Error
+                    ? err.message
+                    : 'توقفت البكرات، لكن تعذّر إضافة الجائزة.'
+                );
+              }
 
-            const winKeys = new Set<string>(
-              result.winningCells.map(([r, col]) => `${r}-${col}`)
-            );
-            setWinningCells(winKeys);
+              setIsSpinning(false);
+              setLastResult({ ...result, user: settledUser });
+              setLastWin(result.payout);
+              setLightningMap(strikes);
+              updateLocalUser(settledUser);
+              onJackpotRefresh?.();
 
-            if (result.payout > 0) {
-              const isBig = result.jackpotHit || result.multiplier >= 10;
-              playCoinWinSound(isBig);
-              fireGoldCoinConfetti(isBig ? 'jackpot' : 'normal');
-            }
+              const winKeys = new Set<string>(
+                result.winningCells.map(([r, col]) => `${r}-${col}`)
+              );
+              setWinningCells(winKeys);
+
+              if (payoutCredited && result.payout > 0) {
+                const isBig = result.jackpotHit || result.multiplier >= 10;
+                playCoinWinSound(isBig);
+                fireGoldCoinConfetti(isBig ? 'jackpot' : 'normal');
+              }
+            })();
           }
         }, delay);
-        timersRef.current.push(tid);
+        if (c !== 4) timersRef.current.push(tid);
       }
     } catch (err) {
       clearAllTimers();
@@ -352,7 +375,8 @@ export const InRoomSlot5x3Player: React.FC<InRoomSlot5x3PlayerProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 border border-white/25 text-white flex items-center justify-center cursor-pointer transition"
+            disabled={isSpinning}
+            className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 border border-white/25 text-white flex items-center justify-center cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="إغلاق اللعبة"
             title="إغلاق اللعبة"
           >

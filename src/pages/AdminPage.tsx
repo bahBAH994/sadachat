@@ -39,7 +39,11 @@ import {
   type AdminUserRoleChoice,
 } from '../components/admin/AdminUsersTab';
 import { resolveAsset } from '../lib/assets';
-import { isSuperAdminUser, PM_MESSAGE_COST } from '../lib/sadaCatalog';
+import {
+  isSuperAdminUser,
+  LUCKY_GIFT_MULTIPLIERS,
+  PM_MESSAGE_COST,
+} from '../lib/sadaCatalog';
 import {
   approveFemaleVoiceInSupabase,
   approveUsdtDepositInSupabase,
@@ -69,6 +73,11 @@ import {
   updateHostApprovalInSupabase,
   updatePrizePoolInSupabase,
 } from '../lib/sadaAdminService';
+import {
+  resetGrandCompetitionCycle,
+  saveGrandCompetitionContent,
+  type GrandCompetitionContent,
+} from '../lib/sadaGrandCompetitionService';
 import type {
   Agency,
   Competition,
@@ -116,6 +125,7 @@ type AdminTab =
   | 'gifts_announcements'
   | 'usdt'
   | 'competitions'
+  | 'grand_competition'
   | 'questions'
   | 'settings'
   | 'devices';
@@ -162,6 +172,10 @@ export const AdminPage: React.FC = () => {
   // Economy Settings Draft
   const [settingsDraft, setSettingsDraft] = useState<PlatformSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [grandCompetitionDraft, setGrandCompetitionDraft] =
+    useState<GrandCompetitionContent | null>(null);
+  const [savingGrandCompetition, setSavingGrandCompetition] = useState(false);
+  const [resettingGrandCompetition, setResettingGrandCompetition] = useState(false);
 
   const isSuperAdmin = isSuperAdminUser(user);
 
@@ -187,6 +201,11 @@ export const AdminPage: React.FC = () => {
         const res = await getAdminOverviewFromSupabase();
         setData(res);
         setSettingsDraft(res.settings);
+        setGrandCompetitionDraft({
+          monthlyClosingPrizes: res.settings.grandCompetition?.monthlyClosingPrizes || '',
+          participationTerms: res.settings.grandCompetition?.participationTerms || '',
+          schedule: res.settings.grandCompetition?.schedule || '',
+        });
         const rates: Record<string, string> = {};
         const payouts: Record<string, string> = {};
         for (const ag of res.agencies || []) {
@@ -489,6 +508,70 @@ export const AdminPage: React.FC = () => {
       void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تحديث مخزون الجوائز.');
+    }
+  };
+
+  const handleSaveGrandCompetition = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!grandCompetitionDraft) return;
+    setSavingGrandCompetition(true);
+    try {
+      await saveGrandCompetitionContent(grandCompetitionDraft);
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              settings: {
+                ...current.settings,
+                grandCompetition: current.settings.grandCompetition
+                  ? { ...current.settings.grandCompetition, ...grandCompetitionDraft }
+                  : current.settings.grandCompetition,
+              },
+            }
+          : current
+      );
+      showOk('تم حفظ إعدادات مسابقة صدى الكبرى.');
+    } catch (err) {
+      showErr(err, 'تعذّر حفظ إعدادات المسابقة.');
+    } finally {
+      setSavingGrandCompetition(false);
+    }
+  };
+
+  const handleResetGrandCompetitionCycle = async () => {
+    if (
+      !window.confirm(
+        'سيتم تصفير اشتراكات ومخزون وأوزان المشاركين للدورة الحالية. ستبقى عمولة المنصة التراكمية محفوظة. هل تريد المتابعة؟'
+      )
+    ) {
+      return;
+    }
+    setResettingGrandCompetition(true);
+    try {
+      await resetGrandCompetitionCycle();
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              settings: {
+                ...current.settings,
+                grandCompetition: current.settings.grandCompetition
+                  ? {
+                      ...current.settings.grandCompetition,
+                      totalSubscriptionsCoins: 0,
+                      prizePoolCoins: 0,
+                      totalParticipationWeight: 0,
+                    }
+                  : current.settings.grandCompetition,
+              },
+            }
+          : current
+      );
+      showOk('تم تصفير مخزون دورة المسابقة وبدء دورة جديدة.');
+    } catch (err) {
+      showErr(err, 'تعذّر تصفير مخزون المسابقة.');
+    } finally {
+      setResettingGrandCompetition(false);
     }
   };
 
@@ -832,6 +915,7 @@ export const AdminPage: React.FC = () => {
     { id: 'gifts_announcements', label: 'الهدايا والإعلانات' },
     { id: 'usdt', label: 'طلبات USDT', badge: pendingUsdtCount },
     { id: 'competitions', label: 'المسابقات' },
+    { id: 'grand_competition', label: 'إدارة مسابقة صدى الكبرى' },
     { id: 'questions', label: 'بنك الأسئلة' },
     { id: 'settings', label: 'الإعدادات المالية' },
     { id: 'devices', label: 'حماية UUID' },
@@ -2101,6 +2185,82 @@ export const AdminPage: React.FC = () => {
               </div>
             )}
 
+            {tab === 'grand_competition' && grandCompetitionDraft && (
+              <div className="grid gap-4 lg:grid-cols-12">
+                <form
+                  onSubmit={(e) => void handleSaveGrandCompetition(e)}
+                  className="lg:col-span-7 royal-glass rounded-3xl p-5 sm:p-6 space-y-4"
+                >
+                  <h2 className="text-base font-bold text-[#F3D37A] flex items-center gap-2">
+                    <Trophy className="w-4 h-4" />
+                    إعدادات مسابقة صدى الكبرى
+                  </h2>
+                  {(
+                    [
+                      ['monthlyClosingPrizes', 'جوائز الختام الشهري'],
+                      ['participationTerms', 'شروط التأهل والمشاركة'],
+                      ['schedule', 'جدول المواعيد'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label key={key} className="block space-y-1.5">
+                      <span className="text-xs font-bold text-slate-200">{label}</span>
+                      <textarea
+                        required
+                        rows={4}
+                        value={grandCompetitionDraft[key]}
+                        onChange={(e) =>
+                          setGrandCompetitionDraft({
+                            ...grandCompetitionDraft,
+                            [key]: e.target.value,
+                          })
+                        }
+                        className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white leading-6 focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </label>
+                  ))}
+                  <button
+                    type="submit"
+                    disabled={savingGrandCompetition}
+                    className="gold-btn w-full min-h-[44px] rounded-xl py-2.5 text-sm cursor-pointer disabled:opacity-60"
+                  >
+                    {savingGrandCompetition ? 'جارٍ الحفظ...' : 'حفظ إعدادات المسابقة'}
+                  </button>
+                </form>
+
+                <section className="lg:col-span-5 royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
+                  <h2 className="text-base font-bold text-[#F3D37A]">مخزون اشتراكات الدورة</h2>
+                  <div className="rounded-2xl border border-white/10 bg-[#070913]/55 p-4 space-y-3">
+                    <p className="text-xs text-slate-300">
+                      إجمالي الاشتراكات الحالي
+                      <strong className="mt-1 block text-xl font-black text-white font-mono-num">
+                        {(data.settings.grandCompetition?.totalSubscriptionsCoins || 0).toLocaleString('en-US')} كوينز
+                      </strong>
+                    </p>
+                    <p className="text-xs text-slate-300">
+                      مخزون الجوائز بعد خصم 20٪ عمولة
+                      <strong className="mt-1 block text-lg font-black text-emerald-300 font-mono-num">
+                        {(data.settings.grandCompetition?.prizePoolCoins || 0).toLocaleString('en-US')} كوينز
+                      </strong>
+                    </p>
+                    <p className="text-xs text-slate-300">
+                      عمولة المنصة التراكمية
+                      <strong className="mt-1 block text-lg font-black text-amber-200 font-mono-num">
+                        {(data.settings.grandCompetition?.platformCommissionCoins || 0).toLocaleString('en-US')} كوينز
+                      </strong>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={resettingGrandCompetition}
+                    onClick={() => void handleResetGrandCompetitionCycle()}
+                    className="min-h-[42px] w-full rounded-xl border border-rose-500/40 bg-rose-950/50 px-4 text-xs font-bold text-rose-200 disabled:opacity-60"
+                  >
+                    {resettingGrandCompetition ? 'جارٍ التصفير...' : 'تصفير المخزون وبدء دورة جديدة'}
+                  </button>
+                </section>
+              </div>
+            )}
+
             {/* TAB 8: QUESTIONS CSV / EXCEL */}
             {tab === 'questions' && (
               <div className="space-y-5">
@@ -2511,80 +2671,20 @@ export const AdminPage: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-[#FCE9A6]">
                         <Sparkles className="w-5 h-5 text-[#D4AF37]" />
-                        <h2 className="text-sm font-extrabold">مضاعفات هدايا الحظ وأوزان الاحتمال</h2>
+                        <h2 className="text-sm font-extrabold">احتمالات هدايا الحظ الثابتة</h2>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSettingsDraft({
-                            ...settingsDraft,
-                            luckyGiftMultipliers: [
-                              ...settingsDraft.luckyGiftMultipliers,
-                              { multiplier: 2, weight: 10 },
-                            ],
-                          })
-                        }
-                        className="min-h-[32px] rounded-lg px-2.5 text-xs font-bold bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#FCE9A6] cursor-pointer"
-                      >
-                        + إضافة مضاعف
-                      </button>
                     </div>
-                    <div className="space-y-2 text-xs">
-                      {settingsDraft.luckyGiftMultipliers.map((item, idx) => (
-                        <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                          <div className="col-span-5">
-                            <label className="block text-[10px] text-slate-400">المضاعف (×)</label>
-                            <input
-                              type="number"
-                              min={0.5}
-                              step="0.5"
-                              value={item.multiplier}
-                              onChange={(e) => {
-                                const next = [...settingsDraft.luckyGiftMultipliers];
-                                next[idx] = { ...item, multiplier: Number(e.target.value) || 1 };
-                                setSettingsDraft({ ...settingsDraft, luckyGiftMultipliers: next });
-                              }}
-                              dir="ltr"
-                              className="w-full rounded-lg bg-[#070913]/85 border border-[#D4AF37]/25 px-2.5 py-1.5 text-white font-mono-num text-left"
-                            />
-                          </div>
-                          <div className="col-span-5">
-                            <label className="block text-[10px] text-slate-400">الوزن الاحتمالي</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={item.weight}
-                              onChange={(e) => {
-                                const next = [...settingsDraft.luckyGiftMultipliers];
-                                next[idx] = {
-                                  ...item,
-                                  weight: Math.max(1, Number(e.target.value) || 1),
-                                };
-                                setSettingsDraft({ ...settingsDraft, luckyGiftMultipliers: next });
-                              }}
-                              dir="ltr"
-                              className="w-full rounded-lg bg-[#070913]/85 border border-[#D4AF37]/25 px-2.5 py-1.5 text-white font-mono-num text-left"
-                            />
-                          </div>
-                          <div className="col-span-2 pt-3 flex justify-end">
-                            {settingsDraft.luckyGiftMultipliers.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const next = settingsDraft.luckyGiftMultipliers.filter(
-                                    (_, i) => i !== idx
-                                  );
-                                  setSettingsDraft({
-                                    ...settingsDraft,
-                                    luckyGiftMultipliers: next,
-                                  });
-                                }}
-                                className="min-h-[32px] min-w-[32px] rounded-lg bg-rose-950/60 border border-rose-500/35 text-rose-200 flex items-center justify-center cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
+                    <p className="text-[11px] text-slate-400">
+                      احتمالات السحب ثابتة ولا تتغير حسب الرهان أو إعدادات الإدارة.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {LUCKY_GIFT_MULTIPLIERS.map((item) => (
+                        <div
+                          key={item.multiplier}
+                          className="rounded-xl bg-[#070913]/75 border border-white/10 px-3 py-2 flex items-center justify-between"
+                        >
+                          <span className="font-mono-num text-[#FCE9A6]">×{item.multiplier}</span>
+                          <span className="font-mono-num text-slate-300">{item.weight}%</span>
                         </div>
                       ))}
                     </div>
@@ -2794,19 +2894,14 @@ export const AdminPage: React.FC = () => {
                       </h2>
                     </div>
                     <span className="text-[11px] text-slate-300">
-                      النسبة المئوية تحدد احتمال فوز اللاعب (%) لكل لعبة (من 5% حتى 90%)
+                      النسبة المئوية تحدد احتمال الفوز للألعاب القابلة للضبط فقط
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                     {(
                       [
-                        { key: 'slotsWinRate', label: 'ماكينات السلوت (8 ألعاب)', defaultVal: 38 },
-                        { key: 'doubleDiceWinRate', label: 'نرد الحظ المزدوج', defaultVal: 42 },
-                        { key: 'predictionDiceWinRate', label: 'نرد التوقعات', defaultVal: 40 },
                         { key: 'ladderDiceWinRate', label: 'نرد السلم التفاعلي', defaultVal: 58 },
-                        { key: 'speedDiceWinRate', label: 'نرد السرعة', defaultVal: 44 },
-                        { key: 'rouletteWinRate', label: 'الروليت الملكية', defaultVal: 45 },
                         { key: 'mysteryBoxWinRate', label: 'صناديق الحظ (9 صناديق)', defaultVal: 42 },
                       ] as const
                     ).map((item) => {

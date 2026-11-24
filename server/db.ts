@@ -191,19 +191,20 @@ const LUCKY_GIFT_RAW: Array<{
 ];
 
 export const LUCKY_GIFT_MULTIPLIERS: LuckyGiftMultiplierSetting[] = [
-  { multiplier: 1, weight: 32 },
-  { multiplier: 1.5, weight: 26 },
-  { multiplier: 2, weight: 22 },
-  { multiplier: 3, weight: 12 },
-  { multiplier: 5, weight: 6 },
-  { multiplier: 10, weight: 2 },
+  { multiplier: 0, weight: 34 },
+  { multiplier: 0.2, weight: 34 },
+  { multiplier: 0.5, weight: 11 },
+  { multiplier: 1, weight: 11 },
+  { multiplier: 1.5, weight: 4 },
+  { multiplier: 2, weight: 4 },
+  { multiplier: 3, weight: 1.8 },
+  { multiplier: 10, weight: 0.2 },
 ];
 
 export function rollLuckyGiftMultiplier(
-  multipliers: LuckyGiftMultiplierSetting[] = LUCKY_GIFT_MULTIPLIERS
+  _multipliers: LuckyGiftMultiplierSetting[] = LUCKY_GIFT_MULTIPLIERS
 ): number {
-  const valid = multipliers.filter((m) => m.weight > 0 && m.multiplier >= 0);
-  const source = valid.length > 0 ? valid : LUCKY_GIFT_MULTIPLIERS;
+  const source = LUCKY_GIFT_MULTIPLIERS;
   const total = source.reduce((sum, item) => sum + item.weight, 0);
   let roll = Math.random() * total;
   for (const item of source) {

@@ -648,10 +648,9 @@ export const LUCKY_GIFT_MULTIPLIERS: LuckyGiftMultiplierSetting[] = [
 ];
 
 export function rollLuckyGiftMultiplier(
-  multipliers: LuckyGiftMultiplierSetting[] = LUCKY_GIFT_MULTIPLIERS
+  _multipliers?: LuckyGiftMultiplierSetting[]
 ): number {
-  const valid = multipliers.filter((m) => m.weight > 0 && m.multiplier >= 0);
-  const source = valid.length > 0 ? valid : LUCKY_GIFT_MULTIPLIERS;
+  const source = LUCKY_GIFT_MULTIPLIERS;
   const total = source.reduce((sum, item) => sum + item.weight, 0);
   let roll = Math.random() * total;
   for (const item of source) {
@@ -1199,6 +1198,15 @@ export function createDefaultPlatformSettings(): PlatformSettings {
     })),
     luckyGiftMultipliers: LUCKY_GIFT_MULTIPLIERS.map((m) => ({ ...m })),
     rechargeRewardTiers: RECHARGE_REWARD_TIERS.map((t) => ({ ...t })),
+    grandCompetition: {
+      monthlyClosingPrizes: 'تُحدَّد جوائز الختام الشهري وفق إعلان الإدارة.',
+      participationTerms: 'تُعلن شروط التأهل والمشاركة من إدارة المسابقة قبل بدء الدورة.',
+      schedule: 'تُعلن مواعيد المسابقة وتحديثاتها عبر التطبيق.',
+      totalSubscriptionsCoins: 0,
+      prizePoolCoins: 0,
+      platformCommissionCoins: 0,
+      totalParticipationWeight: 0,
+    },
     gameRates: {
       slotsWinRate: 26,
       doubleDiceWinRate: 38,

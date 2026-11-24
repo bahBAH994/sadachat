@@ -120,7 +120,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
       .select(FEMALE_VOICE_REQ_COLUMNS)
       .order('created_at', { ascending: false }),
     supabase.from('sada_users').select('id', { count: 'exact', head: true }),
-    getPlatformState(),
+    getPlatformState({ forceRefresh: true }),
   ]);
 
   const rawUsers = (usersRes.data || []).map(rowToUser);

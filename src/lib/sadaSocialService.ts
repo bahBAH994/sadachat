@@ -963,7 +963,7 @@ export async function sendPrivateMessageInSupabase(
     let luckyMultiplier: number | null = null;
     let luckyBonusCoins = 0;
     if (selectedGift.category === 'lucky') {
-      luckyMultiplier = rollLuckyGiftMultiplier(state.settings.luckyGiftMultipliers);
+      luckyMultiplier = rollLuckyGiftMultiplier();
       luckyBonusCoins = Math.round(totalCost * luckyMultiplier);
       freshSender.coins += luckyBonusCoins;
     }

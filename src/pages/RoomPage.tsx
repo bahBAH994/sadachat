@@ -21,6 +21,7 @@ import {
   Shield,
   Smile,
   Sparkles,
+  Trash2,
   Trophy,
   UserMinus,
   Users,
@@ -52,6 +53,7 @@ import type {
   SeatGiftReactionEvent,
 } from '../context/ActiveRoomContext';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
+import { GenderBadge } from '../components/GenderBadge';
 import { DragonCinemaOverlay } from '../components/DragonCinemaOverlay';
 import { DragonStageBackdrop } from '../components/DragonStageBackdrop';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
@@ -336,16 +338,19 @@ interface RoomChatMessageItemProps {
   message: RoomMessage;
   senderAvatarUrl?: string;
   senderFrameId?: string;
+  senderGender?: User['gender'];
+  senderLevel?: number;
   senderVipTier?: VipTierKey;
   onOpenMiniProfile: (userId: string, preview?: Partial<User>) => void;
 }
 
 const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
-  ({ message: m, senderAvatarUrl, senderFrameId, senderVipTier, onOpenMiniProfile }) => {
+  ({ message: m, senderAvatarUrl, senderFrameId, senderGender, senderLevel, senderVipTier, onOpenMiniProfile }) => {
     const resolvedVip: VipTierKey =
       senderVipTier && senderVipTier !== 'none'
         ? senderVipTier
         : parseVipTierKey(m.vipLevel || m.vipTier);
+    const resolvedLevel = senderLevel ?? m.level;
 
     const isJoinSystem = m.type === 'system' && m.text.startsWith('دخل الغرفة');
     if (isJoinSystem) {
@@ -417,7 +422,8 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
               displayName: m.displayName,
               avatarUrl: senderAvatarUrl || m.avatarUrl,
               frameId: senderFrameId || m.frameId,
-              level: m.level,
+              gender: senderGender,
+              level: resolvedLevel,
               is_admin: m.isAdmin,
               vipLevel: resolvedVip,
               femaleVerifiedBadge: m.femaleVerifiedBadge,
@@ -441,12 +447,12 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
               className={`inline-flex items-center rounded-md px-1.5 py-0.2 text-[9px] font-mono-num font-extrabold ${
                 m.isAdmin
                   ? 'bg-amber-400 text-[#070913]'
-                  : m.level >= 15
+                  : resolvedLevel >= 15
                   ? 'bg-sky-500/80 text-white'
                   : 'bg-emerald-600/80 text-white'
               }`}
             >
-              Lv.{m.level}
+              Lv.{resolvedLevel}
             </span>
             <FemaleVerifiedBadge badge={m.femaleVerifiedBadge} />
             <button
@@ -456,7 +462,8 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
                   displayName: m.displayName,
                   avatarUrl: senderAvatarUrl || m.avatarUrl,
                   frameId: senderFrameId || m.frameId,
-                  level: m.level,
+                  gender: senderGender,
+                  level: resolvedLevel,
                   is_admin: m.isAdmin,
                   vipLevel: resolvedVip,
                   femaleVerifiedBadge: m.femaleVerifiedBadge,
@@ -465,6 +472,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
               className="font-extrabold text-[#FCE9A6] hover:underline cursor-pointer"
             >
               <VipUserName name={`${m.displayName}:`} vipTier={resolvedVip} />
+              <GenderBadge gender={senderGender} />
             </button>
           </div>
           <span className="text-white/95">{m.text}</span>
@@ -570,6 +578,8 @@ export const RoomPage: React.FC = () => {
   const [showWheelModal, setShowWheelModal] = useState(false);
   const [showGamesOverlay, setShowGamesOverlay] = useState(false);
   const [showInboxOverlay, setShowInboxOverlay] = useState(false);
+  const [inboxSessionId, setInboxSessionId] = useState(0);
+  const [clearingRoomChat, setClearingRoomChat] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'agency' | 'members' | 'logs' | 'contests'>(
     'agency'
@@ -627,6 +637,7 @@ export const RoomPage: React.FC = () => {
     };
   }, []);
 
+  const chatFeedRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const giftBtnRef = useRef<HTMLButtonElement | null>(null);
   const headerAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -637,6 +648,22 @@ export const RoomPage: React.FC = () => {
     setToastVariant(variant);
     setTimeout(() => setToastMsg(null), 2600);
   }, []);
+
+  const handleClearRoomChat = async () => {
+    if (!canManageRoomActions || clearingRoomChat) return;
+    setClearingRoomChat(true);
+    try {
+      await clearRoomChat();
+      showToast('تم مسح الدردشة من الغرفة.');
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : 'تعذّر مسح دردشة الغرفة.',
+        'error'
+      );
+    } finally {
+      setClearingRoomChat(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -699,7 +726,14 @@ export const RoomPage: React.FC = () => {
   const userProfileLookup = useMemo(() => {
     const map = new Map<
       string,
-      { avatarUrl?: string; frameId?: string; vipLevel?: VipTierKey; displayName?: string }
+      {
+        avatarUrl?: string;
+        frameId?: string;
+        gender?: User['gender'];
+        level?: number;
+        vipLevel?: VipTierKey;
+        displayName?: string;
+      }
     >();
     if (Array.isArray(room?.seats)) {
       for (const s of room.seats) {
@@ -707,6 +741,7 @@ export const RoomPage: React.FC = () => {
           map.set(s.userId, {
             avatarUrl: s.avatarUrl || undefined,
             frameId: s.frameId || undefined,
+            level: s.level ?? undefined,
             vipLevel: s.vipLevel || undefined,
             displayName: s.displayName || undefined,
           });
@@ -718,6 +753,8 @@ export const RoomPage: React.FC = () => {
       map.set(p.userId, {
         avatarUrl: p.avatarUrl || prev?.avatarUrl,
         frameId: p.frameId || prev?.frameId,
+        gender: p.gender || prev?.gender,
+        level: p.level ?? prev?.level,
         vipLevel: p.vipLevel && p.vipLevel !== 'none' ? p.vipLevel : prev?.vipLevel,
         displayName: p.displayName || prev?.displayName,
       });
@@ -728,6 +765,8 @@ export const RoomPage: React.FC = () => {
       map.set(user.id, {
         avatarUrl: user.avatarUrl || prev?.avatarUrl,
         frameId: equippedFrameId || prev?.frameId,
+        gender: user.gender,
+        level: user.level,
         vipLevel: myVip !== 'none' ? myVip : prev?.vipLevel,
         displayName: user.displayName || prev?.displayName,
       });
@@ -743,8 +782,9 @@ export const RoomPage: React.FC = () => {
         displayName: string;
         avatarUrl: string;
         frameId?: string;
+        gender?: User['gender'];
+        level: number;
         vipLevel: VipTierKey;
-        onSeat: boolean;
       }
     >();
     if (Array.isArray(room?.seats)) {
@@ -756,8 +796,9 @@ export const RoomPage: React.FC = () => {
             displayName: s.displayName || fallback?.displayName || 'متحدث',
             avatarUrl: s.avatarUrl || fallback?.avatarUrl || 'host_male',
             frameId: s.frameId || fallback?.frameId || 'frame_obsidian',
+            gender: fallback?.gender,
+            level: fallback?.level ?? s.level ?? 1,
             vipLevel: fallback?.vipLevel || s.vipLevel || 'none',
-            onSeat: true,
           });
         }
       }
@@ -770,11 +811,12 @@ export const RoomPage: React.FC = () => {
         displayName: p.displayName || existing?.displayName || 'عضو',
         avatarUrl: p.avatarUrl || existing?.avatarUrl || 'host_male',
         frameId: p.frameId || existing?.frameId || 'frame_obsidian',
+        gender: p.gender || existing?.gender || fallback?.gender,
+        level: p.level ?? existing?.level ?? fallback?.level ?? 1,
         vipLevel:
           p.vipLevel && p.vipLevel !== 'none'
             ? p.vipLevel
             : fallback?.vipLevel || existing?.vipLevel || 'none',
-        onSeat: Boolean(existing?.onSeat),
       });
     }
     if (user?.id && !map.has(user.id)) {
@@ -784,8 +826,9 @@ export const RoomPage: React.FC = () => {
         displayName: user.displayName,
         avatarUrl: user.avatarUrl,
         frameId: equippedFrameId,
+        gender: profile?.gender ?? user.gender,
+        level: profile?.level ?? user.level ?? 1,
         vipLevel: profile?.vipLevel || getUserVipTierInfo(user).key,
-        onSeat: false,
       });
     }
     return Array.from(map.values());
@@ -924,8 +967,16 @@ export const RoomPage: React.FC = () => {
   // Scroll chat smoothly when room is visible
   useEffect(() => {
     if (isMinimized) return;
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [isMinimized, room?.messages?.length]);
+    const timeout = window.setTimeout(() => {
+      const feed = chatFeedRef.current;
+      if (feed) {
+        feed.scrollTop = feed.scrollHeight;
+      }
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+
+    return () => window.clearTimeout(timeout);
+  }, [isMinimized, room?.messages]);
 
   // Combo circular countdown ticker (3.0s)
   useEffect(() => {
@@ -1166,6 +1217,37 @@ export const RoomPage: React.FC = () => {
   const comboProgress = Math.max(0, Math.min(1, comboRemainingMs / COMBO_DURATION_MS));
   const comboCircleRadius = 31;
   const comboCircumference = 2 * Math.PI * comboCircleRadius;
+  const micSeats = (room?.seats || []).slice(0, 24);
+  const micDisplayRows =
+    micSeats.length === 6
+      ? [micSeats.slice(0, 1), micSeats.slice(1, 4), micSeats.slice(4, 6)]
+      : micSeats.length === 12
+      ? [micSeats.slice(0, 4), micSeats.slice(4, 8), micSeats.slice(8, 12)]
+      : [];
+  const renderMicSeat = (seat: RoomSeat) => {
+    const seatLookup = seat.userId ? userProfileLookup.get(seat.userId) : undefined;
+    return (
+      <RoomSeatItem
+        key={seat.seatIndex}
+        isMe={seat.userId === user?.id}
+        isTop1={Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex)}
+        isHost={Boolean(seat.userId && seat.userId === room?.hostId)}
+        isHero5={false}
+        vipLevel={seatLookup?.vipLevel || seat.vipLevel || 'none'}
+        sizeClass={micSeats.length === 6 && seat.seatIndex === 0 ? 'w-12 h-12' : 'w-11 h-11'}
+        seat={
+          seat.userId === user?.id && equippedFrameId
+            ? { ...seat, frameId: equippedFrameId }
+            : seat
+        }
+        seatEmoji={seat.userId ? seatEmojis[seat.userId] : undefined}
+        seatGiftReaction={seat.userId ? seatGiftReactions[seat.userId] : undefined}
+        seatHaloActive={Boolean(seat.userId && seatHaloEffects[seat.userId])}
+        onSeatClick={onSeatItemClick}
+        registerSeatRef={registerSeatRef}
+      />
+    );
+  };
 
   return (
     <div
@@ -1385,20 +1467,21 @@ export const RoomPage: React.FC = () => {
                 setLeaderboardModalTab('heroes');
                 setShowLeaderboardModal(true);
               }}
-              className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#2D2007]/90 to-[#141008]/90 border border-[#F3D37A]/65 px-2.5 py-1 shadow-[0_0_14px_rgba(212,175,55,0.3)] cursor-pointer hover:brightness-110"
+              className="inline-flex w-8 h-8 items-center justify-center rounded-full bg-gradient-to-r from-[#2D2007]/90 to-[#141008]/90 border border-[#F3D37A]/65 shadow-[0_0_14px_rgba(212,175,55,0.3)] cursor-pointer hover:brightness-110"
               title="تصنيف أبطال الألعاب والمسابقات"
+              aria-label="تصنيف أبطال الألعاب والمسابقات"
             >
-              <Trophy className="w-3.5 h-3.5 text-[#FDE047]" />
-              <span className="text-[11px] font-extrabold text-[#FCE9A6]">الأبطال</span>
+              <Trophy className="w-4 h-4 text-[#FDE047]" />
             </button>
 
             <button
               type="button"
               onClick={() => setShowWheelModal(true)}
               className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-rose-700/80 to-amber-700/80 border border-amber-300/50 px-2 py-1 text-[10px] font-extrabold text-white cursor-pointer"
+              title="دولاب الإقصاء الجماعي بالكوينز"
             >
               <Sparkles className="w-3 h-3 text-amber-200" />
-              <span>دولاب حظ</span>
+              <span>دولاب الإقصاء</span>
             </button>
 
             {isAgencyOwner && (
@@ -1409,10 +1492,10 @@ export const RoomPage: React.FC = () => {
                   setShowSettingsModal(true);
                 }}
                 className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-emerald-600/85 to-teal-700/85 border border-emerald-300/60 px-2.5 py-1 text-[10px] font-extrabold text-white hover:brightness-110 cursor-pointer"
-                title="إدارة المسابقة الثقافية"
+                title="إدارة مسابقة الوكالة الثقافية"
               >
                 <Trophy className="w-3 h-3 text-[#FCE9A6]" />
-                <span>مسابقة</span>
+                <span>مسابقة الوكالة</span>
               </button>
             )}
 
@@ -1440,6 +1523,19 @@ export const RoomPage: React.FC = () => {
               )}
               <span>{roomAudioMuted ? 'صوت مكتوم' : 'كتم الروم'}</span>
             </button>
+
+            {canManageRoomActions && (
+              <button
+                type="button"
+                disabled={clearingRoomChat}
+                onClick={() => void handleClearRoomChat()}
+                className="inline-flex items-center gap-1 rounded-xl bg-rose-950/60 border border-rose-400/50 px-2 py-1 text-[10px] font-extrabold text-rose-200 hover:bg-rose-900/70 cursor-pointer disabled:opacity-50"
+                title="مسح جميع رسائل الدردشة في الغرفة"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-300" />
+                <span>{clearingRoomChat ? 'جارٍ المسح...' : 'مسح الدردشة'}</span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -1553,32 +1649,25 @@ export const RoomPage: React.FC = () => {
           <VipEntranceOverlay entry={entryBanner} />
         </AnimatePresence>
 
-        {/* 2. TAKA MIC GRID: 6 columns × 5 rows */}
-        <section className="shrink-0 relative z-20 grid grid-cols-6 gap-x-1 gap-y-1 px-1.5">
-          {(room.seats || []).slice(0, 24).map((seat) => {
-            const seatLookup = seat.userId ? userProfileLookup.get(seat.userId) : undefined;
-            return (
-              <RoomSeatItem
-                key={seat.seatIndex}
-                isMe={seat.userId === user?.id}
-                isTop1={Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex)}
-                isHost={Boolean(seat.userId && seat.userId === room.hostId)}
-                isHero5={false}
-                vipLevel={seatLookup?.vipLevel || seat.vipLevel || 'none'}
-                sizeClass="w-11 h-11"
-                seat={
-                  seat.userId === user?.id && equippedFrameId
-                    ? { ...seat, frameId: equippedFrameId }
-                    : seat
-                }
-                seatEmoji={seat.userId ? seatEmojis[seat.userId] : undefined}
-                seatGiftReaction={seat.userId ? seatGiftReactions[seat.userId] : undefined}
-                seatHaloActive={Boolean(seat.userId && seatHaloEffects[seat.userId])}
-                onSeatClick={onSeatItemClick}
-                registerSeatRef={registerSeatRef}
-              />
-            );
-          })}
+        {/* 2. TAKA MIC GRID */}
+        <section className="shrink-0 relative z-20 min-h-[270px] flex flex-col justify-center">
+          {micSeats.length === 6 || micSeats.length === 12 ? (
+            <div
+              className={`flex flex-col items-center justify-center ${
+                micSeats.length === 6 ? 'gap-y-5' : 'gap-y-1'
+              }`}
+            >
+              {micDisplayRows.map((row, rowIndex) => (
+                <div key={rowIndex} className="flex items-center justify-center gap-x-4">
+                  {row.map(renderMicSeat)}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-6 content-center justify-items-center gap-x-1 gap-y-1 px-1.5">
+              {micSeats.map(renderMicSeat)}
+            </div>
+          )}
         </section>
 
         {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
@@ -1615,7 +1704,7 @@ export const RoomPage: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto mt-1 no-scrollbar space-y-1.5 px-1 py-0.5">
+          <div ref={chatFeedRef} className="flex-1 min-h-0 overflow-y-auto mt-1 no-scrollbar space-y-1.5 px-1 py-0.5">
             {chatFilter === 'all' && (
               <div className="rounded-2xl bg-black/45 border border-[#D4AF37]/25 px-3 py-1.5 text-xs leading-relaxed">
                 <div className="flex items-center justify-between gap-2 mb-0.5">
@@ -1654,6 +1743,8 @@ export const RoomPage: React.FC = () => {
                     message={m}
                     senderAvatarUrl={senderInfo?.avatarUrl || m.avatarUrl}
                     senderFrameId={senderInfo?.frameId || m.frameId}
+                    senderGender={senderInfo?.gender}
+                    senderLevel={senderInfo?.level}
                     senderVipTier={senderInfo?.vipLevel}
                     onOpenMiniProfile={openMiniProfile}
                   />
@@ -1844,7 +1935,10 @@ export const RoomPage: React.FC = () => {
             {/* 3b. External Chats / Inbox Button (صندوق الوارد) without leaving room */}
             <button
               type="button"
-              onClick={() => setShowInboxOverlay(true)}
+              onClick={() => {
+                setInboxSessionId((sessionId) => sessionId + 1);
+                setShowInboxOverlay(true);
+              }}
               className="w-10 h-10 rounded-full bg-black/60 border border-[#D4AF37]/45 text-[#FCE9A6] hover:border-[#FCE9A6] hover:bg-[#D4AF37]/20 flex items-center justify-center cursor-pointer shrink-0 transition active:scale-95"
               aria-label="الدردشات الخارجية"
               title="الدردشات الخارجية / صندوق الوارد"
@@ -2328,6 +2422,7 @@ export const RoomPage: React.FC = () => {
               className="w-full max-w-4xl h-[86dvh] rounded-t-[28px] overflow-hidden shadow-2xl border-t border-x border-[#D4AF37]/40 bg-[#0d111e]"
             >
               <MessagesPage
+                key={inboxSessionId}
                 embedded
                 onCloseEmbedded={() => setShowInboxOverlay(false)}
                 onRechargeCoins={() => {
@@ -2492,47 +2587,30 @@ export const RoomPage: React.FC = () => {
                     </div>
                   ) : (
                     unifiedPresenceList.map((member) => (
-                      <button
+                      <div
                         key={member.userId}
-                        type="button"
-                        onClick={() => {
-                          setShowLeaderboardModal(false);
-                          openMiniProfile(member.userId, {
-                            displayName: member.displayName,
-                            avatarUrl: member.avatarUrl,
-                            frameId: member.frameId,
-                            vipLevel: member.vipLevel,
-                          });
-                        }}
-                        className="w-full rounded-2xl border border-white/10 bg-[#070913]/80 hover:border-[#D4AF37]/40 p-3 flex items-center justify-between gap-2 text-right cursor-pointer transition"
+                        className="w-full rounded-2xl border border-white/10 bg-[#070913]/80 p-3 flex items-center gap-3 text-right"
                       >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <AvatarWithFrame
-                            src={member.avatarUrl}
-                            alt={member.displayName}
-                            frameId={member.frameId}
-                            vipTier={member.vipLevel}
-                            size="sm"
-                          />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <VipUserName
-                                name={member.displayName}
-                                vipTier={member.vipLevel}
-                                className="text-xs font-extrabold text-white truncate"
-                              />
-                              <VipTierBadge vipTier={member.vipLevel} compact />
-                            </div>
-                            <p className="text-[10px] text-slate-400 mt-0.5">
-                              {member.userId === room.hostId
-                                ? '👑 مالك الغرفة'
-                                : member.onSeat
-                                ? '🎙️ على المايك'
-                                : '🎧 مستمع في الغرفة'}
-                            </p>
-                          </div>
+                        <AvatarWithFrame
+                          src={member.avatarUrl}
+                          alt={member.displayName}
+                          frameId={member.frameId}
+                          vipTier={member.vipLevel}
+                          size="sm"
+                        />
+                        <VipUserName
+                          name={member.displayName}
+                          vipTier={member.vipLevel}
+                          className="min-w-0 flex-1 truncate text-xs font-extrabold text-white"
+                        />
+                        <GenderBadge gender={member.gender} />
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span className="rounded-md border border-sky-400/40 bg-sky-500/15 px-1.5 py-[1px] text-[9px] font-black leading-tight text-sky-200">
+                            Lv.{member.level}
+                          </span>
+                          <VipTierBadge vipTier={member.vipLevel} compact />
                         </div>
-                      </button>
+                      </div>
                     ))
                   )}
                 </div>

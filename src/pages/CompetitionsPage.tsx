@@ -53,17 +53,21 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
   const { user, updateLocalUser } = useAuth();
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const resolvedInitialTab: CompTab =
-    !embedded && (tabParam === 'referral' || tabParam === 'cultural')
+  const referralInviteView = !embedded && searchParams.get('invite') === '1';
+  const resolvedInitialTab: CompTab = referralInviteView
+    ? 'referral'
+    : !embedded && (tabParam === 'referral' || tabParam === 'cultural')
       ? tabParam
       : initialTab;
   const [activeTab, setActiveTab] = useState<CompTab>(resolvedInitialTab);
 
   useEffect(() => {
-    if (!embedded && (tabParam === 'referral' || tabParam === 'cultural')) {
+    if (referralInviteView) {
+      setActiveTab('referral');
+    } else if (!embedded && (tabParam === 'referral' || tabParam === 'cultural')) {
       setActiveTab(tabParam);
     }
-  }, [embedded, tabParam]);
+  }, [embedded, referralInviteView, tabParam]);
 
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
@@ -286,28 +290,32 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
         {!embedded && (
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
-              ساحة المسابقات والبطولات الثقافية
+              {referralInviteView ? 'دعوة الأصدقاء' : 'ساحة المسابقات والبطولات الثقافية'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1">
-              تحديات ثقافية حية بمؤقت 8 ثوانٍ لرفع مستواك (XP)، ودولاب حظ الدعوات
+              {referralInviteView
+                ? 'شارك كود دعوتك واستخدم لفاتك المجانية في دولاب حظ الدعوات.'
+                : 'تحديات ثقافية حية بمؤقت 8 ثوانٍ لرفع مستواك (XP)، ودولاب حظ الدعوات'}
             </p>
           </div>
         )}
 
         {/* Section Tabs */}
         <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25 overflow-x-auto touch-pan-x no-scrollbar shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('cultural')}
-            className={`min-h-[40px] rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'cultural'
-                ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
-                : 'text-slate-300 hover:text-white'
-            }`}
-          >
-            <Brain className="w-4 h-4" />
-            <span>البطولات الثقافية الحية</span>
-          </button>
+          {!referralInviteView && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('cultural')}
+              className={`min-h-[40px] rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'cultural'
+                  ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Brain className="w-4 h-4" />
+              <span>البطولات الثقافية الحية</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setActiveTab('referral')}
@@ -336,7 +344,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
       )}
 
       {/* TAB 1: LIVE CULTURAL CHAMPIONSHIPS (4 OPTIONS + 8s AUTO-LOCK + XP) */}
-      {activeTab === 'cultural' && (
+      {!referralInviteView && activeTab === 'cultural' && (
         <div className="space-y-5">
           {/* XP & Level Strip */}
           <section className="royal-glass rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">

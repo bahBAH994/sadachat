@@ -52,6 +52,7 @@ import {
 import { supabase } from '../lib/supabase';
 import type { HostTaskProgress, User } from '../types';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
+import { GenderBadge } from '../components/GenderBadge';
 import {
   FemaleVerifiedBadge,
   FemaleVoiceVerificationCard,
@@ -496,6 +497,7 @@ export const ProfilePage: React.FC = () => {
                   <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 truncate">
                     <VipUserName name={user.displayName} vipTier={vipInfo.key} />
                   </h1>
+                  <GenderBadge gender={user.gender} />
                   <VipTierBadge vipTier={vipInfo.key} />
                   <FemaleVerifiedBadge badge={user.femaleVerifiedBadge} />
                   {user.gender === 'female' &&
@@ -826,7 +828,7 @@ export const ProfilePage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => navigate('/competitions?tab=referral')}
+            onClick={() => navigate('/competitions?tab=referral&invite=1')}
             className={`${
               !canViewMyAgency ? 'col-span-2' : ''
             } rounded-2xl bg-rose-50/90 hover:bg-rose-100/80 border border-rose-100 p-4 flex items-center justify-between cursor-pointer transition`}
@@ -951,6 +953,7 @@ export const ProfilePage: React.FC = () => {
                           <p className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
                             <VipUserName name={person.displayName} vipTier={getUserVipTierInfo(person).key} />
                           </p>
+                          <GenderBadge gender={person.gender} />
                           <VipTierBadge vipTier={getUserVipTierInfo(person).key} compact />
                         </div>
                         <p className="text-[10px] text-slate-500 font-mono-num">

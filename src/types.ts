@@ -497,6 +497,17 @@ export interface PlatformSettings {
   customVipIds?: Record<string, string>;
   latestAdminAnnouncement?: GlobalAdminAnnouncement | null;
   globalZeroResetV1Applied?: boolean;
+  grandCompetition?: GrandCompetitionSettings;
+}
+
+export interface GrandCompetitionSettings {
+  monthlyClosingPrizes: string;
+  participationTerms: string;
+  schedule: string;
+  totalSubscriptionsCoins: number;
+  prizePoolCoins: number;
+  platformCommissionCoins: number;
+  totalParticipationWeight: number;
 }
 
 export interface CulturalQuestionAdminItem {
