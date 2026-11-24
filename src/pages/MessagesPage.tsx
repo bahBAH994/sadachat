@@ -9,11 +9,9 @@ import {
   Coins,
   Crown,
   Gem,
-  Gift,
   Image as ImageIcon,
   Ban,
   MessageCircle,
-  MessageCircleHeart,
   MoreVertical,
   Plus,
   Search,
@@ -28,7 +26,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
-import { formatShortNumericId, getCachedGiftCatalog, getUserVipTierInfo } from '../lib/sadaCatalog';
+import {
+  formatShortNumericId,
+  genId,
+  getCachedGiftCatalog,
+  getUserVipTierInfo,
+  makeConversationId,
+} from '../lib/sadaCatalog';
 import {
   getFollowStatus,
   getPmOverviewFromSupabase,
@@ -584,9 +588,66 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     messageText?: string
   ) => {
     if (e) e.preventDefault();
-    if (!user || !selectedPeerId) return;
+    if (sending || !user || !selectedPeerId) return;
     const outgoingText = messageText ?? text.trim();
     if (!giftId && !outgoingText) return;
+
+    const peer = activePeer;
+    const isChargeable = Boolean(
+      user.gender === 'male' &&
+        peer?.gender === 'female' &&
+        !getFollowStatus(userFollows, user.id, peer.id).isMutual
+    );
+    const optimisticMessageId = !giftId ? genId('pm_pending') : null;
+    const conversationId =
+      activeConversation?.id || makeConversationId(user.id, selectedPeerId);
+    const optimisticMessage: PrivateMessage | null =
+      optimisticMessageId && peer
+        ? {
+            id: optimisticMessageId,
+            conversationId,
+            senderId: user.id,
+            recipientId: selectedPeerId,
+            text: outgoingText,
+            coinsPaid: isChargeable ? pmCost : 0,
+            diamondsPotential: 0,
+            diamondsClaimed: false,
+            diamondsAwarded: 0,
+            isRead: false,
+            createdAt: new Date().toISOString(),
+            repliedAt: null,
+          }
+        : null;
+
+    if (optimisticMessage) {
+      setConversations((current) => {
+        const existingConversation = current.find(
+          (conversation) => conversation.peer.id === selectedPeerId
+        );
+        if (existingConversation) {
+          return current.map((conversation) =>
+            conversation.peer.id === selectedPeerId
+              ? {
+                  ...conversation,
+                  messages: [...conversation.messages, optimisticMessage],
+                  lastMessage: optimisticMessage,
+                }
+              : conversation
+          );
+        }
+        return [
+          {
+            id: conversationId,
+            peer,
+            messages: [optimisticMessage],
+            pendingDiamondsForMe: 0,
+            lastMessage: optimisticMessage,
+          },
+          ...current,
+        ];
+      });
+    }
+    if (!giftId && !messageText) setText('');
 
     setSending(true);
     setError(null);
@@ -603,8 +664,33 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         comboCount,
       });
 
+      const { data: savedMessage, error: saveError } = await supabase
+        .from('sada_private_messages')
+        .select('id')
+        .eq('id', res.message.id)
+        .maybeSingle();
+      if (saveError) throw new Error(saveError.message);
+      if (!savedMessage) throw new Error('تعذّر حفظ الرسالة في قاعدة البيانات.');
+
       updateLocalUser(res.user);
-      if (!giftId && !messageText) setText('');
+      if (optimisticMessage) {
+        setConversations((current) =>
+          current.map((conversation) =>
+            conversation.peer.id === selectedPeerId
+              ? {
+                  ...conversation,
+                  messages: conversation.messages.map((message) =>
+                    message.id === optimisticMessageId ? res.message : message
+                  ),
+                  lastMessage:
+                    conversation.lastMessage?.id === optimisticMessageId
+                      ? res.message
+                      : conversation.lastMessage,
+                }
+              : conversation
+          )
+        );
+      }
       if (giftId) {
         setShowGiftDrawer(false);
         const sentGift = gifts.find((g) => g.id === giftId);
@@ -619,7 +705,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           setComboRemainingMs(COMBO_DURATION_MS);
         }
       }
-      await loadOverview();
+      void loadOverview();
 
       if (res.unlockedReplyDiamonds > 0) {
         setCelebration({
@@ -647,6 +733,24 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         setTimeout(() => setCelebration(null), 4200);
       }
     } catch (err) {
+      if (optimisticMessageId) {
+        setConversations((current) =>
+          current.flatMap((conversation) => {
+            if (conversation.peer.id !== selectedPeerId) return [conversation];
+            const messages = conversation.messages.filter(
+              (message) => message.id !== optimisticMessageId
+            );
+            if (!messages.length && !activeConversation) return [];
+            return [
+              {
+                ...conversation,
+                messages,
+                lastMessage: messages[messages.length - 1] || null,
+              },
+            ];
+          })
+        );
+      }
       setError(err instanceof Error ? err.message : 'تعذّر إرسال الرسالة الخاصة.');
       setComboSession(null);
     } finally {
@@ -753,10 +857,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       ? getFollowStatus(userFollows, user.id, activePeer.id)
       : { iFollowThem: false, theyFollowMe: false, isMutual: false };
   const isMutualFriends = followRel.isMutual;
-  const isChargeablePm =
-    user?.gender === 'male' && activePeer?.gender === 'female' && !isMutualFriends;
-  const isPmFreeNow = !isChargeablePm;
-
   const handleImageSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -1193,25 +1293,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                       )}
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setShowGiftDrawer((prev) => !prev)}
-                      className="gold-btn min-h-[38px] rounded-xl px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Gift className="w-4 h-4" />
-                      <span>هدية</span>
-                    </button>
                   </div>
                 </div>
-
-                {/* Show the cost banner only when this conversation is chargeable. */}
-                {isChargeablePm && (
-                  <div className="mb-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-3.5 py-2 text-[11px] sm:text-xs font-bold text-amber-900 flex items-center justify-between gap-2 shrink-0">
-                    <span>
-                      الرسائل مدفوعة (150 كوين/رسالة) — تصبح مجانية فور متابعة الطرفين لبعضهما
-                    </span>
-                  </div>
-                )}
 
                 {pendingInCurrentChat > 0 && (
                   <div className="mb-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800 shrink-0">
@@ -1222,15 +1305,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 {/* Messages Feed */}
                 <div ref={messagesFeedRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-3 space-y-2">
                   {!activeConversation || activeConversation.messages.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center px-6 space-y-2">
-                      <MessageCircleHeart className="w-10 h-10 text-emerald-500" />
+                    <div className="h-full flex items-center justify-center text-center px-6">
                       <p className="text-sm font-extrabold text-slate-800">
-                      ابدأ محادثة خاصة مع {activePeer.displayName}
-                      </p>
-                      <p className="text-xs text-slate-500 max-w-md">
-                        {isPmFreeNow
-                          ? 'المراسلة الخاصة في هذه المحادثة مجانية بالكامل (0 كوين).'
-                          : `الرسالة الخاصة بـ ${pmCost} كوينز وتصل ألماساتها فوراً للمستلم — وتتحول لمجانية فوراً عند المتابعة المتبادلة.`}
+                        ابدأ محادثة خاصة مع {activePeer.displayName}
                       </p>
                     </div>
                   ) : (

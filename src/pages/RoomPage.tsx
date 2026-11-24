@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Ban,
   ClipboardList,
+  Copy,
+  Coins,
   Crown,
   Gamepad2,
   Gift,
@@ -16,6 +18,7 @@ import {
   MicOff,
   Minimize2,
   Music,
+  Plus,
   Send,
   Settings,
   Shield,
@@ -37,7 +40,6 @@ import { resolveAsset } from '../lib/assets';
 import {
   ROOM_REACTION_EMOJIS,
   formatCompactMetric,
-  formatShortNumericId,
   getUserVipTierInfo,
   parseVipTierKey,
 } from '../lib/sadaCatalog';
@@ -47,7 +49,7 @@ import {
   canClearRoomChatFromData,
   isRoomOrAgencyOwnerFromData,
 } from '../lib/sadaRoomsService';
-import type { GiftItem, RoomMessage, RoomSeat, User, VipTierKey } from '../types';
+import type { RoomMessage, RoomSeat, User, VipTierKey } from '../types';
 import type {
   RoomSeatEmojiEvent,
   SeatGiftReactionEvent,
@@ -58,29 +60,699 @@ import { DragonCinemaOverlay } from '../components/DragonCinemaOverlay';
 import { DragonStageBackdrop } from '../components/DragonStageBackdrop';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { Fluent3DAsset } from '../components/Fluent3DAsset';
-import { LuckyWheelGame } from '../components/LuckyWheelGame';
 import { RoomContestModal } from '../components/RoomContestModal';
 import { RoomExitModal } from '../components/RoomExitModal';
 import { RoomGamesModal } from '../components/RoomGamesModal';
-import { RoomGiftDrawer } from '../components/RoomGiftDrawer';
 import { RoomMusicModal } from '../components/RoomMusicModal';
 import { RoomSettingsModal } from '../components/RoomSettingsModal';
 import { Royal3DDieFaceBadge } from '../components/Royal3DDice';
 import { TieredGiftEffectsOverlay } from '../components/TieredGiftEffectsOverlay';
 import { VipEntranceOverlay } from '../components/VipEntranceOverlay';
 import { safeGetItem } from '../lib/safeStorage';
-
-const COMBO_DURATION_MS = 3000;
+import { supabase } from '../lib/supabase';
 
 const FIXED_CHAT_EMOJIS = ['😀', '😂', '😍', '🥰', '😎', '😭', '😡', '👍', '👏', '🙏', '❤️', '🔥'];
+const AGENCY_ID = '954546';
+const ROOM_WHEEL_ENTRY_FEES = [100, 500, 1000, 5000];
+const ROOM_WHEEL_SPIN_DURATION_MS = 2500;
 
-interface ComboSession {
-  gift: GiftItem;
-  targetUserIds: string[];
-  quantity: number;
-  comboCount: number;
-  expiresAt: number;
+interface RoomWheelPlayer {
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+  test: boolean;
 }
+
+interface RoomWheelRound {
+  id: string;
+  roomId: string;
+  creatorId: string;
+  entryFee: number;
+  prizePool: number;
+  players: RoomWheelPlayer[];
+  eliminated: string[];
+  spinningPlayerId: string | null;
+  lastEliminatedId: string | null;
+  status: 'registering' | 'spinning' | 'finished';
+  winnerId: string | null;
+}
+
+interface RoomWheelMember {
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+}
+
+interface RoomWheelGameProps {
+  roomId: string;
+  userCoins: number;
+  members: RoomWheelMember[];
+  onPlaySpent: (amount: number) => void;
+  onSendChat: (message: string) => Promise<void>;
+  onClose: () => void;
+}
+
+async function changeProfileCoins(userId: string, amount: number): Promise<number> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { data: profile, error: loadError } = await supabase
+      .from('profiles')
+      .select('coins')
+      .eq('id', userId)
+      .maybeSingle();
+    if (loadError) throw new Error(loadError.message);
+    if (!profile || !Number.isFinite(Number(profile.coins))) {
+      throw new Error('تعذّر العثور على رصيد الحساب.');
+    }
+
+    const currentCoins = Number(profile.coins);
+    const nextCoins = currentCoins + amount;
+    if (nextCoins < 0) throw new Error('رصيد الكوينز غير كافٍ لقيمة الدخول.');
+
+    const { data: updatedProfile, error: updateError } = await supabase
+      .from('profiles')
+      .update({ coins: nextCoins })
+      .eq('id', userId)
+      .eq('coins', currentCoins)
+      .select('coins')
+      .maybeSingle();
+    if (updateError) throw new Error(updateError.message);
+    if (updatedProfile) return Number(updatedProfile.coins);
+  }
+  throw new Error('تعذّر تحديث الرصيد بسبب تغيّر متزامن. حاول مجدداً.');
+}
+
+const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
+  roomId,
+  userCoins,
+  members,
+  onPlaySpent,
+  onSendChat,
+  onClose,
+}) => {
+  const { user, updateLocalUser } = useAuth();
+  const [round, setRound] = useState<RoomWheelRound | null>(null);
+  const [entryFee, setEntryFee] = useState(100);
+  const [rotation, setRotation] = useState(0);
+  const [spinning, setSpinning] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [addingCompetitor, setAddingCompetitor] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const roundRef = useRef<RoomWheelRound | null>(round);
+  const userRef = useRef(user);
+  roundRef.current = round;
+  userRef.current = user;
+  const rotationRef = useRef(0);
+  const animatedPlayerRef = useRef<string | null>(null);
+  const startingRef = useRef(false);
+  const joiningRef = useRef(false);
+  const settledRoundRef = useRef<string | null>(null);
+  const cancelledRoundsRef = useRef<Set<string>>(new Set());
+
+  const updateOwnBalance = useCallback(
+    (coins: number) => {
+      const currentUser = userRef.current;
+      if (currentUser) updateLocalUser({ ...currentUser, coins });
+    },
+    [updateLocalUser]
+  );
+
+  const sendEvent = useCallback(
+    async (event: string, payload: Record<string, unknown>) => {
+      const channel = channelRef.current;
+      if (!channel) throw new Error('قناة الغرفة غير متصلة بعد.');
+      const status = await channel.send({ type: 'broadcast', event, payload });
+      if (status !== 'ok') throw new Error('تعذّر إرسال تحديث اللعبة إلى الغرفة.');
+    },
+    []
+  );
+
+  const publishRound = useCallback(
+    async (nextRound: RoomWheelRound) => {
+      roundRef.current = nextRound;
+      setRound(nextRound);
+      await sendEvent('round_state', { round: nextRound });
+    },
+    [sendEvent]
+  );
+
+  const refundMyEntry = useCallback(
+    async (cancelledRound: RoomWheelRound) => {
+      const currentUser = userRef.current;
+      if (!currentUser || cancelledRoundsRef.current.has(cancelledRound.id)) return;
+      cancelledRoundsRef.current.add(cancelledRound.id);
+      const player = cancelledRound.players.find(
+        (candidate) => candidate.userId === currentUser.id && !candidate.test
+      );
+      if (!player) return;
+      try {
+        const updatedCoins = await changeProfileCoins(
+          currentUser.id,
+          cancelledRound.entryFee
+        );
+        updateOwnBalance(updatedCoins);
+      } catch (refundError) {
+        cancelledRoundsRef.current.delete(cancelledRound.id);
+        throw refundError;
+      }
+    },
+    [updateOwnBalance]
+  );
+
+  useEffect(() => {
+    const channel = supabase.channel(`room-lucky-wheel:${roomId}`);
+    channelRef.current = channel;
+
+    channel
+      .on('broadcast', { event: 'round_state' }, ({ payload }) => {
+        const nextRound = payload?.round as RoomWheelRound | undefined;
+        if (!nextRound || nextRound.roomId !== roomId) return;
+        const currentRound = roundRef.current;
+        if (currentRound && currentRound.id !== nextRound.id) return;
+        roundRef.current = nextRound;
+        setRound(nextRound);
+        if (nextRound.winnerId === user?.id && Number.isFinite(Number(payload.winnerCoins))) {
+          updateOwnBalance(Number(payload.winnerCoins));
+        }
+      })
+      .on('broadcast', { event: 'state_request' }, () => {
+        const currentRound = roundRef.current;
+        if (currentRound?.creatorId === user?.id) {
+          void sendEvent('round_state', { round: currentRound });
+        }
+      })
+      .on('broadcast', { event: 'player_joined' }, ({ payload }) => {
+        const joinedRoundId = payload?.roundId as string | undefined;
+        const player = payload?.player as RoomWheelPlayer | undefined;
+        if (!player || player.test || !joinedRoundId) return;
+        const current = roundRef.current;
+        if (!current || current.id !== joinedRoundId || current.status !== 'registering') {
+          return;
+        }
+        if (current.players.some((candidate) => candidate.userId === player.userId)) return;
+        const next = {
+          ...current,
+          players: [...current.players, player],
+          prizePool: current.prizePool + current.entryFee,
+        };
+        roundRef.current = next;
+        setRound(next);
+        if (current.creatorId === user?.id) {
+          void sendEvent('round_state', { round: next });
+        }
+      })
+      .on('broadcast', { event: 'round_cancelled' }, ({ payload }) => {
+        const cancelledRound = payload?.round as RoomWheelRound | undefined;
+        if (!cancelledRound || cancelledRound.roomId !== roomId) return;
+        void refundMyEntry(cancelledRound).catch((refundError: unknown) => {
+          setNotice(
+            refundError instanceof Error
+              ? `تعذّر استرداد رسوم الدخول: ${refundError.message}`
+              : 'تعذّر استرداد رسوم الدخول.'
+          );
+        });
+        if (roundRef.current?.id === cancelledRound.id) {
+          roundRef.current = null;
+          setRound(null);
+        }
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void sendEvent('state_request', { userId: user?.id });
+        }
+      });
+
+    return () => {
+      channelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [roomId, user?.id, refundMyEntry, sendEvent, updateOwnBalance]);
+
+  useEffect(() => {
+    if (!round?.spinningPlayerId) {
+      animatedPlayerRef.current = null;
+      setSpinning(false);
+      return;
+    }
+    if (animatedPlayerRef.current === round.spinningPlayerId) return;
+    const alive = round.players.filter(
+      (player) => !round.eliminated.includes(player.userId)
+    );
+    const selectedIndex = alive.findIndex(
+      (player) => player.userId === round.spinningPlayerId
+    );
+    if (selectedIndex < 0 || !alive.length) return;
+    animatedPlayerRef.current = round.spinningPlayerId;
+    const sectorAngle = 360 / alive.length;
+    const sectorCenter = selectedIndex * sectorAngle + sectorAngle / 2;
+    const spinAngle = (360 - ((sectorCenter + rotationRef.current) % 360)) % 360;
+    rotationRef.current += 1800 + spinAngle;
+    setRotation(rotationRef.current);
+    setSpinning(true);
+    const timer = window.setTimeout(
+      () => setSpinning(false),
+      ROOM_WHEEL_SPIN_DURATION_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [round]);
+
+  const alivePlayers = round
+    ? round.players.filter((player) => !round.eliminated.includes(player.userId))
+    : [];
+  const isCreator = Boolean(round && user && round.creatorId === user.id);
+  const hasJoined = Boolean(round?.players.some((player) => player.userId === user?.id));
+  const practiceRound = Boolean(round?.players.some((player) => player.test));
+
+  const handleCreateRound = async () => {
+    if (!user || busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const createdRound: RoomWheelRound = {
+        id: `wheel_${roomId}_${user.id}_${Date.now()}`,
+        roomId,
+        creatorId: user.id,
+        entryFee,
+        prizePool: 0,
+        players: [],
+        eliminated: [],
+        spinningPlayerId: null,
+        lastEliminatedId: null,
+        status: 'registering',
+        winnerId: null,
+      };
+      await publishRound(createdRound);
+    } catch (createError) {
+      setNotice(
+        createError instanceof Error ? createError.message : 'تعذّر إنشاء الجولة.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleJoinRound = async () => {
+    if (!user || !round || busy || joiningRef.current || hasJoined || practiceRound) return;
+    joiningRef.current = true;
+    setBusy(true);
+    setNotice(null);
+    let charged = false;
+    try {
+      const updatedCoins = await changeProfileCoins(user.id, -round.entryFee);
+      charged = true;
+      updateOwnBalance(updatedCoins);
+      const player: RoomWheelPlayer = {
+        userId: user.id,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        test: false,
+      };
+      const next = {
+        ...round,
+        players: [...round.players, player],
+        prizePool: round.prizePool + round.entryFee,
+      };
+      roundRef.current = next;
+      setRound(next);
+      await sendEvent('player_joined', { roundId: round.id, player });
+      onPlaySpent(round.entryFee);
+    } catch (joinError) {
+      if (charged) {
+        roundRef.current = round;
+        setRound(round);
+        try {
+          updateOwnBalance(await changeProfileCoins(user.id, round.entryFee));
+        } catch (refundError) {
+          setNotice(
+            refundError instanceof Error
+              ? `تعذّر إكمال الانضمام أو استرداد الرسوم: ${refundError.message}`
+              : 'تعذّر إكمال الانضمام أو استرداد الرسوم.'
+          );
+          return;
+        }
+      }
+      setNotice(
+        joinError instanceof Error ? joinError.message : 'تعذّر الانضمام إلى الجولة.'
+      );
+    } finally {
+      joiningRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  const handleAddCompetitor = async (member: RoomWheelMember) => {
+    if (!user || !round || busy || !isCreator || round.prizePool > 0) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const nextPlayer: RoomWheelPlayer = { ...member, test: true };
+      const next = { ...round, players: [...round.players, nextPlayer] };
+      await publishRound(next);
+      setAddingCompetitor(false);
+    } catch (addError) {
+      setNotice(addError instanceof Error ? addError.message : 'تعذّرت إضافة المنافس.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleStartRound = async () => {
+    if (
+      !user ||
+      !round ||
+      !isCreator ||
+      round.players.length < 2 ||
+      busy ||
+      startingRef.current
+    ) {
+      return;
+    }
+    startingRef.current = true;
+    setBusy(true);
+    setNotice(null);
+    try {
+      let currentRound: RoomWheelRound = {
+        ...round,
+        status: 'spinning',
+        spinningPlayerId: null,
+      };
+      await publishRound(currentRound);
+      let alive = currentRound.players.filter(
+        (player) => !currentRound.eliminated.includes(player.userId)
+      );
+      while (alive.length > 1) {
+        const eliminated = alive[Math.floor(Math.random() * alive.length)];
+        const spinningRound = {
+          ...currentRound,
+          spinningPlayerId: eliminated.userId,
+          lastEliminatedId: null,
+        };
+        await publishRound(spinningRound);
+        await new Promise<void>((resolve) =>
+          window.setTimeout(resolve, ROOM_WHEEL_SPIN_DURATION_MS)
+        );
+        currentRound = {
+          ...spinningRound,
+          eliminated: [...spinningRound.eliminated, eliminated.userId],
+          spinningPlayerId: null,
+          lastEliminatedId: eliminated.userId,
+        };
+        await publishRound(currentRound);
+        setNotice(`تم إقصاء ${eliminated.displayName}!`);
+        try {
+          await onSendChat(`🎡 تم إقصاء ${eliminated.displayName} من دولاب الإقصاء!`);
+        } catch (chatError) {
+          setNotice(
+            chatError instanceof Error
+              ? `تم الإقصاء لكن تعذّر إرسال إشعار الشات: ${chatError.message}`
+              : 'تم الإقصاء لكن تعذّر إرسال إشعار الشات.'
+          );
+        }
+        alive = alive.filter((player) => player.userId !== eliminated.userId);
+      }
+
+      const winner = alive[0];
+      let winnerCoins: number | undefined;
+      const payout = winner && !winner.test ? Math.floor(currentRound.prizePool * 0.8) : 0;
+      if (winner && payout > 0 && settledRoundRef.current !== currentRound.id) {
+        settledRoundRef.current = currentRound.id;
+        winnerCoins = await changeProfileCoins(winner.userId, payout);
+        if (winner.userId === user.id) updateOwnBalance(winnerCoins);
+      }
+      const finishedRound: RoomWheelRound = {
+        ...currentRound,
+        status: 'finished',
+        winnerId: winner?.userId ?? null,
+        spinningPlayerId: null,
+      };
+      roundRef.current = finishedRound;
+      setRound(finishedRound);
+      await sendEvent('round_state', { round: finishedRound, winnerCoins });
+      setNotice(
+        winner
+          ? `🏆 تهانينا ${winner.displayName}! فاز بـ ${payout.toLocaleString('en-US')} كوينز.`
+          : 'انتهت الجولة.'
+      );
+      try {
+        await onSendChat(
+          `🏆 تهانينا ${winner?.displayName || ''}! فاز بدولاب الإقصاء وربح ${payout.toLocaleString('en-US')} كوينز بعد خصم عمولة المنصة 20%.`
+        );
+      } catch (chatError) {
+        setNotice(
+          chatError instanceof Error
+            ? `تم توزيع الجائزة لكن تعذّر إرسال تهنئة الشات: ${chatError.message}`
+            : 'تم توزيع الجائزة لكن تعذّر إرسال تهنئة الشات.'
+        );
+      }
+    } catch (startError) {
+      setNotice(
+        startError instanceof Error ? startError.message : 'تعذّر إكمال السحب.'
+      );
+    } finally {
+      startingRef.current = false;
+      setSpinning(false);
+      setBusy(false);
+    }
+  };
+
+  const handleCancelRound = async () => {
+    if (!user || !round || !isCreator || busy || round.status !== 'registering') return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await refundMyEntry(round);
+      roundRef.current = null;
+      setRound(null);
+      await sendEvent('round_cancelled', { round });
+      setNotice('تم إلغاء الجولة واسترداد رسوم دخول المشاركين.');
+    } catch (cancelError) {
+      setNotice(
+        cancelError instanceof Error ? cancelError.message : 'تعذّر إلغاء الجولة.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const wheelGradient = alivePlayers.length
+    ? `conic-gradient(${alivePlayers
+        .map((_, index) => {
+          const angle = (index * 360) / alivePlayers.length;
+          const nextAngle = ((index + 1) * 360) / alivePlayers.length;
+          return `${index % 2 ? '#18213A' : '#9A7021'} ${angle}deg ${nextAngle}deg`;
+        })
+        .join(', ')})`
+    : 'conic-gradient(#9A7021 0deg 180deg, #18213A 180deg 360deg)';
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-3 backdrop-blur-md"
+      onClick={() => !spinning && !busy && onClose()}
+    >
+      <section
+        className="royal-glass relative flex max-h-[92dvh] w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-3xl border-2 border-[#F3D37A]/60 p-4 shadow-[0_24px_60px_rgba(0,0,0,0.85)]"
+        onClick={(event) => event.stopPropagation()}
+        dir="rtl"
+      >
+        <header className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-extrabold text-[#FCE9A6]">
+              <Sparkles className="h-5 w-5" />
+              دولاب الإقصاء الجماعي
+            </h2>
+            <p className="mt-1 flex items-center gap-1 text-xs text-slate-300">
+              <Coins className="h-3.5 w-3.5 text-[#F3D37A]" />
+              رصيدك {userCoins.toLocaleString('en-US')} كوينز
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={spinning || busy}
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-full text-slate-300 hover:bg-white/10 disabled:opacity-40"
+            aria-label="إغلاق"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </header>
+
+        {notice && (
+          <p role="status" className="rounded-xl border border-[#F3D37A]/40 bg-[#D4AF37]/10 p-2 text-center text-sm font-bold text-[#FCE9A6]">
+            {notice}
+          </p>
+        )}
+
+        {!round ? (
+          <div className="space-y-3 rounded-2xl bg-black/25 p-3">
+            <p className="text-sm font-bold text-white">أنشئ جولة واختر قيمة الدخول</p>
+            <div className="grid grid-cols-4 gap-2">
+              {ROOM_WHEEL_ENTRY_FEES.map((fee) => (
+                <button
+                  key={fee}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setEntryFee(fee)}
+                  className={`rounded-xl border px-2 py-2 text-sm font-extrabold ${
+                    entryFee === fee
+                      ? 'border-[#FCE9A6] bg-[#D4AF37] text-[#070913]'
+                      : 'border-white/15 bg-white/5 text-white'
+                  }`}
+                >
+                  {fee.toLocaleString('en-US')}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled={busy || !user}
+              onClick={() => void handleCreateRound()}
+              className="gold-btn w-full rounded-xl py-2.5 text-sm font-extrabold disabled:opacity-50"
+            >
+              {busy ? 'جارٍ إنشاء الجولة...' : 'إنشاء جولة'}
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between rounded-xl bg-black/30 px-3 py-2 text-xs">
+              <span className="text-slate-300">
+                الدخول: <b className="text-[#FCE9A6]">{round.entryFee.toLocaleString('en-US')}</b>
+              </span>
+              <span className="text-slate-300">
+                مجموع الجائزة: <b className="text-emerald-300">{round.prizePool.toLocaleString('en-US')}</b>
+              </span>
+            </div>
+
+            <div className="relative mx-auto h-64 w-64 shrink-0 rounded-full border-[7px] border-[#D4AF37] p-1 shadow-[0_0_35px_rgba(212,175,55,0.35)]">
+              <span className="absolute -top-3 left-1/2 z-20 -translate-x-1/2 border-x-[12px] border-t-[22px] border-x-transparent border-t-rose-500 drop-shadow-md" />
+              <div
+                className="relative h-full w-full overflow-hidden rounded-full border-2 border-[#FCE9A6]/70 transition-transform"
+                style={{
+                  background: wheelGradient,
+                  transform: `rotate(${rotation}deg)`,
+                  transitionDuration: spinning ? `${ROOM_WHEEL_SPIN_DURATION_MS}ms` : '0ms',
+                  transitionTimingFunction: 'cubic-bezier(0.12, 0.78, 0.22, 1)',
+                }}
+              >
+                {alivePlayers.map((player, index) => {
+                  const angle = (index * 360) / alivePlayers.length + 180 / alivePlayers.length - 90;
+                  const radians = (angle * Math.PI) / 180;
+                  const left = 50 + 36 * Math.cos(radians);
+                  const top = 50 + 36 * Math.sin(radians);
+                  return (
+                    <div
+                      key={player.userId}
+                      className="absolute flex w-16 -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center"
+                      style={{ left: `${left}%`, top: `${top}%` }}
+                    >
+                      <img
+                        src={player.avatarUrl}
+                        alt=""
+                        className="h-9 w-9 rounded-full border-2 border-[#FCE9A6] bg-slate-800 object-cover"
+                      />
+                      <span className="mt-0.5 max-w-full truncate rounded bg-black/70 px-1 text-[9px] font-bold text-white">
+                        {player.displayName}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="h-10 w-10 rounded-full border-2 border-[#FCE9A6] bg-[#070913] shadow-lg" />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 text-xs text-slate-300">
+              <Trophy className="h-4 w-4 text-[#F3D37A]" />
+              {alivePlayers.length} متنافس متبقٍ من {round.players.length}
+            </div>
+
+            {round.status === 'registering' && !hasJoined && (
+              <button
+                type="button"
+                disabled={busy || practiceRound || userCoins < round.entryFee}
+                onClick={() => void handleJoinRound()}
+                className="gold-btn w-full rounded-xl py-2.5 text-sm font-extrabold disabled:opacity-50"
+              >
+                {busy
+                  ? 'جارٍ الانضمام...'
+                  : practiceRound
+                  ? 'جولة تدريبية بدون رسوم'
+                  : `انضمام للجولة (${round.entryFee.toLocaleString('en-US')} كوينز)`}
+              </button>
+            )}
+
+            {isCreator && round.status === 'registering' && (
+              <div className="space-y-2">
+                {round.prizePool === 0 && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setAddingCompetitor((value) => !value)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/40 bg-white/5 py-2 text-xs font-bold text-[#FCE9A6]"
+                    >
+                      <Plus className="h-4 w-4" />
+                      إضافة منافس
+                    </button>
+                    {addingCompetitor && (
+                      <div className="max-h-28 space-y-1 overflow-y-auto rounded-xl bg-black/30 p-2">
+                        {members
+                          .filter(
+                            (member) =>
+                              member.userId !== user?.id &&
+                              !round.players.some((player) => player.userId === member.userId)
+                          )
+                          .map((member) => (
+                            <button
+                              key={member.userId}
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void handleAddCompetitor(member)}
+                              className="flex w-full items-center gap-2 rounded-lg p-1.5 text-right text-xs text-white hover:bg-white/10"
+                            >
+                              <img src={member.avatarUrl} alt="" className="h-7 w-7 rounded-full object-cover" />
+                              <span>{member.displayName}</span>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                <button
+                  type="button"
+                  disabled={busy || round.players.length < 2}
+                  onClick={() => void handleStartRound()}
+                  className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-700 py-2.5 text-sm font-extrabold text-white disabled:opacity-45"
+                >
+                  {busy ? 'جارٍ بدء السحب...' : 'ابدأ السحب'}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleCancelRound()}
+                  className="w-full rounded-xl border border-rose-400/40 bg-rose-950/30 py-2 text-xs font-bold text-rose-200 disabled:opacity-45"
+                >
+                  إلغاء الجولة واسترداد الرسوم
+                </button>
+              </div>
+            )}
+
+            {round.status === 'spinning' && (
+              <p className="text-center text-sm font-extrabold text-[#FCE9A6]">
+                {spinning ? 'يدور الدولاب...' : 'تتم الإقصاءات تلقائياً حتى يبقى فائز واحد'}
+              </p>
+            )}
+            {round.status === 'finished' && round.winnerId && (
+              <p className="text-center text-sm font-extrabold text-emerald-300">
+                انتهت الجولة — الفائز: {round.players.find((player) => player.userId === round.winnerId)?.displayName}
+              </p>
+            )}
+          </>
+        )}
+      </section>
+    </div>
+  );
+};
 
 interface RoomSeatItemProps {
   seat: RoomSeat;
@@ -491,7 +1163,6 @@ export const RoomPage: React.FC = () => {
     activeRoomId,
     room,
     extras,
-    gifts,
     loading,
     error,
     clearError,
@@ -499,9 +1170,10 @@ export const RoomPage: React.FC = () => {
     exitModalOpen,
     setExitModalOpen,
     mySeat,
+    micActive,
+    totalVolumeCoins,
     canManage,
     isOwnerOrAdmin,
-    micActive,
     micDenied,
     manualSpeakPulse,
     micRequest,
@@ -511,7 +1183,6 @@ export const RoomPage: React.FC = () => {
     presenceMembers,
     topGifters,
     supportAndPlayLeaderboard,
-    totalVolumeCoins,
     giftBanner,
     wheelBanner,
     entryBanner,
@@ -537,7 +1208,6 @@ export const RoomPage: React.FC = () => {
     handleManualSpeakToggle,
     handleRequestMicAccess,
     sendChat,
-    sendGiftBatch,
     sendSeatEmoji,
     updateSettings,
     runAdminAction,
@@ -566,21 +1236,14 @@ export const RoomPage: React.FC = () => {
   const [canManageRoomActions, setCanManageRoomActions] = useState(false);
   const [isAgencyOwner, setIsAgencyOwner] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showGiftModal, setShowGiftModal] = useState(false);
-  const [giftInitialTargets, setGiftInitialTargets] = useState<string[] | undefined>(
-    undefined
-  );
-  const [sendingGift, setSendingGift] = useState(false);
-
-  const [comboSession, setComboSession] = useState<ComboSession | null>(null);
-  const [comboRemainingMs, setComboRemainingMs] = useState<number>(0);
-
   const [showWheelModal, setShowWheelModal] = useState(false);
   const [showGamesOverlay, setShowGamesOverlay] = useState(false);
   const [showInboxOverlay, setShowInboxOverlay] = useState(false);
   const [inboxSessionId, setInboxSessionId] = useState(0);
   const [clearingRoomChat, setClearingRoomChat] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [micPermissionOverride, setMicPermissionOverride] = useState<boolean | null>(null);
+  const [showAgencyInfo, setShowAgencyInfo] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'agency' | 'members' | 'logs' | 'contests'>(
     'agency'
   );
@@ -597,6 +1260,34 @@ export const RoomPage: React.FC = () => {
   const [toastVariant, setToastVariant] = useState<'success' | 'error'>('success');
   const [isFollowingAgency, setIsFollowingAgency] = useState(false);
   const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
+  const requireMicPermission = micPermissionOverride ?? extras.requireMicPermission;
+  const roomSettingsExtras =
+    micPermissionOverride === null
+      ? extras
+      : { ...extras, requireMicPermission: micPermissionOverride };
+
+  const handleUpdateRoomSettings = useCallback(
+    async (patch: Parameters<typeof updateSettings>[0]) => {
+      if (typeof patch.requireMicPermission === 'boolean') {
+        setMicPermissionOverride(patch.requireMicPermission);
+      }
+      try {
+        await updateSettings(patch);
+      } catch (error) {
+        if (typeof patch.requireMicPermission === 'boolean') {
+          setMicPermissionOverride(null);
+        }
+        throw error;
+      }
+    },
+    [updateSettings]
+  );
+
+  useEffect(() => {
+    if (micPermissionOverride === extras.requireMicPermission) {
+      setMicPermissionOverride(null);
+    }
+  }, [extras.requireMicPermission, micPermissionOverride]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -639,7 +1330,6 @@ export const RoomPage: React.FC = () => {
 
   const chatFeedRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
-  const giftBtnRef = useRef<HTMLButtonElement | null>(null);
   const headerAnchorRef = useRef<HTMLDivElement | null>(null);
   const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
@@ -649,8 +1339,25 @@ export const RoomPage: React.FC = () => {
     setTimeout(() => setToastMsg(null), 2600);
   }, []);
 
+  const canClearRoomChat = Boolean(user?.is_admin || canManageRoomActions);
+
+  const handleCopyAgencyId = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('النسخ غير متاح في هذا المتصفح.');
+      }
+      await navigator.clipboard.writeText(AGENCY_ID);
+      showToast('تم النسخ.');
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : 'تعذّر نسخ رقم الوكالة.',
+        'error'
+      );
+    }
+  };
+
   const handleClearRoomChat = async () => {
-    if (!canManageRoomActions || clearingRoomChat) return;
+    if (!canClearRoomChat || clearingRoomChat) return;
     setClearingRoomChat(true);
     try {
       await clearRoomChat();
@@ -722,6 +1429,7 @@ export const RoomPage: React.FC = () => {
     ? safeGetItem('sada_equipped_frame') || user.frameId
     : undefined;
   const canApproveMicRequests = canManageRoomActions;
+  const canJoinMicWithoutApproval = !requireMicPermission || canApproveMicRequests;
 
   const userProfileLookup = useMemo(() => {
     const map = new Map<
@@ -787,22 +1495,6 @@ export const RoomPage: React.FC = () => {
         vipLevel: VipTierKey;
       }
     >();
-    if (Array.isArray(room?.seats)) {
-      for (const s of room.seats) {
-        if (s?.userId) {
-          const fallback = userProfileLookup.get(s.userId);
-          map.set(s.userId, {
-            userId: s.userId,
-            displayName: s.displayName || fallback?.displayName || 'متحدث',
-            avatarUrl: s.avatarUrl || fallback?.avatarUrl || 'host_male',
-            frameId: s.frameId || fallback?.frameId || 'frame_obsidian',
-            gender: fallback?.gender,
-            level: fallback?.level ?? s.level ?? 1,
-            vipLevel: fallback?.vipLevel || s.vipLevel || 'none',
-          });
-        }
-      }
-    }
     for (const p of presenceMembers) {
       const existing = map.get(p.userId);
       const fallback = userProfileLookup.get(p.userId);
@@ -832,7 +1524,7 @@ export const RoomPage: React.FC = () => {
       });
     }
     return Array.from(map.values());
-  }, [equippedFrameId, presenceMembers, room?.seats, user, userProfileLookup]);
+  }, [equippedFrameId, presenceMembers, user, userProfileLookup]);
 
   const supportersLeaderboard = useMemo(
     () =>
@@ -865,13 +1557,12 @@ export const RoomPage: React.FC = () => {
       .catch(() => {});
   }, [user?.id, room?.id]);
 
-  // Open room gift drawer directly targeting user when clicked from Mini Profile
   useEffect(() => {
     if (!giftTargetRequest) return;
-    setGiftInitialTargets([giftTargetRequest.userId]);
-    setShowGiftModal(true);
+    window.dispatchEvent(new Event('sada:minimize'));
+    navigate(`/messages?to=${encodeURIComponent(giftTargetRequest.userId)}&gift=1`);
     clearGiftTargetRequest();
-  }, [giftTargetRequest, clearGiftTargetRequest]);
+  }, [giftTargetRequest, clearGiftTargetRequest, navigate]);
 
   useEffect(() => {
     if (!micApprovedRequest || !user || micApprovedRequest.userId !== user.id || !room) return;
@@ -908,7 +1599,7 @@ export const RoomPage: React.FC = () => {
       }
 
       if (!seat.userId) {
-        if (!extras.requireMicPermission || canApproveMicRequests) {
+        if (canJoinMicWithoutApproval) {
           await handleSeatClick(seat.seatIndex);
         } else {
           await handleRequestMicAccess();
@@ -937,8 +1628,7 @@ export const RoomPage: React.FC = () => {
       handleToggleLock,
       showToast,
       handleSeatClick,
-      canApproveMicRequests,
-      extras.requireMicPermission,
+      canJoinMicWithoutApproval,
       handleRequestMicAccess,
       openMiniProfile,
     ]
@@ -977,26 +1667,6 @@ export const RoomPage: React.FC = () => {
 
     return () => window.clearTimeout(timeout);
   }, [isMinimized, room?.messages]);
-
-  // Combo circular countdown ticker (3.0s)
-  useEffect(() => {
-    if (!comboSession) {
-      setComboRemainingMs(0);
-      return;
-    }
-    const updateTicker = () => {
-      const left = comboSession.expiresAt - Date.now();
-      if (left <= 0) {
-        setComboSession(null);
-        setComboRemainingMs(0);
-      } else {
-        setComboRemainingMs(left);
-      }
-    };
-    updateTicker();
-    const timer = window.setInterval(updateTicker, 50);
-    return () => window.clearInterval(timer);
-  }, [comboSession]);
 
   // History State Trap: Push { inRoom: true } on enter/restore and intercept hardware Back
   useEffect(() => {
@@ -1045,11 +1715,9 @@ export const RoomPage: React.FC = () => {
     try {
       const res = await toggleFollowAgencyInSupabase(user.id, room.id);
       setIsFollowingAgency(res.following);
-      const shortId = formatShortNumericId(room.id).slice(0, 6);
-      navigator.clipboard?.writeText(shortId).catch(() => {});
       showToast(
         res.following
-          ? `♥ تمت متابعة "${room.title}" وإضافتها لقسم الخاص بي (${shortId}) ✓`
+          ? `♥ تمت متابعة "${room.title}" وإضافتها لقسم الخاص بي ✓`
           : 'تم إلغاء متابعة الوكالة'
       );
     } catch (err) {
@@ -1057,37 +1725,23 @@ export const RoomPage: React.FC = () => {
     }
   };
 
-  const micRows = useMemo(() => {
-    const seats = room?.seats || [];
-    const total = seats.length;
-    if (total === 5) {
-      return [
-        { seats: seats.slice(0, 1), cols: 1, isHero5: true },
-        { seats: seats.slice(1, 5), cols: 4, isHero5: false },
-      ];
-    }
-    if (total === 10) {
-      return [
-        { seats: seats.slice(0, 5), cols: 5, isHero5: false },
-        { seats: seats.slice(5, 10), cols: 5, isHero5: false },
-      ];
-    }
-    const rows: Array<{ seats: RoomSeat[]; cols: number; isHero5: boolean }> = [];
-    for (let i = 0; i < total; i += 5) {
-      rows.push({ seats: seats.slice(i, i + 5), cols: 5, isHero5: false });
-    }
-    return rows;
-  }, [room?.seats]);
-
   const filteredMessages = useMemo(() => {
     const list = room?.messages || [];
     const seenJoinUserIds = new Set<string>();
+    const seenEntryMessages = new Set<string>();
     const deduplicated = list.filter((m) => {
       const isJoinMessage =
         m.type === 'system' && typeof m.text === 'string' && m.text.startsWith('دخل الغرفة');
-      if (!isJoinMessage) return true;
-      if (seenJoinUserIds.has(m.userId)) return false;
-      seenJoinUserIds.add(m.userId);
+      if (isJoinMessage) {
+        if (seenJoinUserIds.has(m.userId)) return false;
+        seenJoinUserIds.add(m.userId);
+        return true;
+      }
+      if (m.type === 'entry') {
+        const entryKey = `${m.userId}:${m.text}`;
+        if (seenEntryMessages.has(entryKey)) return false;
+        seenEntryMessages.add(entryKey);
+      }
       return true;
     });
     if (chatFilter === 'chat') {
@@ -1105,66 +1759,6 @@ export const RoomPage: React.FC = () => {
     await sendChat(text);
   };
 
-  const handleSendGiftBatch = async (
-    giftId: string,
-    targetUserIds: string[],
-    quantity: number
-  ) => {
-    if (!room) return;
-    const pickedGift = gifts.find((g) => g.id === giftId);
-    setSendingGift(true);
-    try {
-      await sendGiftBatch(giftId, targetUserIds, quantity, 1);
-      setShowGiftModal(false);
-      if (pickedGift) {
-        setComboSession({
-          gift: pickedGift,
-          targetUserIds,
-          quantity,
-          comboCount: 1,
-          expiresAt: Date.now() + COMBO_DURATION_MS,
-        });
-        setComboRemainingMs(COMBO_DURATION_MS);
-      }
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'تعذّر إرسال الهدية');
-    } finally {
-      setSendingGift(false);
-    }
-  };
-
-  const handleComboTap = async () => {
-    if (!comboSession || !user) return;
-    const batchCost =
-      comboSession.gift.coinsCost *
-      comboSession.quantity *
-      Math.max(1, comboSession.targetUserIds.length);
-    if (user.coins < batchCost) {
-      setComboSession(null);
-      showToast('رصيد الكوينز لا يكفي للاستمرار في الـ Combo');
-      return;
-    }
-    const nextCombo = comboSession.comboCount + 1;
-    const snapshot = comboSession;
-    setComboSession({
-      ...snapshot,
-      comboCount: nextCombo,
-      expiresAt: Date.now() + COMBO_DURATION_MS,
-    });
-    setComboRemainingMs(COMBO_DURATION_MS);
-    try {
-      await sendGiftBatch(
-        snapshot.gift.id,
-        snapshot.targetUserIds,
-        snapshot.quantity,
-        nextCombo
-      );
-    } catch (err) {
-      setComboSession(null);
-      showToast(err instanceof Error ? err.message : 'تعذّر متابعة الـ Combo');
-    }
-  };
-
   const handlePickSeatEmoji = (item: (typeof ROOM_REACTION_EMOJIS)[number]) => {
     setShowEmojiPicker(false);
     sendSeatEmoji({ emoji: item.emoji, label: item.label, isDice: item.isDice });
@@ -1175,10 +1769,6 @@ export const RoomPage: React.FC = () => {
 
   // Resolve exact viewport start & destination coordinates for flying gifts
   const resolveFlyStartPoint = () => {
-    const rect = giftBtnRef.current?.getBoundingClientRect();
-    if (rect) {
-      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-    }
     return {
       x: typeof window !== 'undefined' ? window.innerWidth * 0.28 : 120,
       y: typeof window !== 'undefined' ? window.innerHeight - 44 : 620,
@@ -1213,17 +1803,13 @@ export const RoomPage: React.FC = () => {
     };
   };
 
-  const roomNumericId = room?.id ? formatShortNumericId(room.id).slice(0, 6) : '000000';
-  const comboProgress = Math.max(0, Math.min(1, comboRemainingMs / COMBO_DURATION_MS));
-  const comboCircleRadius = 31;
-  const comboCircumference = 2 * Math.PI * comboCircleRadius;
   const micSeats = (room?.seats || []).slice(0, 24);
-  const micDisplayRows =
+  const micGridClass =
     micSeats.length === 6
-      ? [micSeats.slice(0, 1), micSeats.slice(1, 4), micSeats.slice(4, 6)]
+      ? 'grid-cols-3 gap-6'
       : micSeats.length === 12
-      ? [micSeats.slice(0, 4), micSeats.slice(4, 8), micSeats.slice(8, 12)]
-      : [];
+      ? 'grid-cols-4 gap-4'
+      : 'grid-cols-6 gap-3';
   const renderMicSeat = (seat: RoomSeat) => {
     const seatLookup = seat.userId ? userProfileLookup.get(seat.userId) : undefined;
     return (
@@ -1284,6 +1870,7 @@ export const RoomPage: React.FC = () => {
         <>
           {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
           <DragonStageBackdrop coverImage={room.coverImage} />
+          <div aria-hidden="true" className="fixed inset-0 z-[1] pointer-events-none bg-black/25" />
 
       <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-1 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-1 pb-2">
         {/* 1. ROOM TOP BAR */}
@@ -1297,16 +1884,10 @@ export const RoomPage: React.FC = () => {
           >
             <button
               type="button"
-              onClick={() => {
-                if (canManage) {
-                  setSettingsInitialTab('agency');
-                  setShowSettingsModal(true);
-                } else {
-                  void handleFollowAgency();
-                }
-              }}
+              onClick={() => setShowAgencyInfo(true)}
               className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden border border-[#F3D37A]/70 shrink-0 cursor-pointer"
-              title={canManage ? 'تغيير صورة أو إعدادات الغرفة' : room.title}
+              title="معلومات الوكالة"
+              aria-label="معلومات الوكالة"
             >
               <img
                 src={resolveAsset(room.hostAvatar)}
@@ -1320,9 +1901,16 @@ export const RoomPage: React.FC = () => {
 
             <div className="min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
-              <h1 className="min-w-0 break-words text-[11px] sm:text-sm font-extrabold text-white leading-tight">
+              <button
+                type="button"
+                onClick={() => setShowAgencyInfo(true)}
+                className="min-w-0 break-words text-[11px] sm:text-sm font-extrabold text-white leading-tight text-right cursor-pointer hover:text-[#FCE9A6]"
+                title="معلومات الوكالة"
+              >
+                <h1 className="min-w-0 break-words text-[11px] sm:text-sm font-extrabold text-white leading-tight">
                   {room.title}
                 </h1>
+              </button>
                 <button
                   type="button"
                   onClick={() => void handleFollowAgency()}
@@ -1337,9 +1925,17 @@ export const RoomPage: React.FC = () => {
                   <Heart className={`w-3.5 h-3.5 ${isFollowingAgency ? 'fill-rose-400 text-rose-400' : ''}`} />
                 </button>
               </div>
-              <div className="flex items-center gap-1 text-[10px] text-amber-200/90 font-mono-num">
-                <span className="text-amber-400">🔥</span>
-                <span>{roomNumericId}</span>
+              <div className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-mono-num font-bold text-amber-100/95 shadow-inner backdrop-blur-md">
+                <span>ID الوكالة: {AGENCY_ID}</span>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyAgencyId()}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-amber-100 hover:bg-white/15 cursor-pointer"
+                  aria-label="نسخ رقم الوكالة"
+                  title="نسخ رقم الوكالة"
+                >
+                  <Copy className="w-3 h-3" />
+                </button>
               </div>
             </div>
           </div>
@@ -1467,7 +2063,7 @@ export const RoomPage: React.FC = () => {
                 setLeaderboardModalTab('heroes');
                 setShowLeaderboardModal(true);
               }}
-              className="inline-flex w-8 h-8 items-center justify-center rounded-full bg-gradient-to-r from-[#2D2007]/90 to-[#141008]/90 border border-[#F3D37A]/65 shadow-[0_0_14px_rgba(212,175,55,0.3)] cursor-pointer hover:brightness-110"
+              className="inline-flex w-7 h-7 sm:w-8 sm:h-8 items-center justify-center rounded-full overflow-hidden border-2 border-amber-300 bg-gradient-to-r from-[#2D2007]/90 to-[#141008]/90 shadow-[0_0_14px_rgba(212,175,55,0.3)] cursor-pointer hover:brightness-110"
               title="تصنيف أبطال الألعاب والمسابقات"
               aria-label="تصنيف أبطال الألعاب والمسابقات"
             >
@@ -1524,7 +2120,7 @@ export const RoomPage: React.FC = () => {
               <span>{roomAudioMuted ? 'صوت مكتوم' : 'كتم الروم'}</span>
             </button>
 
-            {canManageRoomActions && (
+            {canClearRoomChat && (
               <button
                 type="button"
                 disabled={clearingRoomChat}
@@ -1651,23 +2247,9 @@ export const RoomPage: React.FC = () => {
 
         {/* 2. TAKA MIC GRID */}
         <section className="shrink-0 relative z-20 min-h-[270px] flex flex-col justify-center">
-          {micSeats.length === 6 || micSeats.length === 12 ? (
-            <div
-              className={`flex flex-col items-center justify-center ${
-                micSeats.length === 6 ? 'gap-y-5' : 'gap-y-1'
-              }`}
-            >
-              {micDisplayRows.map((row, rowIndex) => (
-                <div key={rowIndex} className="flex items-center justify-center gap-x-4">
-                  {row.map(renderMicSeat)}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-6 content-center justify-items-center gap-x-1 gap-y-1 px-1.5">
-              {micSeats.map(renderMicSeat)}
-            </div>
-          )}
+          <div className={`grid w-full content-center justify-items-center px-1.5 ${micGridClass}`}>
+            {micSeats.map(renderMicSeat)}
+          </div>
         </section>
 
         {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
@@ -1850,7 +2432,7 @@ export const RoomPage: React.FC = () => {
           </div>
         )}
 
-        {/* 4. FIXED SINGLE-ROW BOTTOM ACTION BAR (Chat Input + 😊 + 🎁 + 🎮 + 🎙️) */}
+        {/* 4. FIXED SINGLE-ROW BOTTOM ACTION BAR */}
         <footer className="relative z-30 shrink-0 bg-[#14161f] px-2 py-2 pb-4">
           <div className="flex items-center gap-1.5">
             {/* 1. Public Chat Input Box */}
@@ -1916,23 +2498,7 @@ export const RoomPage: React.FC = () => {
               <Smile className="w-5 h-5" />
             </button>
 
-            {/* 3. Prominent Glowing Gold Gift Box Button (🎁) */}
-            <button
-              ref={giftBtnRef}
-              type="button"
-              onClick={() => {
-                setGiftInitialTargets(undefined);
-                setShowGiftModal(true);
-              }}
-              className="relative w-11 h-11 rounded-full bg-gradient-to-br from-[#FEF08A] via-[#D4AF37] to-[#B45309] border-2 border-[#FFF8DC] text-[#070913] flex items-center justify-center shadow-[0_0_22px_rgba(243,211,122,0.85)] hover:scale-105 active:scale-95 transition cursor-pointer shrink-0"
-              aria-label="صندوق الهدايا"
-              title="صندوق الهدايا الملكية"
-            >
-              <span className="absolute -inset-0.5 rounded-full border border-[#FDE047]/60 animate-ping opacity-45 pointer-events-none" />
-              <Gift className="w-5 h-5 stroke-[2.4]" />
-            </button>
-
-            {/* 3b. External Chats / Inbox Button (صندوق الوارد) without leaving room */}
+            {/* External Chats / Inbox Button (صندوق الوارد) without leaving room */}
             <button
               type="button"
               onClick={() => {
@@ -1946,25 +2512,24 @@ export const RoomPage: React.FC = () => {
               <Mail className="w-4 h-4" />
             </button>
 
-            {/* 4. Games Button directly adjacent (🎮) */}
             <button
               type="button"
               onClick={() => setShowGamesOverlay(true)}
               className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500/35 to-teal-700/45 border border-emerald-400/60 text-emerald-100 flex items-center justify-center shadow-[0_0_12px_rgba(16,185,129,0.35)] hover:border-emerald-300 cursor-pointer shrink-0 active:scale-95"
               aria-label="الألعاب"
-              title="مركز الألعاب فوق الغرفة"
+              title="مركز الألعاب داخل الغرفة"
             >
               <Gamepad2 className="w-5 h-5" />
             </button>
 
-            {/* 5. Mic Control Button (🎙️ / 🔇) */}
+            {/* Mic Control Button (🎙️ / 🔇) */}
             <button
               type="button"
               onClick={() => {
                 if (mySeat) {
                   void handleToggleMute?.();
                 } else {
-                  if (canManage) {
+                  if (canJoinMicWithoutApproval) {
                     const free = (Array.isArray(room?.seats) ? room.seats : []).find(
                       (seat) => !seat.userId && !seat.isLocked
                     );
@@ -2022,65 +2587,6 @@ export const RoomPage: React.FC = () => {
           )}
         </footer>
       </div>
-
-      {/* PULSING CIRCULAR COMBO CONTINUATION BUTTON (3.0s SVG Progress Ring) */}
-      <AnimatePresence>
-        {comboSession && comboRemainingMs > 0 && (
-          <motion.button
-            type="button"
-            initial={{ scale: 0.3, opacity: 0, y: 20 }}
-            animate={{ scale: [1, 1.06, 1], opacity: 1, y: 0 }}
-            exit={{ scale: 0.4, opacity: 0, y: 16 }}
-            transition={{ scale: { repeat: Infinity, duration: 1.1 } }}
-            onClick={() => void handleComboTap()}
-            className="fixed left-3.5 bottom-[74px] z-40 w-[74px] h-[74px] rounded-full flex items-center justify-center cursor-pointer active:scale-90 select-none"
-            title="اضغط للاستمرار في إرسال الهدية (Combo)"
-          >
-            <svg
-              width={74}
-              height={74}
-              className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-[0_0_16px_rgba(251,191,36,0.9)]"
-              viewBox="0 0 74 74"
-            >
-              <circle
-                cx="37"
-                cy="37"
-                r={comboCircleRadius}
-                fill="rgba(22, 16, 8, 0.9)"
-                stroke="rgba(255,255,255,0.18)"
-                strokeWidth="5"
-              />
-              <circle
-                cx="37"
-                cy="37"
-                r={comboCircleRadius}
-                fill="none"
-                stroke="#FDE047"
-                strokeWidth="5"
-                strokeLinecap="round"
-                strokeDasharray={comboCircumference}
-                strokeDashoffset={comboCircumference * (1 - comboProgress)}
-              />
-            </svg>
-            <div className="relative flex flex-col items-center justify-center text-center leading-none">
-              <Fluent3DAsset
-                glyph={comboSession.gift.glyph}
-                alt={comboSession.gift.name}
-                priority
-                sizeClass="w-6 h-6"
-                fallbackTextClass="text-xl"
-                className="drop-shadow"
-              />
-              <span className="mt-0.5 text-[10px] font-mono-num font-extrabold text-[#FDE047]">
-                Combo ×{comboSession.comboCount}
-              </span>
-              <span className="text-[8px] font-mono-num text-amber-200/85">
-                {(comboRemainingMs / 1000).toFixed(1)}s
-              </span>
-            </div>
-          </motion.button>
-        )}
-      </AnimatePresence>
 
       {/* FLYING GIFT TRAJECTORIES TOWARD EXACT MIC COORDINATES (Non-blocking) */}
       <div className="fixed inset-0 z-40 pointer-events-none overflow-hidden">
@@ -2288,9 +2794,10 @@ export const RoomPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        setGiftInitialTargets([seatActionTarget.userId!]);
+                        const targetUserId = seatActionTarget.userId!;
                         setSeatActionTarget(null);
-                        setShowGiftModal(true);
+                        window.dispatchEvent(new Event('sada:minimize'));
+                        navigate(`/messages?to=${encodeURIComponent(targetUserId)}&gift=1`);
                       }}
                       className="min-h-[40px] rounded-xl gold-btn text-xs font-extrabold cursor-pointer"
                     >
@@ -2380,32 +2887,6 @@ export const RoomPage: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* LUXURY 3D GIFT DRAWER */}
-      <AnimatePresence>
-        {showGiftModal && (
-          <RoomGiftDrawer
-            room={room}
-            gifts={gifts}
-            userCoins={user?.coins ?? 0}
-            currentUserId={user?.id}
-            initialTargets={giftInitialTargets}
-            sending={sendingGift}
-            onSend={handleSendGiftBatch}
-            onOpenPM={() => {
-              setShowGiftModal(false);
-              window.dispatchEvent(new Event('sada:minimize'));
-              navigate('/messages');
-            }}
-            onRecharge={() => {
-              setShowGiftModal(false);
-              window.dispatchEvent(new Event('sada:minimize'));
-              navigate('/wallet');
-            }}
-            onClose={() => setShowGiftModal(false)}
-          />
-        )}
-      </AnimatePresence>
-
       {/* FLOATING IN-ROOM INBOX OVERLAY (Read/Reply PMs without leaving voice room!) */}
       <AnimatePresence>
         {showInboxOverlay && (
@@ -2438,7 +2919,7 @@ export const RoomPage: React.FC = () => {
 
       {/* LUCKY WHEEL MODAL */}
       {showWheelModal && (
-        <LuckyWheelGame
+        <RoomWheelGame
           roomId={room.id}
           userCoins={user?.coins ?? 0}
           members={presenceMembers}
@@ -2448,9 +2929,20 @@ export const RoomPage: React.FC = () => {
         />
       )}
 
-      {/* FLOATING GAMES OVERLAY (Keeps audio & mic live!) */}
-      <AnimatePresence>
-        {showGamesOverlay && (
+      {showGamesOverlay && (
+        <div id="room-games-overlay">
+          <style>{`
+            #room-games-overlay > .fixed.inset-0.z-50 {
+              background: transparent !important;
+              backdrop-filter: none !important;
+              -webkit-backdrop-filter: none !important;
+            }
+            #room-games-overlay > .fixed.inset-0.z-50 > div {
+              opacity: 1 !important;
+              transform: none !important;
+              transition: none !important;
+            }
+          `}</style>
           <RoomGamesModal
             roomId={room.id}
             roomTitle={room.title}
@@ -2472,8 +2964,8 @@ export const RoomPage: React.FC = () => {
             onPlaySpent={(coins) => void addPlayVolume(coins)}
             onClose={() => setShowGamesOverlay(false)}
           />
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* PLAY & SUPPORT LEADERBOARD + ROOM PRESENCE MODAL */}
       <AnimatePresence>
@@ -2713,15 +3205,80 @@ export const RoomPage: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* AGENCY INFORMATION MODAL */}
+      <AnimatePresence>
+        {showAgencyInfo && room && (
+          <div
+            className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4"
+            onClick={() => setShowAgencyInfo(false)}
+          >
+            <motion.div
+              initial={{ y: 32, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 32, opacity: 0 }}
+              onClick={(event) => event.stopPropagation()}
+              className="royal-glass w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="agency-info-title"
+            >
+              <div className="flex items-center justify-between">
+                <h2 id="agency-info-title" className="text-lg font-extrabold gold-gradient-text">
+                  معلومات الوكالة
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setShowAgencyInfo(false)}
+                  className="w-8 h-8 rounded-full bg-white/10 text-slate-300 flex items-center justify-center cursor-pointer"
+                  aria-label="إغلاق معلومات الوكالة"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex items-center gap-3">
+                <img
+                  src={resolveAsset(room.hostAvatar)}
+                  alt={room.title}
+                  className="w-16 h-16 rounded-2xl object-cover border border-[#F3D37A]/60"
+                />
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-extrabold text-white">{room.title}</h3>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyAgencyId()}
+                    className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-mono-num font-bold text-amber-100 backdrop-blur-md cursor-pointer hover:bg-white/15"
+                  >
+                    <span>ID الوكالة: {AGENCY_ID}</span>
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2 rounded-2xl border border-white/10 bg-black/25 p-3 text-sm">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400">الوصف</p>
+                  <p className="whitespace-pre-line text-slate-100">
+                    {room.description || 'لا يوجد وصف للوكالة.'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400">الوكيل</p>
+                  <p className="font-bold text-[#FCE9A6]">{room.hostName || 'غير محدد'}</p>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* AGENCY SETTINGS MODAL */}
       {showSettingsModal && canManage && (
         <RoomSettingsModal
           room={room}
-          extras={extras}
+          extras={roomSettingsExtras}
           presenceMembers={presenceMembers}
           isOwnerOrAdmin={isOwnerOrAdmin}
           isAgencyOwner={isAgencyOwner}
-          canClearRoomChat={canManageRoomActions}
+          canClearRoomChat={canClearRoomChat}
           initialTab={settingsInitialTab}
           ownedBackgrounds={ownedBackgrounds}
           onOpenStore={() => {
@@ -2737,7 +3294,7 @@ export const RoomPage: React.FC = () => {
                 : '🔊 تم تشغيل صوت مؤثرات الهدايا والألعاب'
             );
           }}
-          onUpdateSettings={updateSettings}
+          onUpdateSettings={handleUpdateRoomSettings}
           onClearRoomChat={async () => {
             await clearRoomChat();
             showToast('تم مسح الدردشة بواسطة الإدارة');

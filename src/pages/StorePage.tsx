@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -11,7 +11,6 @@ import {
   Sparkles,
   Store,
   Zap,
-  Tag,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -21,17 +20,8 @@ import {
   purchaseRoomBackgroundInSupabase,
   purchaseStoreCoinItemInSupabase,
 } from '../lib/sadaWalletService';
-import {
-  getPlatformState,
-  recordTransaction,
-  rowToUser,
-  savePlatformState,
-  USER_COLUMNS,
-} from '../lib/sadaMappers';
-import { VIP_IDS_CATALOG, type VipIdItem } from '../lib/sadaCatalog';
 import type { Store3DItem, StoreBackgroundItem } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
-import { supabase } from '../lib/supabase';
 
 const RoyalBackdropPreview: React.FC<{ backgroundId: string }> = ({ backgroundId }) => {
   const isEmerald = backgroundId === 'bg_emerald_palace';
@@ -99,14 +89,8 @@ const RoyalBackdropPreview: React.FC<{ backgroundId: string }> = ({ backgroundId
 export const StorePage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   const [frameTab, setFrameTab] = useState<'coins' | 'gift'>('coins');
-  const [storeTab, setStoreTab] = useState<'frames' | 'ids'>(
-    searchParams.get('tab') === 'ids' ? 'ids' : 'frames'
-  );
-  const [idTab, setIdTab] = useState<'triple' | 'quad' | 'quint'>('triple');
-  const [customVipIds, setCustomVipIds] = useState<Record<string, string>>({});
   const [coinItems, setCoinItems] = useState<Store3DItem[]>([]);
   const [giftItems, setGiftItems] = useState<Store3DItem[]>([]);
   const [luxuryBackgrounds, setLuxuryBackgrounds] = useState<StoreBackgroundItem[]>([]);
@@ -122,14 +106,12 @@ export const StorePage: React.FC = () => {
     if (!user?.id) return;
     try {
       const data = await getStoreAndBagOverviewFromSupabase(user.id);
-      const state = await getPlatformState();
       updateLocalUser(data.user);
       setCoinItems(data.coinStoreItems);
       setGiftItems(data.storeItems);
       setLuxuryBackgrounds(data.luxuryBackgrounds);
       setOwnedBackgrounds(data.ownedBackgrounds);
       setTotalRechargedCoins(data.totalRechargedCoins);
-      setCustomVipIds(state.settings.customVipIds || {});
     } catch (error) {
       setFeedback({
         type: 'err',
@@ -240,133 +222,6 @@ export const StorePage: React.FC = () => {
     }
   };
 
-  const handleBuyVipId = async (vipId: VipIdItem) => {
-    setBusyId(vipId.id);
-    setFeedback(null);
-    try {
-      const [
-        { data: catalogItem, error: catalogError },
-        { data: userRow, error: userError },
-        state,
-      ] = await Promise.all([
-        supabase
-          .from('sada_vip_ids_catalog')
-          .select('id, number, price_coins, owner_id')
-          .eq('id', vipId.id)
-          .maybeSingle(),
-        supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
-        getPlatformState({ forceRefresh: true }),
-      ]);
-      if (catalogError) throw new Error(catalogError.message);
-      if (userError) throw new Error(userError.message);
-      if (!catalogItem || !userRow) throw new Error('الرقم أو الحساب غير موجود.');
-      if (catalogItem.owner_id && catalogItem.owner_id !== user.id) {
-        throw new Error('هذا الرقم مملوك بالفعل لمستخدم آخر.');
-      }
-
-      const freshUser = rowToUser(userRow);
-      const price = Number(catalogItem.price_coins);
-      const customVipIds = { ...(state.settings.customVipIds || {}) };
-      const currentOwner = Object.entries(customVipIds).find(
-        ([, number]) => number === catalogItem.number
-      );
-      if (currentOwner && currentOwner[0] !== user.id) {
-        throw new Error('هذا الرقم مملوك بالفعل لمستخدم آخر.');
-      }
-      if (customVipIds[user.id] === String(catalogItem.number)) {
-        throw new Error('هذا الرقم مملوك لك بالفعل.');
-      }
-      if (!Number.isFinite(price) || price <= 0) {
-        throw new Error('سعر الرقم المميز غير صالح.');
-      }
-      if (freshUser.coins < price) {
-        throw new Error('رصيد الكوينز غير كافٍ لشراء هذا الرقم.');
-      }
-
-      const { data: updatedRow, error: balanceError } = await supabase
-        .from('sada_users')
-        .update({ coins: freshUser.coins - price })
-        .eq('id', user.id)
-        .eq('coins', freshUser.coins)
-        .select(USER_COLUMNS)
-        .maybeSingle();
-      if (balanceError) throw new Error(balanceError.message);
-      if (!updatedRow) {
-        throw new Error('تغيّر رصيدك أثناء الشراء. حدّث الصفحة وحاول مجدداً.');
-      }
-
-      const previousVipId = customVipIds[user.id];
-      customVipIds[user.id] = String(catalogItem.number);
-      try {
-        await savePlatformState({
-          settings: {
-            ...state.settings,
-            customVipIds,
-          },
-        });
-        await recordTransaction({
-          userId: user.id,
-          type: 'store_purchase',
-          amount: -price,
-          currency: 'coins',
-          description: `شراء رقم ID مميز: ${catalogItem.number}`,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (purchaseError) {
-        try {
-          const currentState = await getPlatformState({ forceRefresh: true });
-          const restoredVipIds = { ...(currentState.settings.customVipIds || {}) };
-          if (restoredVipIds[user.id] === String(catalogItem.number)) {
-            if (previousVipId) restoredVipIds[user.id] = previousVipId;
-            else delete restoredVipIds[user.id];
-            await savePlatformState({
-              settings: {
-                ...currentState.settings,
-                customVipIds: restoredVipIds,
-              },
-            });
-          }
-        } catch (rollbackError) {
-          console.error('Unable to restore custom VIP ID after purchase failure:', rollbackError);
-        }
-
-        const { data: refundedRow, error: refundError } = await supabase
-          .from('sada_users')
-          .update({ coins: freshUser.coins })
-          .eq('id', user.id)
-          .eq('coins', freshUser.coins - price)
-          .select('id')
-          .maybeSingle();
-        if (refundError || !refundedRow) {
-          console.error(
-            'Unable to refund coins after VIP ID purchase failure:',
-            refundError || new Error('The user balance changed before refunding.')
-          );
-        }
-        throw purchaseError;
-      }
-
-      updateLocalUser(rowToUser(updatedRow));
-      setCustomVipIds(customVipIds);
-      setFeedback({
-        type: 'ok',
-        text: 'مبروك! تم شراء وتفعيل رقم ID المميز بنجاح',
-      });
-    } catch (err) {
-      setFeedback({
-        type: 'err',
-        text: err instanceof Error ? err.message : 'تعذّر شراء رقم ID.',
-      });
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const visibleVipIds = useMemo(() => {
-    const length = idTab === 'triple' ? 3 : idTab === 'quad' ? 4 : 5;
-    return VIP_IDS_CATALOG.filter((item) => item.number.length === length);
-  }, [idTab]);
-
   return (
     <div className="min-h-full bg-[#F5F6FA] pb-28">
       <div className="max-w-4xl mx-auto px-4 pt-4 space-y-5">
@@ -405,7 +260,7 @@ export const StorePage: React.FC = () => {
             </div>
           </div>
 
-          {storeTab === 'frames' && frameTab === 'gift' && (
+          {frameTab === 'gift' && (
             <div className="rounded-2xl bg-black/35 border border-white/10 p-4 space-y-2.5">
               <div className="flex items-center justify-between text-xs font-mono-num">
                 <span className="text-slate-300 font-bold">إجمالي الشحن التراكمي</span>
@@ -453,31 +308,6 @@ export const StorePage: React.FC = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setStoreTab('frames')}
-            className={`min-h-[44px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer ${
-              storeTab === 'frames' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            <Crown className="w-4 h-4" />
-            <span>الإطارات والخلفيات</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setStoreTab('ids')}
-            className={`min-h-[44px] rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer ${
-              storeTab === 'ids' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            <Tag className="w-4 h-4" />
-            <span>متجر الـ ID المميز</span>
-          </button>
-        </div>
-
-        {storeTab === 'frames' && (
-          <>
         {/* Two Store Frame Tabs */}
         <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
           <button
@@ -804,84 +634,6 @@ export const StorePage: React.FC = () => {
             <span>الانتقال إلى الحقيبة وممتلكاتي</span>
           </button>
         </div>
-          </>
-        )}
-
-        {storeTab === 'ids' && (
-          <section className="space-y-4">
-            <div className="rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-5 text-white border border-indigo-300/20 shadow-xl">
-              <div className="flex items-center gap-2 text-amber-200">
-                <Tag className="w-5 h-5" />
-                <h2 className="text-lg font-black">متجر الأرقام المميزة</h2>
-              </div>
-              <p className="mt-1 text-xs text-slate-300">
-                اختر ID حصرياً؛ بعد الشراء يُربط بحسابك ويظهر مباشرة في الملف الشخصي.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-white p-1.5 border border-slate-200">
-              {([
-                ['triple', 'ثلاثية نادرة'],
-                ['quad', 'رباعية ملكية'],
-                ['quint', 'خماسية مميزة'],
-              ] as const).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setIdTab(id)}
-                  className={`min-h-[42px] rounded-xl px-2 text-[11px] sm:text-xs font-extrabold cursor-pointer ${
-                    idTab === id ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {visibleVipIds.map((vipId) => {
-                const owner = Object.entries(customVipIds).find(
-                  ([, number]) => number === vipId.number
-                );
-                const isMine = owner?.[0] === user.id;
-                const isOwned = Boolean(owner);
-                return (
-                  <article
-                    key={vipId.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center justify-between gap-3 shadow-sm"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`rounded-lg bg-gradient-to-r ${vipId.highlightClass} px-2 py-1 text-white text-xs`}>
-                          {vipId.badge}
-                        </span>
-                        <strong className="font-mono-num text-xl text-slate-900">{vipId.number}</strong>
-                      </div>
-                      <p className="mt-1 text-[11px] font-bold text-slate-500">{vipId.title}</p>
-                      <p className="mt-1 text-xs font-extrabold text-amber-700">
-                        {vipId.priceCoins.toLocaleString('en-US')} كوينز
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isOwned || busyId === vipId.id}
-                      onClick={() => void handleBuyVipId(vipId)}
-                      className={`min-h-[44px] shrink-0 rounded-xl px-3 text-xs font-extrabold cursor-pointer ${
-                        isMine
-                          ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                          : isOwned
-                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                          : 'gold-btn'
-                      }`}
-                    >
-                      {isMine ? 'مملوك لك' : isOwned ? 'مملوك' : busyId === vipId.id ? 'جارٍ الشراء...' : 'شراء الآن'}
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        )}
       </div>
     </div>
   );

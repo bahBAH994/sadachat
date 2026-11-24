@@ -49,6 +49,7 @@ import {
   claimHostTaskMilestoneInSupabase,
   getHostTasksOverviewFromSupabase,
 } from '../lib/sadaWalletService';
+import { createRoomInSupabase } from '../lib/sadaRoomsService';
 import { supabase } from '../lib/supabase';
 import type { HostTaskProgress, User } from '../types';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
@@ -121,6 +122,13 @@ export const ProfilePage: React.FC = () => {
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
   );
+  const [openingMyRoom, setOpeningMyRoom] = useState(false);
+  const [showCreateMyRoom, setShowCreateMyRoom] = useState(false);
+  const [myRoomTitle, setMyRoomTitle] = useState(
+    user?.displayName ? `${user.displayName} الخاصة` : ''
+  );
+  const [creatingMyRoom, setCreatingMyRoom] = useState(false);
+  const [createMyRoomError, setCreateMyRoomError] = useState<string | null>(null);
 
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
   const [userVisitors, setUserVisitors] = useState<Record<string, string[]>>({});
@@ -416,6 +424,78 @@ export const ProfilePage: React.FC = () => {
   const handleLogout = async () => {
     await logout();
     navigate('/login', { replace: true });
+  };
+
+  const handleOpenMyRoom = async () => {
+    if (openingMyRoom) return;
+    setOpeningMyRoom(true);
+    setFeedback(null);
+    try {
+      const agencyQuery = user.agencyId
+        ? supabase
+            .from('sada_agencies')
+            .select('owner_id')
+            .eq('id', user.agencyId)
+            .maybeSingle()
+        : supabase
+            .from('sada_agencies')
+            .select('owner_id')
+            .eq('owner_id', user.id)
+            .maybeSingle();
+      const { data: agency, error: agencyError } = await agencyQuery;
+      if (agencyError) {
+        throw new Error(`تعذّر التحقق من وكالة المستخدم: ${agencyError.message}`);
+      }
+
+      const ownerIds = Array.from(
+        new Set([agency?.owner_id ? String(agency.owner_id) : '', user.id].filter(Boolean))
+      );
+      for (const ownerId of ownerIds) {
+        const { data: room, error: roomError } = await supabase
+          .from('sada_rooms')
+          .select('id')
+          .eq('host_id', ownerId)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (roomError) {
+          throw new Error(`تعذّر البحث عن الغرفة: ${roomError.message}`);
+        }
+        if (room?.id) {
+          navigate(`/room/${room.id}`);
+          return;
+        }
+      }
+
+      setMyRoomTitle(`${user.displayName} الخاصة`);
+      setCreateMyRoomError(null);
+      setShowCreateMyRoom(true);
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'تعذّر فتح غرفتك أو وكالتك.',
+      });
+    } finally {
+      setOpeningMyRoom(false);
+    }
+  };
+
+  const handleCreateMyRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreatingMyRoom(true);
+    setCreateMyRoomError(null);
+    try {
+      const room = await createRoomInSupabase(user, { title: myRoomTitle });
+      setShowCreateMyRoom(false);
+      navigate(`/room/${room.id}`);
+    } catch (err) {
+      setCreateMyRoomError(
+        err instanceof Error ? err.message : 'تعذّر إنشاء الغرفة.'
+      );
+    } finally {
+      setCreatingMyRoom(false);
+    }
   };
 
   return (
@@ -789,10 +869,13 @@ export const ProfilePage: React.FC = () => {
           {canViewMyAgency && (
             <button
               type="button"
-              onClick={() => navigate('/?enterMyRoom=1')}
+              onClick={() => void handleOpenMyRoom()}
+              disabled={openingMyRoom}
               className="rounded-2xl bg-emerald-50/90 hover:bg-emerald-100/80 border border-emerald-100 p-4 flex items-center justify-between cursor-pointer transition"
             >
-              <span className="text-sm font-extrabold text-emerald-950">غرفتي / وكالتي</span>
+              <span className="text-sm font-extrabold text-emerald-950">
+                {openingMyRoom ? 'جارٍ فتح الغرفة...' : 'غرفتي / وكالتي'}
+              </span>
               <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-emerald-600 shadow-sm">
                 <Building2 className="w-5 h-5" />
               </div>
@@ -839,19 +922,6 @@ export const ProfilePage: React.FC = () => {
             </div>
           </button>
 
-          <button
-            type="button"
-            onClick={() => navigate('/store?tab=ids')}
-            className="col-span-2 rounded-2xl bg-sky-50/90 hover:bg-sky-100/80 border border-sky-100 p-4 flex items-center justify-between cursor-pointer transition"
-          >
-            <div className="text-right">
-              <span className="block text-sm font-extrabold text-sky-950">شراء ID مميز</span>
-              <span className="block text-[10px] font-bold text-sky-700">أرقام ملكية حصرية وكوينز</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-sky-600 shadow-sm">
-              <Crown className="w-5 h-5" />
-            </div>
-          </button>
         </section>
 
         {/* Bottom Utility Row */}
@@ -1283,6 +1353,62 @@ export const ProfilePage: React.FC = () => {
               <span>{saving ? 'جارٍ الحفظ...' : 'حفظ التعديلات'}</span>
             </button>
           </form>
+        </div>
+      )}
+
+      {showCreateMyRoom && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
+          onClick={() => setShowCreateMyRoom(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-my-room-title"
+            className="w-full max-w-md rounded-3xl bg-white border border-slate-200 p-6 space-y-4 shadow-2xl text-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h3 id="create-my-room-title" className="text-lg font-extrabold">
+                إنشاء غرفتي / وكالتي الخاصة
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowCreateMyRoom(false)}
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+                aria-label="إغلاق"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {createMyRoomError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 font-semibold">
+                {createMyRoomError}
+              </div>
+            )}
+            <form onSubmit={handleCreateMyRoom} className="space-y-3">
+              <label className="block text-xs font-bold text-slate-700">
+                عنوان الغرفة
+                <input
+                  type="text"
+                  required
+                  minLength={3}
+                  maxLength={60}
+                  value={myRoomTitle}
+                  onChange={(e) => setMyRoomTitle(e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  autoFocus
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={creatingMyRoom}
+                className="emerald-btn w-full min-h-[46px] rounded-2xl py-2.5 text-sm cursor-pointer disabled:opacity-60"
+              >
+                {creatingMyRoom ? 'جارٍ إنشاء الغرفة...' : 'إنشاء الغرفة والدخول إليها'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
     </div>

@@ -14,7 +14,6 @@ import {
   getGrandCompetitionSettings,
   getGrandCompetitionShare,
   GRAND_COMPETITION_PACKAGES,
-  subscribeToGrandCompetitionPackage,
 } from '../lib/sadaGrandCompetitionService';
 import { supabase } from '../lib/supabase';
 import type { GrandCompetitionSettings } from '../types';
@@ -88,19 +87,122 @@ export const GrandCompetitionPage: React.FC = () => {
     if (!user || purchasing) return;
     setPurchasing(true);
     setNotice(null);
+    let deductedBalance: { before: number; after: number } | null = null;
     try {
-      const result = await subscribeToGrandCompetitionPackage(user.id, selectedPackage);
-      updateLocalUser({ ...user, coins: result.coins });
-      setCompetition(result.settings);
-      setUserShare({
-        participantWeight: result.participantWeight,
-        sharePercent: result.sharePercent,
-      });
-      setNotice({
-        type: 'ok',
-        text: `تم الاشتراك بنجاح. أصبحت حصتك الموزونة من مخزون الجوائز ${result.sharePercent.toFixed(2)}٪.`,
-      });
+      if (!competition) throw new Error('إعدادات المسابقة غير جاهزة.');
+      if (!GRAND_COMPETITION_PACKAGES.some((item) => item.coins === selectedPackage)) {
+        throw new Error('باقة الاشتراك غير صالحة.');
+      }
+
+      for (let attempt = 0; attempt < 3 && !deductedBalance; attempt += 1) {
+        const { data: profile, error: profileError } = await supabase
+          .from('sada_users')
+          .select('coins')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (profileError) throw new Error(profileError.message);
+        if (!profile) throw new Error('تعذّر العثور على حسابك.');
+
+        const currentCoins = Number(profile.coins);
+        if (!Number.isFinite(currentCoins)) throw new Error('رصيد الكوينز غير صالح.');
+        if (currentCoins < selectedPackage) throw new Error('رصيد الكوينز غير كافٍ.');
+
+        const nextCoins = currentCoins - selectedPackage;
+        const { data: updatedProfile, error: updateProfileError } = await supabase
+          .from('sada_users')
+          .update({ coins: nextCoins })
+          .eq('id', user.id)
+          .eq('coins', currentCoins)
+          .select('coins')
+          .maybeSingle();
+        if (updateProfileError) throw new Error(updateProfileError.message);
+        if (updatedProfile) {
+          deductedBalance = { before: currentCoins, after: Number(updatedProfile.coins) };
+        }
+      }
+      if (!deductedBalance) throw new Error('تغيّر رصيدك أثناء الاشتراك. حاول مرة أخرى.');
+
+      let updatedCompetition: GrandCompetitionSettings | null = null;
+      for (let attempt = 0; attempt < 5 && !updatedCompetition; attempt += 1) {
+        const { data: state, error: stateError } = await supabase
+          .from('sada_platform_state')
+          .select('settings')
+          .eq('id', 'global')
+          .maybeSingle();
+        if (stateError) throw new Error(stateError.message);
+        if (!state) throw new Error('تعذّر العثور على إعدادات مخزون الجوائز.');
+
+        const settings =
+          state.settings && typeof state.settings === 'object'
+            ? (state.settings as Record<string, unknown>)
+            : {};
+        const rawCompetition =
+          settings.grandCompetition && typeof settings.grandCompetition === 'object'
+            ? (settings.grandCompetition as Record<string, unknown>)
+            : {};
+        const getCounter = (key: string) => {
+          const value = Number(rawCompetition[key] || 0);
+          if (!Number.isFinite(value) || value < 0) {
+            throw new Error('بيانات مخزون الجوائز غير صالحة.');
+          }
+          return value;
+        };
+        const nextTotalSubscriptions = getCounter('totalSubscriptionsCoins') + selectedPackage;
+        const nextPrizePool = getCounter('prizePoolCoins') + Math.floor(selectedPackage * 0.8);
+        const nextCommission =
+          getCounter('platformCommissionCoins') +
+          selectedPackage -
+          Math.floor(selectedPackage * 0.8);
+        const nextCompetition = {
+          ...rawCompetition,
+          totalSubscriptionsCoins: nextTotalSubscriptions,
+          prizePoolCoins: nextPrizePool,
+          platformCommissionCoins: nextCommission,
+        };
+        const nextSettings = { ...settings, grandCompetition: nextCompetition };
+        const { data: savedState, error: saveError } = await supabase
+          .from('sada_platform_state')
+          .update({ settings: nextSettings, updated_at: new Date().toISOString() })
+          .eq('id', 'global')
+          .eq('settings', JSON.stringify(settings))
+          .select('id')
+          .maybeSingle();
+        if (saveError) throw new Error(saveError.message);
+        if (savedState) {
+          updatedCompetition = {
+            ...competition,
+            totalSubscriptionsCoins: nextTotalSubscriptions,
+            prizePoolCoins: nextPrizePool,
+            platformCommissionCoins: nextCommission,
+          };
+        }
+      }
+      if (!updatedCompetition) throw new Error('تعذّر تحديث مخزون الجوائز. حاول مرة أخرى.');
+
+      updateLocalUser({ ...user, coins: deductedBalance.after });
+      setCompetition(updatedCompetition);
+      setNotice({ type: 'ok', text: 'تم الاشتراك في المسابقة الكبرى بنجاح!' });
     } catch (error) {
+      if (deductedBalance) {
+        try {
+          const { data: refundedProfile, error: refundError } = await supabase
+            .from('sada_users')
+            .update({ coins: deductedBalance.before })
+            .eq('id', user.id)
+            .eq('coins', deductedBalance.after)
+            .select('coins')
+            .maybeSingle();
+          if (refundError || !refundedProfile) {
+            throw new Error('تعذّر إعادة الكوينز بعد فشل الاشتراك.');
+          }
+        } catch {
+          setNotice({
+            type: 'err',
+            text: 'تعذّر إكمال الاشتراك ولم نتمكن من إعادة الكوينز تلقائياً. يرجى التواصل مع الدعم.',
+          });
+          return;
+        }
+      }
       setNotice({
         type: 'err',
         text: error instanceof Error ? error.message : 'تعذّر إتمام الاشتراك.',
