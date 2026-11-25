@@ -281,6 +281,71 @@ export async function listActiveRooms(): Promise<Room[]> {
   });
 }
 
+export async function getUserActiveRoomsInSupabase(
+  user: User
+): Promise<{ personalRoom: Room | null; agencyRoom: Room | null }> {
+  const { data: userRow, error: userError } = await supabase
+    .from('sada_users')
+    .select('agency_id')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (userError) {
+    throw new Error(`تعذّر التحقق من وكالة المستخدم: ${userError.message}`);
+  }
+
+  const agencyId = userRow?.agency_id ? String(userRow.agency_id) : '';
+  let agency: { id: string; owner_id: string } | null = null;
+  if (agencyId) {
+    const { data, error } = await supabase
+      .from('sada_agencies')
+      .select('id, owner_id')
+      .eq('id', agencyId)
+      .maybeSingle();
+    if (error) {
+      throw new Error(`تعذّر التحقق من وكالة المستخدم: ${error.message}`);
+    }
+    agency = data;
+  }
+
+  if (!agency) {
+    const { data, error } = await supabase
+      .from('sada_agencies')
+      .select('id, owner_id')
+      .eq('owner_id', user.id)
+      .maybeSingle();
+    if (error) {
+      throw new Error(`تعذّر التحقق من وكالة المستخدم: ${error.message}`);
+    }
+    agency = data;
+  }
+
+  const agencyOwnerId = agency?.owner_id ? String(agency.owner_id) : '';
+  const hostIds = Array.from(new Set([user.id, agencyOwnerId].filter(Boolean)));
+  const { data: roomRows, error: roomError } = await supabase
+    .from('sada_rooms')
+    .select(ROOM_COLUMNS)
+    .in('host_id', hostIds)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+  if (roomError) {
+    throw new Error(`تعذّر البحث عن الغرف النشطة: ${roomError.message}`);
+  }
+
+  const activeRooms = (roomRows || []).map((row) => {
+    const { password: _password, ...room } = rowToRoom(row);
+    return room;
+  });
+  const agencyRoom = agencyOwnerId
+    ? activeRooms.find((room) => room.hostId === agencyOwnerId) || null
+    : null;
+  const personalRoom =
+    activeRooms.find((room) => room.hostId === user.id && room.hostId !== agencyOwnerId) ||
+    (agencyOwnerId ? null : activeRooms.find((room) => room.hostId === user.id)) ||
+    null;
+
+  return { personalRoom, agencyRoom };
+}
+
 export async function createRoomInSupabase(
   user: User,
   payload: {

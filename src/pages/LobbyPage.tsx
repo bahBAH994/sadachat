@@ -27,6 +27,7 @@ import { ARAB_COUNTRIES, formatShortNumericId, getUserVipTierInfo } from '../lib
 import { getPlatformState } from '../lib/sadaMappers';
 import {
   createRoomInSupabase,
+  getUserActiveRoomsInSupabase,
   isRoomAgencyOwnerOrHostFromData,
   listActiveRooms,
   verifyRoomPasswordInSupabase,
@@ -267,11 +268,16 @@ export const LobbyPage: React.FC = () => {
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingAgencyMap, setLoadingAgencyMap] = useState(true);
   const [pendingMyRoomEntry, setPendingMyRoomEntry] = useState(false);
+  const [openingMyRoom, setOpeningMyRoom] = useState(false);
+  const openingMyRoomRef = useRef(false);
   const [mainTab, setMainTab] = useState<'party' | 'mine'>('party');
   const [activeChip, setActiveChip] = useState<FilterChip>('الوكالات');
-  const [showMyRoomMenu, setShowMyRoomMenu] = useState(false);
+  const [showMyRoomChoice, setShowMyRoomChoice] = useState(false);
+  const [myRoomOptions, setMyRoomOptions] = useState<{
+    personalRoom: Room;
+    agencyRoom: Room;
+  } | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(COUNTRY_FILTERS[0]);
@@ -292,6 +298,7 @@ export const LobbyPage: React.FC = () => {
 
   const [showCreate, setShowCreate] = useState(false);
   const [agencyToastVisible, setAgencyToastVisible] = useState(false);
+  const [myRoomEntryError, setMyRoomEntryError] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState<Room['category']>('حوار');
   const [newDesc, setNewDesc] = useState('');
@@ -334,7 +341,6 @@ export const LobbyPage: React.FC = () => {
   const loadDirectory = useCallback(
     async (forceRefresh = false) => {
       if (!user?.id) {
-        setLoadingAgencyMap(false);
         return;
       }
       try {
@@ -365,8 +371,6 @@ export const LobbyPage: React.FC = () => {
         setAgencyOwnerMap(ownerLookup);
       } catch {
         // ignore transient error
-      } finally {
-        setLoadingAgencyMap(false);
       }
     },
     [user?.id]
@@ -580,29 +584,6 @@ export const LobbyPage: React.FC = () => {
     });
   }, [rooms, activeChip, search, selectedCountry, userMeta, pinnedRoomIds]);
 
-  const handleGoToAgencyChat = () => {
-    if (!user) return;
-    if (loading || loadingAgencyMap) {
-      setPendingMyRoomEntry(true);
-      return;
-    }
-    const privateRoom = myOwnedRooms[0];
-    if (privateRoom && myAgencyRoom) {
-      setShowMyRoomMenu(true);
-      return;
-    }
-    if (privateRoom) {
-      enterRoom(privateRoom);
-      return;
-    }
-    if (myAgencyRoom) {
-      enterRoom(myAgencyRoom);
-      return;
-    }
-    setAgencyToastVisible(true);
-    window.setTimeout(() => setAgencyToastVisible(false), 2600);
-  };
-
   useEffect(() => {
     if (searchParams.get('enterMyRoom') !== '1') return;
     setPendingMyRoomEntry(true);
@@ -610,12 +591,6 @@ export const LobbyPage: React.FC = () => {
     nextParams.delete('enterMyRoom');
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams]);
-
-  useEffect(() => {
-    if (!pendingMyRoomEntry || loading || loadingAgencyMap) return;
-    setPendingMyRoomEntry(false);
-    handleGoToAgencyChat();
-  }, [pendingMyRoomEntry, loading, loadingAgencyMap, rooms, agencyOwnerMap, user]);
 
   const enterRoom = useCallback(
     async (room: Room) => {
@@ -669,6 +644,44 @@ export const LobbyPage: React.FC = () => {
     },
     [navigate, user?.id]
   );
+
+  const handleGoToAgencyChat = useCallback(async () => {
+    if (!user || openingMyRoomRef.current) return;
+    openingMyRoomRef.current = true;
+    setOpeningMyRoom(true);
+    setMyRoomEntryError(null);
+    try {
+      const { personalRoom, agencyRoom } = await getUserActiveRoomsInSupabase(user);
+      if (personalRoom && agencyRoom) {
+        setMyRoomOptions({ personalRoom, agencyRoom });
+        setShowMyRoomChoice(true);
+      } else {
+        const room = personalRoom || agencyRoom;
+        if (room) {
+          await enterRoom(room);
+        } else {
+          setNewTitle(`${user.displayName} الخاصة`);
+          setCreateError(null);
+          setShowCreate(true);
+        }
+      }
+    } catch (error) {
+      setMyRoomEntryError(
+        error instanceof Error ? error.message : 'تعذّر التحقق من الغرف والوكالة.'
+      );
+      setAgencyToastVisible(true);
+      window.setTimeout(() => setAgencyToastVisible(false), 3500);
+    } finally {
+      openingMyRoomRef.current = false;
+      setOpeningMyRoom(false);
+    }
+  }, [enterRoom, user]);
+
+  useEffect(() => {
+    if (!pendingMyRoomEntry) return;
+    setPendingMyRoomEntry(false);
+    void handleGoToAgencyChat();
+  }, [pendingMyRoomEntry, handleGoToAgencyChat]);
 
   const handleVerifyPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1226,39 +1239,78 @@ export const LobbyPage: React.FC = () => {
       </div>
 
       <div className="fixed bottom-24 left-3 z-30">
-        {showMyRoomMenu && myOwnedRooms[0] && myAgencyRoom && (
-          <div className="absolute bottom-full left-0 mb-2 w-48 rounded-2xl bg-white border border-slate-200 p-1.5 shadow-xl space-y-1">
-            <button
-              type="button"
-              onClick={() => {
-                setShowMyRoomMenu(false);
-                enterRoom(myOwnedRooms[0]);
-              }}
-              className="w-full rounded-xl px-3 py-2.5 text-right text-xs font-extrabold text-slate-800 hover:bg-emerald-50 cursor-pointer transition"
-            >
-              غرفتي الخاصة
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowMyRoomMenu(false);
-                enterRoom(myAgencyRoom);
-              }}
-              className="w-full rounded-xl px-3 py-2.5 text-right text-xs font-extrabold text-slate-800 hover:bg-emerald-50 cursor-pointer transition"
-            >
-              وكالتي
-            </button>
-          </div>
-        )}
         <button
           type="button"
-          onClick={handleGoToAgencyChat}
-          className="emerald-btn rounded-full px-3 py-1.5 text-xs shadow-lg font-extrabold flex items-center gap-2 cursor-pointer"
+          onClick={() => void handleGoToAgencyChat()}
+          disabled={openingMyRoom}
+          className="emerald-btn rounded-full px-3 py-1.5 text-xs shadow-lg font-extrabold flex items-center gap-2 cursor-pointer disabled:opacity-70"
         >
           <Mic2 className="w-4 h-4" />
-          <span>غرفتي</span>
+          <span>{openingMyRoom ? 'جارٍ التحقق...' : 'غرفتي'}</span>
         </button>
       </div>
+
+      {showMyRoomChoice && myRoomOptions && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
+          onClick={() => setShowMyRoomChoice(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lobby-my-room-choice-title"
+            className="w-full max-w-sm rounded-3xl bg-white border border-slate-200 p-5 space-y-4 shadow-2xl text-slate-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 id="lobby-my-room-choice-title" className="text-lg font-extrabold">
+                  اختر وجهتك
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  لديك غرفة خاصة وغرفة وكالة نشطتان
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMyRoomChoice(false)}
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+                aria-label="إغلاق"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {([
+              ['personalRoom', 'غرفتي الخاصة', Mic2],
+              ['agencyRoom', 'وكالتي', Radio],
+            ] as const).map(([roomKey, label, Icon]) => {
+              const targetRoom = myRoomOptions[roomKey];
+              return (
+                <button
+                  key={roomKey}
+                  type="button"
+                  onClick={() => {
+                    setShowMyRoomChoice(false);
+                    void enterRoom(targetRoom);
+                  }}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-200 p-4 flex items-center gap-3 text-right transition cursor-pointer"
+                >
+                  <span className="w-11 h-11 rounded-xl bg-white flex items-center justify-center text-emerald-600 shadow-sm">
+                    <Icon className="w-5 h-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-extrabold text-slate-900">{label}</span>
+                    <span className="block text-xs text-slate-500 truncate mt-1">
+                      {targetRoom.title}
+                    </span>
+                  </span>
+                  <ChevronDown className="w-4 h-4 -rotate-90 text-slate-400" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Create Personal Room Modal */}
       {showCreate && (
@@ -1486,7 +1538,7 @@ export const LobbyPage: React.FC = () => {
       {agencyToastVisible && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] pointer-events-none">
           <div className="rounded-full bg-slate-900/95 text-white border border-white/15 px-4 py-2.5 text-xs font-extrabold shadow-xl whitespace-nowrap">
-            أنت غير منضم إلى أي وكالة حالياً، انضم لوكالة أولاً
+            {myRoomEntryError || 'تعذّر التحقق من الغرف والوكالة.'}
           </div>
         </div>
       )}

@@ -2378,10 +2378,13 @@ export const RoomPage: React.FC = () => {
             </p>
             <button
               type="button"
-              onClick={() => navigate('/')}
+              onClick={() => {
+                void leaveActiveRoom();
+                navigate('/', { replace: true });
+              }}
               className="gold-btn rounded-2xl px-6 py-2.5 text-sm cursor-pointer"
             >
-              العودة إلى الوكالات
+              العودة إلى الوكالات / الرئيسية
             </button>
           </div>
         )

@@ -14,6 +14,7 @@ import {
   Flame,
   Gem,
   Gift,
+  Lock,
   LogOut,
   MapPin,
   MessageCircleHeart,
@@ -25,6 +26,7 @@ import {
   Store,
   User as UserIcon,
   Users,
+  Unlock,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -49,9 +51,12 @@ import {
   claimHostTaskMilestoneInSupabase,
   getHostTasksOverviewFromSupabase,
 } from '../lib/sadaWalletService';
-import { createRoomInSupabase } from '../lib/sadaRoomsService';
+import {
+  createRoomInSupabase,
+  getUserActiveRoomsInSupabase,
+} from '../lib/sadaRoomsService';
 import { supabase } from '../lib/supabase';
-import type { HostTaskProgress, User } from '../types';
+import type { HostTaskProgress, Room, User } from '../types';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
 import { GenderBadge } from '../components/GenderBadge';
 import {
@@ -130,6 +135,19 @@ export const ProfilePage: React.FC = () => {
   );
   const [creatingMyRoom, setCreatingMyRoom] = useState(false);
   const [createMyRoomError, setCreateMyRoomError] = useState<string | null>(null);
+  const [myRoomOptions, setMyRoomOptions] = useState<{
+    personalRoom: Room;
+    agencyRoom: Room;
+  } | null>(null);
+  const [showMyRoomChoice, setShowMyRoomChoice] = useState(false);
+  const [myRoomCategory, setMyRoomCategory] = useState<Room['category']>('حوار');
+  const [myRoomDescription, setMyRoomDescription] = useState('');
+  const [myRoomSeats, setMyRoomSeats] = useState(12);
+  const [myRoomIsPrivate, setMyRoomIsPrivate] = useState(false);
+  const [myRoomPin, setMyRoomPin] = useState('');
+  const [myRoomMicPermission, setMyRoomMicPermission] = useState<
+    'unknown' | 'granted' | 'denied'
+  >('unknown');
 
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
   const [userVisitors, setUserVisitors] = useState<Record<string, string[]>>({});
@@ -432,46 +450,19 @@ export const ProfilePage: React.FC = () => {
     setOpeningMyRoom(true);
     setFeedback(null);
     try {
-      const agencyQuery = user.agencyId
-        ? supabase
-            .from('sada_agencies')
-            .select('owner_id')
-            .eq('id', user.agencyId)
-            .maybeSingle()
-        : supabase
-            .from('sada_agencies')
-            .select('owner_id')
-            .eq('owner_id', user.id)
-            .maybeSingle();
-      const { data: agency, error: agencyError } = await agencyQuery;
-      if (agencyError) {
-        throw new Error(`تعذّر التحقق من وكالة المستخدم: ${agencyError.message}`);
+      const { personalRoom, agencyRoom } = await getUserActiveRoomsInSupabase(user);
+      if (personalRoom && agencyRoom) {
+        setMyRoomOptions({ personalRoom, agencyRoom });
+        setShowMyRoomChoice(true);
+        return;
       }
-
-      const ownerIds = Array.from(
-        new Set([agency?.owner_id ? String(agency.owner_id) : '', user.id].filter(Boolean))
-      );
-      for (const ownerId of ownerIds) {
-        const { data: room, error: roomError } = await supabase
-          .from('sada_rooms')
-          .select('id')
-          .eq('host_id', ownerId)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (roomError) {
-          throw new Error(`تعذّر البحث عن الغرفة: ${roomError.message}`);
-        }
-        if (room?.id) {
-          navigate(`/room/${room.id}`);
-          return;
-        }
+      const room = personalRoom || agencyRoom;
+      if (room) navigate(`/room/${room.id}`);
+      else {
+        setMyRoomTitle(`${user.displayName} الخاصة`);
+        setCreateMyRoomError(null);
+        setShowCreateMyRoom(true);
       }
-
-      setMyRoomTitle(`${user.displayName} الخاصة`);
-      setCreateMyRoomError(null);
-      setShowCreateMyRoom(true);
     } catch (err) {
       setFeedback({
         type: 'err',
@@ -482,12 +473,33 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
+  const requestMyRoomMicPermission = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMyRoomMicPermission('denied');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setMyRoomMicPermission('granted');
+    } catch {
+      setMyRoomMicPermission('denied');
+    }
+  };
+
   const handleCreateMyRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreatingMyRoom(true);
     setCreateMyRoomError(null);
     try {
-      const room = await createRoomInSupabase(user, { title: myRoomTitle });
+      const room = await createRoomInSupabase(user, {
+        title: myRoomTitle,
+        category: myRoomCategory,
+        description: myRoomDescription,
+        maxSeats: myRoomSeats,
+        isPrivate: myRoomIsPrivate,
+        password: myRoomIsPrivate ? myRoomPin : '',
+      });
       setShowCreateMyRoom(false);
       navigate(`/room/${room.id}`);
     } catch (err) {
@@ -1372,6 +1384,66 @@ export const ProfilePage: React.FC = () => {
         </div>
       )}
 
+      {showMyRoomChoice && myRoomOptions && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
+          onClick={() => setShowMyRoomChoice(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="my-room-choice-title"
+            className="w-full max-w-sm rounded-3xl bg-white border border-slate-200 p-5 space-y-4 shadow-2xl text-slate-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 id="my-room-choice-title" className="text-lg font-extrabold">
+                  اختر وجهتك
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">لديك غرفة خاصة وغرفة وكالة نشطتان</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMyRoomChoice(false)}
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+                aria-label="إغلاق"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {([
+              ['personalRoom', 'غرفتي الخاصة', Mic2],
+              ['agencyRoom', 'وكالتي', Building2],
+            ] as const).map(([roomKey, label, Icon]) => {
+              const targetRoom = myRoomOptions[roomKey];
+              return (
+                <button
+                  key={roomKey}
+                  type="button"
+                  onClick={() => {
+                    setShowMyRoomChoice(false);
+                    navigate(`/room/${targetRoom.id}`);
+                  }}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-200 p-4 flex items-center gap-3 text-right transition cursor-pointer"
+                >
+                  <span className="w-11 h-11 rounded-xl bg-white flex items-center justify-center text-emerald-600 shadow-sm">
+                    <Icon className="w-5 h-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-extrabold text-slate-900">{label}</span>
+                    <span className="block text-xs text-slate-500 truncate mt-1">
+                      {targetRoom.title}
+                    </span>
+                  </span>
+                  <ChevronLeft className="w-4 h-4 text-slate-400" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {showCreateMyRoom && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
@@ -1381,12 +1453,12 @@ export const ProfilePage: React.FC = () => {
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-my-room-title"
-            className="w-full max-w-md rounded-3xl bg-white border border-slate-200 p-6 space-y-4 shadow-2xl text-slate-900"
+            className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-white border border-slate-200 p-6 space-y-4 shadow-2xl text-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-3">
               <h3 id="create-my-room-title" className="text-lg font-extrabold">
-                إنشاء غرفتي / وكالتي الخاصة
+                إنشاء غرفتي الخاصة
               </h3>
               <button
                 type="button"
@@ -1416,12 +1488,114 @@ export const ProfilePage: React.FC = () => {
                   autoFocus
                 />
               </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs font-bold text-slate-700">
+                  التصنيف
+                  <select
+                    value={myRoomCategory}
+                    onChange={(event) =>
+                      setMyRoomCategory(event.target.value as Room['category'])
+                    }
+                    className="mt-1 w-full rounded-xl bg-slate-50 border border-slate-200 px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="حوار">حوار</option>
+                    <option value="مسابقات">مسابقات</option>
+                    <option value="شعر وأدب">شعر وأدب</option>
+                    <option value="طرب">طرب</option>
+                  </select>
+                </label>
+                <label className="block text-xs font-bold text-slate-700">
+                  عدد مقاعد المايك
+                  <select
+                    value={myRoomSeats}
+                    onChange={(event) => setMyRoomSeats(Number(event.target.value))}
+                    className="mt-1 w-full rounded-xl bg-slate-50 border border-slate-200 px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value={6}>6 مايكات</option>
+                    <option value={12}>12 مايك</option>
+                    <option value={18}>18 مايك</option>
+                    <option value={24}>24 مايك</option>
+                  </select>
+                </label>
+              </div>
+              <label className="block text-xs font-bold text-slate-700">
+                وصف مختصر
+                <textarea
+                  rows={2}
+                  value={myRoomDescription}
+                  onChange={(event) => setMyRoomDescription(event.target.value)}
+                  placeholder="اكتب نبذة ترحيبية للضيوف..."
+                  className="mt-1 w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                />
+              </label>
+              <div className="space-y-2">
+                <span className="block text-xs font-bold text-slate-700">خصوصية الغرفة</span>
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setMyRoomIsPrivate(false)}
+                    className={`min-h-[38px] rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                      !myRoomIsPrivate
+                        ? 'bg-white text-emerald-700 shadow-sm'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>غرفة عامة</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMyRoomIsPrivate(true)}
+                    className={`min-h-[38px] rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                      myRoomIsPrivate
+                        ? 'bg-white text-emerald-700 shadow-sm'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>غرفة خاصة برمز PIN</span>
+                  </button>
+                </div>
+              </div>
+              {myRoomIsPrivate && (
+                <label className="block text-xs font-bold text-slate-700">
+                  الرمز السري للغرفة (PIN)
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    required
+                    minLength={3}
+                    maxLength={8}
+                    dir="ltr"
+                    value={myRoomPin}
+                    onChange={(event) => setMyRoomPin(event.target.value)}
+                    placeholder="4820"
+                    className="mt-1 w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 text-left font-mono-num focus:outline-none focus:border-emerald-500"
+                  />
+                </label>
+              )}
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5">
+                <span className="text-xs text-slate-600">
+                  {myRoomMicPermission === 'granted'
+                    ? 'إذن المايكروفون مفعّل وجاهز'
+                    : myRoomMicPermission === 'denied'
+                    ? 'تعذّر الوصول للمايكروفون من المتصفح'
+                    : 'تفعيل إذن المايكروفون قبل البث'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void requestMyRoomMicPermission()}
+                  className="text-xs font-extrabold text-emerald-600 hover:underline whitespace-nowrap cursor-pointer"
+                >
+                  {myRoomMicPermission === 'granted' ? 'مُفعّل ✓' : 'تفعيل المايك'}
+                </button>
+              </div>
               <button
                 type="submit"
                 disabled={creatingMyRoom}
                 className="emerald-btn w-full min-h-[46px] rounded-2xl py-2.5 text-sm cursor-pointer disabled:opacity-60"
               >
-                {creatingMyRoom ? 'جارٍ إنشاء الغرفة...' : 'إنشاء الغرفة والدخول إليها'}
+                {creatingMyRoom ? 'جارٍ فتح الغرفة...' : 'فتح غرفتي الآن'}
               </button>
             </form>
           </div>
