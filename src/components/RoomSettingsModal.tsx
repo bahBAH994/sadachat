@@ -32,6 +32,7 @@ interface RoomSettingsModalProps {
   extras: RoomExtrasConfig;
   presenceMembers: RoomPresenceMember[];
   isOwnerOrAdmin: boolean;
+  isAgency?: boolean;
   isAgencyOwner?: boolean;
   isAgencyLockManager?: boolean;
   canClearRoomChat?: boolean;
@@ -44,6 +45,7 @@ interface RoomSettingsModalProps {
     maxSeats?: number;
     hostAvatar?: string;
     coverImage?: string;
+    backgroundImage?: string;
     description?: string;
     title?: string;
     requireMicPermission?: boolean;
@@ -57,6 +59,7 @@ interface RoomSettingsModalProps {
       | { type: 'clear_all' }
       | { type: 'mute_user'; targetUserId: string; isMuted: boolean }
       | { type: 'kick_seat'; targetUserId: string }
+      | { type: 'temporary_kick_room'; targetUserId: string; targetName?: string }
       | { type: 'kick_room'; targetUserId: string; targetName?: string }
       | { type: 'unban_room'; targetUserId: string }
       | { type: 'toggle_deputy'; targetUserId: string; targetName?: string }
@@ -86,6 +89,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   extras,
   presenceMembers,
   isOwnerOrAdmin,
+  isAgency = false,
   isAgencyOwner = false,
   isAgencyLockManager = false,
   canClearRoomChat = false,
@@ -100,6 +104,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   onStartAgencyContest,
   onClose,
 }) => {
+  const placeName = isAgency ? 'الوكالة' : 'الغرفة';
   const canSeeLogs = Boolean(isAgencyOwner);
   const [tab, setTab] = useState<'agency' | 'members' | 'logs' | 'contests'>(
     initialTab === 'logs' && !canSeeLogs ? 'agency' : initialTab
@@ -116,8 +121,10 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   const [agencyLockPassword, setAgencyLockPassword] = useState(
     extras.agencyLockPassword || ''
   );
-  const [avatarUrl, setAvatarUrl] = useState(room.hostAvatar);
-  const [coverImage, setCoverImage] = useState(room.coverImage || 'dragon_dark');
+  const [coverUrl, setCoverUrl] = useState(room.coverImage || room.hostAvatar);
+  const [backgroundImage, setBackgroundImage] = useState(
+    room.backgroundImage || 'dragon_dark'
+  );
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [agencyContestTitle, setAgencyContestTitle] = useState('مسابقة الوكالة الثقافية');
@@ -192,16 +199,20 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
     try {
       const patch: {
         maxSeats?: number;
-        hostAvatar: string;
-        coverImage: string;
+        coverImage?: string;
+        backgroundImage?: string;
         description: string;
         title: string;
       } = {
         title: titleInput,
         description: announcement,
-        hostAvatar: avatarUrl,
-        coverImage,
       };
+      if (coverUrl !== (room.coverImage || room.hostAvatar)) {
+        patch.coverImage = coverUrl;
+      }
+      if (backgroundImage !== (room.backgroundImage || 'dragon_dark')) {
+        patch.backgroundImage = backgroundImage;
+      }
       if (SEAT_OPTIONS.includes(seatCount)) patch.maxSeats = seatCount;
       await onUpdateSettings(patch);
       setFeedback('تم حفظ إعدادات الوكالة وتحديثها فوراً للجميع!');
@@ -252,9 +263,9 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
         agencyLockEnabled: enabled,
       });
       setAgencyLockEnabled(enabled);
-      setFeedback(enabled ? 'تم تفعيل قفل الوكالة.' : 'تم إيقاف قفل الوكالة.');
+      setFeedback(enabled ? `تم تفعيل قفل ${placeName}.` : `تم إيقاف قفل ${placeName}.`);
     } catch (err) {
-      setFeedback(err instanceof Error ? err.message : 'تعذّر تحديث قفل الوكالة.');
+      setFeedback(err instanceof Error ? err.message : `تعذّر تحديث قفل ${placeName}.`);
     } finally {
       setSaving(false);
     }
@@ -273,7 +284,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
         agencyLockPassword,
       });
       setAgencyLockEnabled(true);
-      setFeedback('تم حفظ الرمز السري وتفعيل قفل الوكالة.');
+      setFeedback(`تم حفظ الرمز السري وتفعيل قفل ${placeName}.`);
     } catch (err) {
       setFeedback(err instanceof Error ? err.message : 'تعذّر حفظ الرمز السري.');
     } finally {
@@ -413,7 +424,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               }`}
             >
               <Trophy className="w-3.5 h-3.5" />
-              مسابقات الوكالة
+              مسابقات {placeName}
             </button>
           )}
           {canSeeLogs && (
@@ -742,7 +753,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-extrabold text-white">
-                        قفل الوكالة برمز سري
+                        قفل {placeName} برمز سري
                       </p>
                       <p className="text-[10px] text-slate-400">
                         لا يدخل الأعضاء إلا بعد إدخال الرمز الصحيح
@@ -822,7 +833,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-[#F3D37A] flex items-center gap-1.5">
                   <ImagePlus className="w-3.5 h-3.5" />
-                  <span>تغيير صورة الوكالة</span>
+                  <span>تغيير صورة شعار/غلاف الوكالة</span>
                 </label>
                 <label className="inline-flex items-center gap-1.5 rounded-lg bg-[#D4AF37]/20 border border-[#D4AF37]/50 px-2.5 py-1 text-[11px] font-bold text-[#FCE9A6] cursor-pointer hover:bg-[#D4AF37]/30">
                   <Upload className="w-3 h-3" />
@@ -833,14 +844,14 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      if (f) readImageFile(f, (url) => setAvatarUrl(url));
+                      if (f) readImageFile(f, (url) => setCoverUrl(url));
                     }}
                   />
                 </label>
               </div>
               <div className="flex items-center gap-2.5 overflow-x-auto touch-pan-x no-scrollbar pb-1">
                 <img
-                  src={resolveAsset(avatarUrl)}
+                  src={resolveAsset(coverUrl)}
                   alt="معاينة"
                   loading="lazy"
                   decoding="async"
@@ -850,9 +861,9 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                   <button
                     key={ch.id}
                     type="button"
-                    onClick={() => setAvatarUrl(ch.id)}
+                    onClick={() => setCoverUrl(ch.id)}
                     className={`w-11 h-11 rounded-xl overflow-hidden border-2 shrink-0 cursor-pointer ${
-                      avatarUrl === ch.id ? 'border-emerald-400' : 'border-white/15'
+                      coverUrl === ch.id ? 'border-emerald-400' : 'border-white/15'
                     }`}
                   >
                     <img src={ch.src} alt={ch.label} loading="lazy" decoding="async" className="w-full h-full object-cover" />
@@ -866,7 +877,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-[#F3D37A] flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>تغيير خلفية الغرفة</span>
+                  <span>خلفية الغرفة الداخلية</span>
                 </label>
                 <label className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-1 text-[11px] font-bold text-emerald-200 cursor-pointer hover:bg-emerald-500/30">
                   <Upload className="w-3 h-3" />
@@ -877,7 +888,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      if (f) readImageFile(f, (url) => setCoverImage(url));
+                      if (f) readImageFile(f, (url) => setBackgroundImage(url));
                     }}
                   />
                 </label>
@@ -899,10 +910,10 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                           );
                           return;
                         }
-                        setCoverImage(bg.id);
+                        setBackgroundImage(bg.id);
                       }}
                       className={`rounded-xl p-2.5 text-right border transition cursor-pointer relative ${
-                        coverImage === bg.id
+                        backgroundImage === bg.id
                           ? 'border-[#FCE9A6] ring-1 ring-[#FCE9A6]/60'
                           : locked
                           ? 'border-white/10 opacity-70'
@@ -968,7 +979,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
             <div className="space-y-2">
               <div className="flex items-center gap-1.5 text-xs font-bold text-[#F3D37A]">
                 <Users className="w-3.5 h-3.5" />
-                <span>الأعضاء المتواجدون داخل الوكالة</span>
+                <span>الأعضاء المتواجدون داخل {placeName}</span>
               </div>
               {memberList.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-4">
@@ -980,6 +991,9 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                     const isHost = m.userId === room.hostId;
                     const isDeputy = extras.deputyIds.includes(m.userId);
                     const isMod = extras.moderatorIds.includes(m.userId);
+                    const isMuted = Boolean(
+                      m.isMuted || extras.mutedUserIds.includes(m.userId)
+                    );
                     return (
                       <div
                         key={m.userId}
@@ -1018,7 +1032,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
 
                         {!isHost && (
                           <div className="flex flex-wrap items-center gap-1 shrink-0">
-                            {m.onSeat && (
+                            {(m.onSeat || isMuted) && (
                               <>
                                 <button
                                   type="button"
@@ -1026,26 +1040,28 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                                     onAdminAction({
                                       type: 'mute_user',
                                       targetUserId: m.userId,
-                                      isMuted: !m.isMuted,
+                                      isMuted: !isMuted,
                                     })
                                   }
                                   className="px-2 py-1 rounded-lg bg-white/10 hover:bg-amber-500/30 text-[10px] font-bold text-[#FCE9A6] cursor-pointer"
-                                  title={m.isMuted ? 'فك الكتم' : 'كتم'}
+                                  title={isMuted ? 'فك الكتم' : 'كتم'}
                                 >
-                                  {m.isMuted ? 'فك كتم' : 'كتم'}
+                                  {isMuted ? 'فك كتم' : 'كتم'}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    onAdminAction({
-                                      type: 'kick_seat',
-                                      targetUserId: m.userId,
-                                    })
-                                  }
-                                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-rose-500/30 text-[10px] font-bold text-slate-200 cursor-pointer"
-                                >
-                                  إنزال
-                                </button>
+                                {m.onSeat && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onAdminAction({
+                                        type: 'kick_seat',
+                                        targetUserId: m.userId,
+                                      })
+                                    }
+                                    className="px-2 py-1 rounded-lg bg-white/10 hover:bg-rose-500/30 text-[10px] font-bold text-slate-200 cursor-pointer"
+                                  >
+                                    إنزال
+                                  </button>
+                                )}
                               </>
                             )}
                             {isOwnerOrAdmin && (
@@ -1090,16 +1106,32 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                               type="button"
                               onClick={() =>
                                 onAdminAction({
-                                  type: 'kick_room',
+                                  type: 'temporary_kick_room',
                                   targetUserId: m.userId,
                                   targetName: m.displayName,
                                 })
                               }
                               className="px-2 py-1 rounded-lg bg-rose-600/30 hover:bg-rose-600/50 text-[10px] font-bold text-rose-200 cursor-pointer flex items-center gap-0.5"
                             >
-                              <Ban className="w-3 h-3" />
-                              <span>طرد</span>
+                              <UserMinus className="w-3 h-3" />
+                              <span>طرد 3 أيام</span>
                             </button>
+                            {isAgencyOwner && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onAdminAction({
+                                    type: 'kick_room',
+                                    targetUserId: m.userId,
+                                    targetName: m.displayName,
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900/70 text-[10px] font-bold text-rose-200 cursor-pointer flex items-center gap-0.5"
+                              >
+                                <Ban className="w-3 h-3" />
+                                <span>حظر دائم</span>
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1109,7 +1141,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               )}
             </div>
 
-            {extras.kickedUserIds.length > 0 && (
+            {isAgencyOwner && extras.kickedUserIds.length > 0 && (
               <div className="pt-2 border-t border-white/10 space-y-1.5">
                 <p className="text-[11px] font-bold text-rose-300">
                   المطرودون ({extras.kickedUserIds.length})

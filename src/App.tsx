@@ -18,7 +18,11 @@ import {
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ActiveRoomProvider, useActiveRoom } from './context/ActiveRoomContext';
 import { MiniProfileProvider } from './context/MiniProfileContext';
-import { safeClearSessionStorage, safeRemoveItem } from './lib/safeStorage';
+import {
+  safeClearKeysMatching,
+  safeClearSessionStorage,
+  safeRemoveItem,
+} from './lib/safeStorage';
 import { isSuperAdminUser } from './lib/sadaCatalog';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
@@ -44,6 +48,25 @@ import { GamesCenterPage } from './pages/GamesCenterPage';
 import { AdminPage } from './pages/AdminPage';
 import { SvipPage } from './pages/SvipPage';
 import { GrandCompetitionPage } from './pages/GrandCompetitionPage';
+
+const clearPersistedRoomAgencyState = () => {
+  const isRoomOrAgencyKey = (key: string) => /room|agency/i.test(key);
+  safeClearKeysMatching(isRoomOrAgencyKey);
+  if (typeof window === 'undefined') return;
+  try {
+    const storage = window.sessionStorage;
+    const keysToRemove: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key && isRoomOrAgencyKey(key)) keysToRemove.push(key);
+    }
+    keysToRemove.forEach((key) => storage.removeItem(key));
+  } catch (error) {
+    console.error('Unable to clear persisted room/agency session state:', error);
+  }
+};
+
+clearPersistedRoomAgencyState();
 
 class AppErrorBoundary extends Component<
   { children: React.ReactNode },
@@ -189,11 +212,16 @@ const AuthenticatedAppShell: React.FC = () => {
     leaveActiveRoom,
   } = useActiveRoom();
   const location = useLocation();
+  const navigate = useNavigate();
+  const redirectStartupRouteRef = useRef(true);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const currentPathRef = useRef(location.pathname);
   currentPathRef.current = location.pathname;
   const isPrivateChatOpen =
     location.pathname === '/messages' && Boolean(new URLSearchParams(location.search).get('to'));
+  const isFullScreenRoom = Boolean((activeRoomId || roomLoading) && !isRoomMinimized);
+  const isDirectHomeReturnPage =
+    location.pathname === '/grand-competition' || location.pathname === '/agency';
   const minimizeRoomRef = useRef(minimizeRoom);
   const leaveActiveRoomRef = useRef(leaveActiveRoom);
   const setExitModalOpenRef = useRef(setExitModalOpen);
@@ -222,7 +250,12 @@ const AuthenticatedAppShell: React.FC = () => {
 
   useEffect(() => {
     const handleBackNavigation = () => {
-      if (currentPathRef.current !== '/') return;
+      if (isFullScreenRoom) return;
+      if (currentPathRef.current !== '/') {
+        setShowExitConfirm(false);
+        navigate('/', { replace: true });
+        return;
+      }
       setShowExitConfirm(true);
       window.history.pushState(
         { ...(window.history.state || {}), sadaHomeBackGuard: true },
@@ -232,7 +265,48 @@ const AuthenticatedAppShell: React.FC = () => {
     };
     window.addEventListener('popstate', handleBackNavigation);
     return () => window.removeEventListener('popstate', handleBackNavigation);
-  }, []);
+  }, [isFullScreenRoom, navigate]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let active = true;
+    let listener: { remove: () => Promise<void> } | undefined;
+    void CapacitorApp.addListener('backButton', () => {
+      if (isFullScreenRoom) return;
+      if (currentPathRef.current !== '/') {
+        setShowExitConfirm(false);
+        navigate('/', { replace: true });
+        return;
+      }
+      setShowExitConfirm(true);
+    })
+      .then((handle) => {
+        if (active) {
+          listener = handle;
+        } else {
+          void handle.remove().catch((error: unknown) => {
+            console.error('Unable to remove the page back button:', error);
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('Unable to register the page back button:', error);
+      });
+
+    return () => {
+      active = false;
+      if (listener) {
+        void listener.remove().catch((error: unknown) => {
+          console.error('Unable to remove the page back button:', error);
+        });
+      }
+    };
+  }, [isFullScreenRoom, navigate]);
+
+  useEffect(() => {
+    if (location.pathname !== '/') setShowExitConfirm(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (location.pathname === '/') {
@@ -265,6 +339,11 @@ const AuthenticatedAppShell: React.FC = () => {
     );
   }
 
+  if (user && redirectStartupRouteRef.current) {
+    redirectStartupRouteRef.current = false;
+    return <Navigate to="/" replace />;
+  }
+
   if (location.pathname === '/login') {
     return (
       <div className="flex h-[100dvh] w-full flex-col overflow-hidden">
@@ -279,13 +358,15 @@ const AuthenticatedAppShell: React.FC = () => {
     return <Navigate to="/login" replace />;
   }
 
-  const isFullScreenRoom = Boolean((activeRoomId || roomLoading) && !isRoomMinimized);
   const isFullScreenSvip = location.pathname === '/svip';
+  const isPageWithHomeBack = isDirectHomeReturnPage;
   const shouldKeepRoomMounted = Boolean(activeRoomId || room || roomLoading);
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden">
-      {!isFullScreenRoom && !isFullScreenSvip && !isPrivateChatOpen && <TopBar />}
+      {!isFullScreenRoom && !isFullScreenSvip && !isPrivateChatOpen && !isPageWithHomeBack && (
+        <TopBar />
+      )}
       <main
         tabIndex={0}
         className={

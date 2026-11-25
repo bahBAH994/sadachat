@@ -54,7 +54,7 @@ import { GenderBadge } from '../components/GenderBadge';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { Fluent3DAsset } from '../components/Fluent3DAsset';
 
-type InboxFilter = 'كامل' | 'غير مقروء' | 'وجوه مألوفة' | 'المجموعات';
+type InboxFilter = 'كامل' | 'غير مقروء' | 'المجموعات';
 
 const QUANTITIES = [1, 9, 25, 50, 100] as const;
 const COMBO_DURATION_MS = 3000;
@@ -149,9 +149,10 @@ interface PmComboSession {
 const PrivateChatMessageItem = memo<{
   message: PrivateMessage;
   isMine: boolean;
+  isRecipientOnline: boolean;
   isFemaleRecipient: boolean;
   onImageClick: (image: string) => void;
-}>(({ message: m, isMine, isFemaleRecipient, onImageClick }) => {
+}>(({ message: m, isMine, isRecipientOnline, isFemaleRecipient, onImageClick }) => {
   const isImage = m.text.startsWith('data:image/');
   const displayText = isImage
     ? m.text
@@ -209,12 +210,22 @@ const PrivateChatMessageItem = memo<{
         <span
           className={`mr-1 mt-0.5 ${
             m.isRead
-              ? 'text-sky-300 drop-shadow-[0_0_5px_rgba(56,189,248,0.8)]'
-              : 'text-white/70 drop-shadow-[0_1px_1px_rgba(15,23,42,0.7)]'
+              ? 'text-[#38bdf8] drop-shadow-[0_0_5px_rgba(56,189,248,0.8)]'
+              : 'text-slate-400'
           }`}
-          aria-label={m.isRead ? 'تمت قراءة الرسالة' : 'تم إرسال الرسالة'}
+          aria-label={
+            m.isRead
+              ? 'تمت قراءة الرسالة'
+              : isRecipientOnline
+              ? 'تم تسليم الرسالة والمستلم متصل'
+              : 'تم إرسال الرسالة والمستلم غير متصل'
+          }
         >
-          <CheckCheck className="h-3.5 w-3.5" />
+          {isRecipientOnline || m.isRead ? (
+            <CheckCheck className="h-3.5 w-3.5" />
+          ) : (
+            <Check className="h-3.5 w-3.5" />
+          )}
         </span>
       )}
     </div>
@@ -376,7 +387,47 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     try {
       const data = await getPmOverviewFromSupabase(currentUser);
       const currentBlockedPeerIds = await getBlockedUserIds(currentUser.id);
-      setConversations(data.conversations);
+      setConversations((current) => {
+        const currentByPeer = new Map<string, PrivateConversation>();
+        for (const conversation of current) {
+          currentByPeer.set(conversation.peer.id, conversation);
+        }
+        const nextPeerIds = new Set<string>();
+        const next = data.conversations.map((conversation) => {
+          nextPeerIds.add(conversation.peer.id);
+          const pendingMessages =
+            currentByPeer
+              .get(conversation.peer.id)
+              ?.messages.filter((message) => message.id.startsWith('pm_pending')) || [];
+          const messagesById = new Map<string, PrivateMessage>();
+          for (const message of [...conversation.messages, ...pendingMessages]) {
+            messagesById.set(message.id, message);
+          }
+          const messages = Array.from(messagesById.values()).sort(
+            (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)
+          );
+          return {
+            ...conversation,
+            messages,
+            lastMessage: messages[messages.length - 1] || null,
+          };
+        });
+
+        for (const conversation of current) {
+          if (nextPeerIds.has(conversation.peer.id)) continue;
+          const pendingMessages = conversation.messages.filter((message) =>
+            message.id.startsWith('pm_pending')
+          );
+          if (pendingMessages.length) {
+            next.push({
+              ...conversation,
+              messages: pendingMessages,
+              lastMessage: pendingMessages[pendingMessages.length - 1],
+            });
+          }
+        }
+        return next;
+      });
       setRecipients(data.recipients);
       setBlockedPeerIds(currentBlockedPeerIds);
       setGifts(data.gifts);
@@ -493,11 +544,14 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const filteredConversations = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return conversations.filter((c) => {
+      const isGroupConversation = 'type' in c && c.type === 'group';
+      if (inboxFilter === 'المجموعات' ? !isGroupConversation : isGroupConversation) {
+        return false;
+      }
       if (
         inboxFilter === 'غير مقروء' &&
         !c.messages.some((m) => m.recipientId === user?.id && !m.isRead)
       ) return false;
-      if (inboxFilter === 'وجوه مألوفة' && c.messages.length < 2) return false;
       if (q) {
         const numId = formatShortNumericId(c.peer.id).toLowerCase();
         if (
@@ -619,36 +673,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           }
         : null;
 
-    if (optimisticMessage) {
-      setConversations((current) => {
-        const existingConversation = current.find(
-          (conversation) => conversation.peer.id === selectedPeerId
-        );
-        if (existingConversation) {
-          return current.map((conversation) =>
-            conversation.peer.id === selectedPeerId
-              ? {
-                  ...conversation,
-                  messages: [...conversation.messages, optimisticMessage],
-                  lastMessage: optimisticMessage,
-                }
-              : conversation
-          );
-        }
-        return [
-          {
-            id: conversationId,
-            peer,
-            messages: [optimisticMessage],
-            pendingDiamondsForMe: 0,
-            lastMessage: optimisticMessage,
-          },
-          ...current,
-        ];
-      });
-    }
-    if (!giftId && !messageText) setText('');
-
     setSending(true);
     setError(null);
     try {
@@ -656,6 +680,35 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       if (recipientBlockedIds.includes(user.id)) {
         throw new Error('لا يمكنك إرسال رسائل إلى هذا المستخدم لأنه قام بحظرك.');
       }
+      if (optimisticMessage && peer) {
+        setConversations((current) => {
+          const existingConversation = current.find(
+            (conversation) => conversation.peer.id === selectedPeerId
+          );
+          if (existingConversation) {
+            return current.map((conversation) =>
+              conversation.peer.id === selectedPeerId
+                ? {
+                    ...conversation,
+                    messages: [...conversation.messages, optimisticMessage],
+                    lastMessage: optimisticMessage,
+                  }
+                : conversation
+            );
+          }
+          return [
+            {
+              id: conversationId,
+              peer,
+              messages: [optimisticMessage],
+              pendingDiamondsForMe: 0,
+              lastMessage: optimisticMessage,
+            },
+            ...current,
+          ];
+        });
+      }
+      if (!giftId && !messageText) setText('');
       const res = await sendPrivateMessageInSupabase(user, {
         recipientId: selectedPeerId,
         text: giftId ? '' : outgoingText,
@@ -666,7 +719,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
       const { data: savedMessage, error: saveError } = await supabase
         .from('sada_private_messages')
-        .select('id, conversation_id, sender_id, recipient_id, text')
+        .select('id, conversation_id, sender_id, recipient_id, text, is_read')
         .eq('id', res.message.id)
         .maybeSingle();
       if (saveError) throw new Error(saveError.message);
@@ -675,7 +728,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         savedMessage.conversation_id !== res.message.conversationId ||
         savedMessage.sender_id !== user.id ||
         savedMessage.recipient_id !== selectedPeerId ||
-        savedMessage.text !== res.message.text
+        savedMessage.text !== res.message.text ||
+        typeof savedMessage.is_read !== 'boolean'
       ) {
         throw new Error('تعذّر تأكيد حفظ الرسالة في المحادثة.');
       }
@@ -683,20 +737,26 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       updateLocalUser(res.user);
       if (optimisticMessage) {
         setConversations((current) =>
-          current.map((conversation) =>
-            conversation.peer.id === selectedPeerId
-              ? {
-                  ...conversation,
-                  messages: conversation.messages.map((message) =>
-                    message.id === optimisticMessageId ? res.message : message
-                  ),
-                  lastMessage:
-                    conversation.lastMessage?.id === optimisticMessageId
-                      ? res.message
-                      : conversation.lastMessage,
-                }
-              : conversation
-          )
+          current.map((conversation) => {
+            if (conversation.peer.id !== selectedPeerId) return conversation;
+            const messages = conversation.messages.filter(
+              (message) => message.id !== res.message.id
+            );
+            const pendingIndex = messages.findIndex(
+              (message) => message.id === optimisticMessageId
+            );
+            if (pendingIndex >= 0) {
+              messages[pendingIndex] = res.message;
+            } else {
+              messages.push(res.message);
+            }
+            messages.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+            return {
+              ...conversation,
+              messages,
+              lastMessage: messages[messages.length - 1] || null,
+            };
+          })
         );
       }
       if (giftId) {
@@ -741,24 +801,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         setTimeout(() => setCelebration(null), 4200);
       }
     } catch (err) {
-      if (optimisticMessageId) {
-        setConversations((current) =>
-          current.flatMap((conversation) => {
-            if (conversation.peer.id !== selectedPeerId) return [conversation];
-            const messages = conversation.messages.filter(
-              (message) => message.id !== optimisticMessageId
-            );
-            if (!messages.length && !activeConversation) return [];
-            return [
-              {
-                ...conversation,
-                messages,
-                lastMessage: messages[messages.length - 1] || null,
-              },
-            ];
-          })
-        );
-      }
       setError(err instanceof Error ? err.message : 'تعذّر إرسال الرسالة الخاصة.');
       setComboSession(null);
     } finally {
@@ -1057,7 +1099,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
             {/* Filter Chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x no-scrollbar">
-              {(['كامل', 'غير مقروء', 'وجوه مألوفة', 'المجموعات'] as InboxFilter[]).map(
+              {(['كامل', 'غير مقروء', 'المجموعات'] as InboxFilter[]).map(
                 (tab) => (
                   <button
                     key={tab}
@@ -1324,6 +1366,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                         key={m.id}
                         message={m}
                         isMine={m.senderId === user?.id}
+                        isRecipientOnline={Boolean(
+                          activePeer && onlineUserIds.includes(activePeer.id)
+                        )}
                         isFemaleRecipient={user?.gender === 'female'}
                         onImageClick={setZoomedImage}
                       />

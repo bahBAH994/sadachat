@@ -49,6 +49,7 @@ export function createEmptyRoomExtras(): RoomExtrasConfig {
     agencyLockPassword: '',
     kickedUserIds: [],
     kickedUserNames: {},
+    temporaryKickExpiresAt: {},
     mutedUserIds: [],
     gifters: {},
     players: {},
@@ -59,8 +60,11 @@ export function createEmptyRoomExtras(): RoomExtrasConfig {
   };
 }
 
-export async function getRoomExtrasFromSupabase(roomId: string): Promise<RoomExtrasConfig> {
-  const state = await getPlatformState();
+export async function getRoomExtrasFromSupabase(
+  roomId: string,
+  options?: { forceRefresh?: boolean }
+): Promise<RoomExtrasConfig> {
+  const state = await getPlatformState(options);
   const raw = state.settings.roomConfigs?.[roomId];
   const base = createEmptyRoomExtras();
   if (!raw) return base;
@@ -76,6 +80,10 @@ export async function getRoomExtrasFromSupabase(roomId: string): Promise<RoomExt
     kickedUserIds: Array.isArray(raw.kickedUserIds) ? raw.kickedUserIds : [],
     kickedUserNames:
       raw.kickedUserNames && typeof raw.kickedUserNames === 'object' ? raw.kickedUserNames : {},
+    temporaryKickExpiresAt:
+      raw.temporaryKickExpiresAt && typeof raw.temporaryKickExpiresAt === 'object'
+        ? raw.temporaryKickExpiresAt
+        : {},
     mutedUserIds: Array.isArray(raw.mutedUserIds) ? raw.mutedUserIds : [],
     gifters: raw.gifters && typeof raw.gifters === 'object' ? raw.gifters : {},
     players: raw.players && typeof raw.players === 'object' ? raw.players : {},
@@ -310,6 +318,9 @@ export async function createRoomInSupabase(
     host_id: user.id,
     host_name: user.displayName,
     host_avatar: user.avatarUrl,
+    avatar_url: user.avatarUrl,
+    cover_url: user.avatarUrl,
+    background_url: 'dragon_dark',
     cover_image: 'dragon_dark',
     is_private: Boolean(payload.isPrivate),
     password: cleanPin || null,
@@ -411,6 +422,11 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
       rawExtras?.kickedUserNames && typeof rawExtras.kickedUserNames === 'object'
         ? rawExtras.kickedUserNames
         : {},
+    temporaryKickExpiresAt:
+      rawExtras?.temporaryKickExpiresAt &&
+      typeof rawExtras.temporaryKickExpiresAt === 'object'
+        ? rawExtras.temporaryKickExpiresAt
+        : {},
     mutedUserIds: Array.isArray(rawExtras?.mutedUserIds) ? rawExtras!.mutedUserIds : [],
     gifters: rawExtras?.gifters && typeof rawExtras.gifters === 'object' ? rawExtras.gifters : {},
     players: rawExtras?.players && typeof rawExtras.players === 'object' ? rawExtras.players : {},
@@ -451,7 +467,7 @@ export async function isRoomOrAgencyOwnerFromData(
   if (!hostUser?.agency_id) return false;
   const { data: agency, error: agencyError } = await supabase
     .from('sada_agencies')
-    .select('owner_id')
+    .select('owner_id, host_ids')
     .eq('id', String(hostUser.agency_id))
     .maybeSingle();
   if (agencyError) throw new Error(`تعذّر التحقق من مالك الوكالة: ${agencyError.message}`);
@@ -513,7 +529,7 @@ export async function joinRoomInSupabase(
 
   const [{ data: roomRow }, extras] = await Promise.all([
     supabase.from('sada_rooms').select('id, is_active, host_id, listeners_count').eq('id', roomId).maybeSingle(),
-    getRoomExtrasFromSupabase(roomId),
+    getRoomExtrasFromSupabase(roomId, { forceRefresh: true }),
   ]);
 
   if (!roomRow || !roomRow.is_active) throw new Error('الغرفة غير موجودة أو تم إغلاقها.');
@@ -523,7 +539,17 @@ export async function joinRoomInSupabase(
     String(roomRow.host_id) !== user.id &&
     extras.kickedUserIds.includes(user.id)
   ) {
-    throw new Error('تم استبعادك من دخول هذه الوكالة بقرار من إدارة الوكالة.');
+    throw new Error('تم حظرك من دخول هذه الغرفة بقرار من الوكيل.');
+  }
+
+  if (!user.is_admin && String(roomRow.host_id) !== user.id) {
+    const expiresAt = extras.temporaryKickExpiresAt?.[user.id];
+    if (expiresAt) {
+      const expiry = new Date(expiresAt).getTime();
+      if (Number.isFinite(expiry) && expiry > Date.now()) {
+        throw new Error('تم طردك من هذه الوكالة لمدة 3 أيام');
+      }
+    }
   }
 
   const nextListeners = Number(roomRow.listeners_count || 0) + 1;
@@ -751,6 +777,10 @@ export async function updateRoomSeatInSupabase(
   let nextSeats = seats.map((s) => ({ ...s }));
 
   if (action.type === 'take') {
+    const extras = await getRoomExtrasFromSupabase(roomId, { forceRefresh: true });
+    if (extras.mutedUserIds.includes(user.id)) {
+      throw new Error('تم كتمك في هذه الغرفة ولا يمكنك فتح المايك حتى يفك الوكيل كتمك.');
+    }
     const target = nextSeats.find((s) => s.seatIndex === action.seatIndex);
     if (!target || target.isLocked || target.userId) return nextSeats;
     const vipKey = getUserVipTierInfo(user).key;
@@ -800,6 +830,10 @@ export async function updateRoomSeatInSupabase(
         : s
     );
   } else if (action.type === 'mute') {
+    const extras = await getRoomExtrasFromSupabase(roomId, { forceRefresh: true });
+    if (!action.isMuted && extras.mutedUserIds.includes(user.id)) {
+      throw new Error('لا يمكنك فك الكتم عن نفسك؛ اطلب من الوكيل فك كتمك.');
+    }
     nextSeats = nextSeats.map((s) =>
       s.userId === user.id
         ? {
@@ -857,7 +891,11 @@ export async function updateRoomSeatInSupabase(
     );
   }
 
-  await supabase.from('sada_rooms').update({ seats: nextSeats }).eq('id', roomId);
+  const { error: seatUpdateError } = await supabase
+    .from('sada_rooms')
+    .update({ seats: nextSeats })
+    .eq('id', roomId);
+  if (seatUpdateError) throw new Error(`تعذّر تحديث مقاعد الغرفة: ${seatUpdateError.message}`);
   return nextSeats;
 }
 
@@ -1505,6 +1543,7 @@ export async function updateRoomSettingsInSupabase(
     maxSeats?: number;
     hostAvatar?: string;
     coverImage?: string;
+    backgroundImage?: string;
     description?: string;
     title?: string;
     requireMicPermission?: boolean;
@@ -1522,6 +1561,7 @@ export async function updateRoomSettingsInSupabase(
     patch.maxSeats !== undefined ||
     patch.hostAvatar !== undefined ||
     patch.coverImage !== undefined ||
+    patch.backgroundImage !== undefined ||
     patch.description !== undefined ||
     patch.title !== undefined ||
     patch.requireMicPermission !== undefined;
@@ -1576,17 +1616,25 @@ export async function updateRoomSettingsInSupabase(
     updates.host_avatar = patch.hostAvatar;
   }
   if (typeof patch.coverImage === 'string' && patch.coverImage.trim()) {
-    const isLuxuryStoreBg = STORE_LUXURY_BACKGROUNDS.some((b) => b.id === patch.coverImage);
+    updates.cover_url = patch.coverImage;
+  }
+  if (typeof patch.backgroundImage === 'string' && patch.backgroundImage.trim()) {
+    const isLuxuryStoreBg = STORE_LUXURY_BACKGROUNDS.some(
+      (b) => b.id === patch.backgroundImage
+    );
     if (isLuxuryStoreBg && !actor.is_admin) {
       const platState = await getPlatformState();
       const actorOwned = platState.settings.userOwnedBackgrounds?.[actor.id] || [];
       const hostOwned =
         platState.settings.userOwnedBackgrounds?.[String(roomRow.host_id)] || [];
-      if (!actorOwned.includes(patch.coverImage) && !hostOwned.includes(patch.coverImage)) {
+      if (
+        !actorOwned.includes(patch.backgroundImage) &&
+        !hostOwned.includes(patch.backgroundImage)
+      ) {
         throw new Error('هذه الخلفية الفخمة متاحة بعد شرائها من المتجر بـ 5,000 كوينز.');
       }
     }
-    updates.cover_image = patch.coverImage;
+    updates.background_url = patch.backgroundImage;
   }
 
   if (typeof patch.maxSeats === 'number') {
@@ -1658,6 +1706,7 @@ export async function adminControlRoomInSupabase(
     | { type: 'clear_all' }
     | { type: 'mute_user'; targetUserId: string; isMuted: boolean }
     | { type: 'kick_seat'; targetUserId: string }
+    | { type: 'temporary_kick_room'; targetUserId: string; targetName?: string }
     | { type: 'kick_room'; targetUserId: string; targetName?: string }
     | { type: 'unban_room'; targetUserId: string }
     | { type: 'toggle_deputy'; targetUserId: string; targetName?: string }
@@ -1665,13 +1714,33 @@ export async function adminControlRoomInSupabase(
 ): Promise<{ seats: Room['seats']; extras: RoomExtrasConfig }> {
   const [{ data: roomRow }, currentExtras] = await Promise.all([
     supabase.from('sada_rooms').select(ROOM_COLUMNS).eq('id', roomId).maybeSingle(),
-    getRoomExtrasFromSupabase(roomId),
+    getRoomExtrasFromSupabase(roomId, { forceRefresh: true }),
   ]);
   if (!roomRow) throw new Error('الغرفة غير موجودة.');
 
   const isOwnerOrAdmin = actor.is_admin || String(roomRow.host_id) === actor.id;
+  const { data: hostUser, error: hostUserError } = await supabase
+    .from('sada_users')
+    .select('agency_id')
+    .eq('id', String(roomRow.host_id))
+    .maybeSingle();
+  if (hostUserError) throw new Error(`تعذّر التحقق من وكالة الغرفة: ${hostUserError.message}`);
+  const { data: agency, error: agencyError } = hostUser?.agency_id
+    ? await supabase
+        .from('sada_agencies')
+        .select('owner_id, host_ids')
+        .eq('id', String(hostUser.agency_id))
+        .maybeSingle()
+    : { data: null, error: null };
+  if (agencyError) throw new Error(`تعذّر التحقق من مالك الوكالة: ${agencyError.message}`);
+  const isAgencyOwner = agency
+    ? String(agency.owner_id) === actor.id
+    : String(roomRow.host_id) === actor.id;
   const isManager =
     isOwnerOrAdmin ||
+    isAgencyOwner ||
+    (Array.isArray(agency?.host_ids) &&
+      agency.host_ids.some((hostId: unknown) => String(hostId) === actor.id)) ||
     currentExtras.deputyIds.includes(actor.id) ||
     currentExtras.moderatorIds.includes(actor.id);
   if (!isManager) {
@@ -1739,6 +1808,9 @@ export async function adminControlRoomInSupabase(
     );
     nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
       ...cur,
+      mutedUserIds: action.isMuted
+        ? Array.from(new Set([...cur.mutedUserIds, action.targetUserId]))
+        : cur.mutedUserIds.filter((id) => id !== action.targetUserId),
       modLogs: prependModLog(cur, {
         actorId: actor.id,
         actorName: actor.displayName,
@@ -1778,9 +1850,18 @@ export async function adminControlRoomInSupabase(
         details: `إنزال ${targetName} من المايك`,
       }),
     }));
-  } else if (action.type === 'kick_room') {
+  } else if (action.type === 'temporary_kick_room' || action.type === 'kick_room') {
+    if (action.type === 'kick_room' && !isAgencyOwner) {
+      throw new Error('الحظر الدائم مخصص لمالك الوكالة فقط.');
+    }
     if (action.targetUserId === String(roomRow.host_id)) {
       throw new Error('لا يمكن طرد مالك الوكالة.');
+    }
+    if (
+      action.targetUserId === String(agency?.owner_id || '') ||
+      action.targetUserId === String(roomRow.host_id)
+    ) {
+      throw new Error('لا يمكن حظر مالك الوكالة.');
     }
     const targetName = resolveTargetName(action.targetUserId, action.targetName);
     nextSeats = nextSeats.map((s) =>
@@ -1798,33 +1879,60 @@ export async function adminControlRoomInSupabase(
           }
         : s
     );
-    nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
-      ...cur,
-      kickedUserIds: cur.kickedUserIds.includes(action.targetUserId)
-        ? cur.kickedUserIds
-        : [...cur.kickedUserIds, action.targetUserId],
-      kickedUserNames: {
-        ...(cur.kickedUserNames || {}),
-        [action.targetUserId]: targetName,
-      },
-      deputyIds: cur.deputyIds.filter((id) => id !== action.targetUserId),
-      moderatorIds: cur.moderatorIds.filter((id) => id !== action.targetUserId),
-      modLogs: prependModLog(cur, {
-        actorId: actor.id,
-        actorName: actor.displayName,
-        actorRole,
-        actionType: 'kick_room',
-        targetUserId: action.targetUserId,
-        targetName,
-        details: `طرد ${targetName} من الوكالة`,
-      }),
-    }));
-    systemNotice = `⛔ تم طرد ${targetName} من الوكالة بواسطة ${actor.displayName}.`;
+    nextExtras = await saveRoomExtrasConfig(roomId, (cur) => {
+      const isTemporary = action.type === 'temporary_kick_room';
+      const temporaryKickExpiresAt = { ...(cur.temporaryKickExpiresAt || {}) };
+      if (isTemporary) {
+        temporaryKickExpiresAt[action.targetUserId] = new Date(
+          Date.now() + 72 * 60 * 60 * 1000
+        ).toISOString();
+      } else {
+        delete temporaryKickExpiresAt[action.targetUserId];
+      }
+      return {
+        ...cur,
+        kickedUserIds: isTemporary
+          ? cur.kickedUserIds.filter((id) => id !== action.targetUserId)
+          : Array.from(new Set([...cur.kickedUserIds, action.targetUserId])),
+        temporaryKickExpiresAt,
+        kickedUserNames: {
+          ...(cur.kickedUserNames || {}),
+          [action.targetUserId]: targetName,
+        },
+        deputyIds: isTemporary
+          ? cur.deputyIds
+          : cur.deputyIds.filter((id) => id !== action.targetUserId),
+        moderatorIds: isTemporary
+          ? cur.moderatorIds
+          : cur.moderatorIds.filter((id) => id !== action.targetUserId),
+        modLogs: prependModLog(cur, {
+          actorId: actor.id,
+          actorName: actor.displayName,
+          actorRole,
+          actionType: 'kick_room',
+          targetUserId: action.targetUserId,
+          targetName,
+          details: isTemporary
+            ? `طرد ${targetName} لمدة 3 أيام`
+            : `حظر ${targetName} من الوكالة نهائياً`,
+        }),
+      };
+    });
+    systemNotice = `⛔ تم ${action.type === 'temporary_kick_room' ? 'طرد' : 'حظر'} ${targetName} بواسطة ${actor.displayName}.`;
   } else if (action.type === 'unban_room') {
+    if (!isAgencyOwner) throw new Error('فك الحظر مخصص لمالك الوكالة فقط.');
     const targetName = resolveTargetName(action.targetUserId);
     nextExtras = await saveRoomExtrasConfig(roomId, (cur) => ({
       ...cur,
       kickedUserIds: cur.kickedUserIds.filter((id) => id !== action.targetUserId),
+      temporaryKickExpiresAt: Object.keys(cur.temporaryKickExpiresAt || {}).reduce<
+        Record<string, string>
+      >((result, id) => {
+        if (id !== action.targetUserId) {
+          result[id] = cur.temporaryKickExpiresAt![id];
+        }
+        return result;
+      }, {}),
       modLogs: prependModLog(cur, {
         actorId: actor.id,
         actorName: actor.displayName,
@@ -1869,7 +1977,13 @@ export async function adminControlRoomInSupabase(
       : `تم سحب صلاحية الإشراف من ${action.targetName || 'العضو'}.`;
   }
 
-  await supabase.from('sada_rooms').update({ seats: nextSeats }).eq('id', roomId);
+  const { error: adminSeatUpdateError } = await supabase
+    .from('sada_rooms')
+    .update({ seats: nextSeats })
+    .eq('id', roomId);
+  if (adminSeatUpdateError) {
+    throw new Error(`تعذّر تحديث مقاعد الغرفة: ${adminSeatUpdateError.message}`);
+  }
 
   if (systemNotice) {
     await supabase.from('sada_room_messages').insert({

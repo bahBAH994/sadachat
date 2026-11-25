@@ -116,6 +116,7 @@ export const ProfilePage: React.FC = () => {
   const [savingPendingAvatar, setSavingPendingAvatar] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const showEditModalRef = useRef(false);
   showEditModalRef.current = showEditModal;
   const [copiedId, setCopiedId] = useState(false);
@@ -664,9 +665,9 @@ export const ProfilePage: React.FC = () => {
             </div>
           )}
 
-          {/* 4 Interactive Stats Row + Active 3D Card */}
-          <div className="grid grid-cols-12 items-center gap-3 pt-1">
-            <div className="col-span-7 grid grid-cols-4 gap-1 text-center">
+          {/* Interactive Stats Row */}
+          <div className="grid grid-cols-1 items-center gap-3 pt-1">
+            <div className="grid grid-cols-4 gap-1 text-center">
               <button
                 type="button"
                 onClick={() => handleOpenSocialModal('friends')}
@@ -708,18 +709,6 @@ export const ProfilePage: React.FC = () => {
                 <span className="block text-[11px] text-slate-600">زائر</span>
               </button>
             </div>
-
-            <div className="col-span-5 flex justify-end">
-              <button
-                type="button"
-                onClick={() => navigate('/svip')}
-                className="rounded-2xl bg-white/90 hover:bg-white border border-amber-200 px-3.5 py-2.5 flex items-center gap-1.5 text-xs font-extrabold text-amber-800 cursor-pointer transition shadow-md"
-              >
-                <span className="text-base">{active3D.badgeGlyph}</span>
-                <span>احصل على SVIP</span>
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-            </div>
           </div>
         </div>
       </section>
@@ -744,14 +733,14 @@ export const ProfilePage: React.FC = () => {
           </button>
         </section>
         <section className="light-card rounded-3xl p-3 grid grid-cols-2 divide-x divide-x-reverse divide-slate-100">
-          <button type="button" onClick={() => navigate('/wallet')} className="pl-2 text-right space-y-1 cursor-pointer">
-            <span className="block text-[11px] text-slate-500 font-bold">رصيد الكوينز · الشحن USDT</span>
+          <div className="pl-2 text-right space-y-1">
+            <span className="block text-[11px] text-slate-500 font-bold">عدد الكوينز</span>
             <span className="flex items-center gap-2 text-xl font-black text-slate-900 font-mono-num"><Coins className="w-5 h-5 text-amber-500" />{user.coins.toLocaleString('en-US')}</span>
-          </button>
-          <button type="button" onClick={() => navigate('/diamond-wallet')} className="pr-3 text-right space-y-1 cursor-pointer">
-            <span className="block text-[11px] text-slate-500 font-bold">رصيد الألماس · السحب</span>
+          </div>
+          <div className="pr-3 text-right space-y-1">
+            <span className="block text-[11px] text-slate-500 font-bold">عدد الألماس</span>
             <span className="flex items-center gap-2 text-xl font-black text-slate-900 font-mono-num"><Gem className="w-5 h-5 text-sky-500" />{user.diamonds.toLocaleString('en-US')}</span>
-          </button>
+          </div>
         </section>
       </div>
 
@@ -945,7 +934,7 @@ export const ProfilePage: React.FC = () => {
 
           <button
             type="button"
-            onClick={handleLogout}
+            onClick={() => setShowLogoutConfirm(true)}
             className="flex flex-col items-center gap-1.5 text-rose-500 hover:text-rose-700 cursor-pointer transition"
           >
             <LogOut className="w-5 h-5" />
@@ -955,6 +944,41 @@ export const ProfilePage: React.FC = () => {
 
       </div>
       </div>
+
+      {showLogoutConfirm && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logout-confirm-title"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-3xl bg-white border border-slate-200 p-6 text-center shadow-2xl text-slate-900"
+          >
+            <h2 id="logout-confirm-title" className="text-lg font-extrabold">
+              هل تود الخروج من الحساب؟
+            </h2>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-2xl bg-rose-600 hover:bg-rose-700 px-4 py-3 text-sm font-extrabold text-white cursor-pointer transition"
+              >
+                نعم
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="rounded-2xl bg-slate-200 hover:bg-slate-300 px-4 py-3 text-sm font-extrabold text-slate-700 cursor-pointer transition"
+              >
+                لا
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Social List Modal (Friends / Followers / Following / Visitors) */}
       {socialModalKind && (

@@ -5,6 +5,7 @@ import {
   Building2,
   CheckCircle2,
   Coins,
+  Copy,
   Download,
   FileSpreadsheet,
   Gamepad2,
@@ -28,6 +29,7 @@ import {
   Upload,
   UserCheck,
   Users,
+  Wallet,
 } from 'lucide-react';
 import { useActiveRoom } from '../context/ActiveRoomContext';
 import { useAuth } from '../context/AuthContext';
@@ -40,10 +42,13 @@ import {
 } from '../components/admin/AdminUsersTab';
 import { resolveAsset } from '../lib/assets';
 import {
+  ADMIN_USDT_TRC20_ADDRESS,
   isSuperAdminUser,
   LUCKY_GIFT_MULTIPLIERS,
   PM_MESSAGE_COST,
 } from '../lib/sadaCatalog';
+import { getPlatformState, savePlatformState } from '../lib/sadaMappers';
+import { supabase } from '../lib/supabase';
 import {
   approveFemaleVoiceInSupabase,
   approveUsdtDepositInSupabase,
@@ -63,7 +68,6 @@ import {
   rejectUsdtDepositInSupabase,
   rejectUsdtWithdrawalInSupabase,
   reviewHostJoinApplicationInSupabase,
-  resetApplicationDataInSupabase,
   savePlatformSettingsInSupabase,
   sendGlobalAdminAnnouncementInSupabase,
   togglePinRoomInSupabase,
@@ -115,6 +119,55 @@ interface AdminOverview {
     pendingUsdtCount?: number;
     pendingFemaleVoiceCount?: number;
   };
+}
+
+interface ShamCashRequest {
+  id: string;
+  type: 'deposit' | 'withdrawal';
+  userId: string;
+  userEmail: string;
+  userDisplayName: string;
+  amount: number;
+  accountAddress: string;
+  transferReference: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
+function isShamCashRequest(value: unknown): value is ShamCashRequest {
+  if (!value || typeof value !== 'object') return false;
+  const request = value as Record<string, unknown>;
+  return (
+    typeof request.id === 'string' &&
+    (request.type === 'deposit' || request.type === 'withdrawal') &&
+    typeof request.userId === 'string' &&
+    typeof request.userEmail === 'string' &&
+    typeof request.userDisplayName === 'string' &&
+    typeof request.amount === 'number' &&
+    typeof request.accountAddress === 'string' &&
+    typeof request.transferReference === 'string' &&
+    (request.status === 'pending' ||
+      request.status === 'approved' ||
+      request.status === 'rejected') &&
+    typeof request.createdAt === 'string' &&
+    (request.reviewedAt === null || typeof request.reviewedAt === 'string')
+  );
+}
+
+function getShamCashRequests(settings: PlatformSettings): ShamCashRequest[] {
+  const requests = (
+    settings as PlatformSettings & { shamCashRequests?: unknown }
+  ).shamCashRequests;
+  return Array.isArray(requests) ? requests.filter(isShamCashRequest) : [];
+}
+
+function getShamCashSetting(
+  settings: PlatformSettings,
+  key: 'adminShamCashAddress' | 'adminShamCashBarcode'
+): string {
+  const value = (settings as PlatformSettings & Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
 }
 
 type AdminTab =
@@ -172,6 +225,8 @@ export const AdminPage: React.FC = () => {
   // Economy Settings Draft
   const [settingsDraft, setSettingsDraft] = useState<PlatformSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [adminShamCashAddress, setAdminShamCashAddress] = useState('');
+  const [adminShamCashBarcode, setAdminShamCashBarcode] = useState('');
   const [grandCompetitionDraft, setGrandCompetitionDraft] =
     useState<GrandCompetitionContent | null>(null);
   const [savingGrandCompetition, setSavingGrandCompetition] = useState(false);
@@ -201,6 +256,8 @@ export const AdminPage: React.FC = () => {
         const res = await getAdminOverviewFromSupabase();
         setData(res);
         setSettingsDraft(res.settings);
+        setAdminShamCashAddress(getShamCashSetting(res.settings, 'adminShamCashAddress'));
+        setAdminShamCashBarcode(getShamCashSetting(res.settings, 'adminShamCashBarcode'));
         setGrandCompetitionDraft({
           monthlyClosingPrizes: res.settings.grandCompetition?.monthlyClosingPrizes || '',
           participationTerms: res.settings.grandCompetition?.participationTerms || '',
@@ -255,15 +312,31 @@ export const AdminPage: React.FC = () => {
       text: err instanceof Error ? err.message : fallback,
     });
 
+  const handleCopyPayrollWallet = async (address: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('ميزة النسخ غير متاحة في هذا المتصفح.');
+      }
+      await navigator.clipboard.writeText(address);
+      showOk('تم نسخ عنوان المحفظة.');
+    } catch (err) {
+      showErr(err, 'تعذّر نسخ عنوان المحفظة.');
+    }
+  };
+
   const handleApplicationReset = async () => {
     const confirmationPhrase = 'تصفير شامل للتطبيق';
     if (resetPhrase.trim() !== confirmationPhrase) {
       showErr(new Error(`اكتب «${confirmationPhrase}» لتأكيد العملية.`), '');
       return;
     }
+    if (!user?.id || !isSuperAdmin) {
+      showErr(new Error('هذه العملية متاحة لحساب الإدارة الأساسي فقط.'), '');
+      return;
+    }
     if (
       !window.confirm(
-        'تحذير نهائي: سيُحذف كل مستخدمي وبيانات التطبيق من Supabase مع الإبقاء على حساب الإدارة فقط. لا يمكن التراجع عن ذلك.'
+        'تأكيد نهائي: سيتم حذف الرسائل والهدايا وسجلات الشحن والسحب، وتصفير أرصدة ومستويات المستخدمين باستثناء حساب الإدارة الأساسي. لا يمكن التراجع عن ذلك.'
       )
     ) {
       return;
@@ -272,28 +345,29 @@ export const AdminPage: React.FC = () => {
     setResettingApplication(true);
     setNotice(null);
     try {
-      await resetApplicationDataInSupabase();
+      const results = await Promise.all([
+        supabase.from('sada_room_messages').delete().neq('id', ''),
+        supabase.from('sada_private_messages').delete().neq('id', ''),
+        supabase.from('sada_transactions').delete().neq('id', ''),
+        supabase.from('sada_usdt_deposits').delete().neq('id', ''),
+        supabase.from('sada_usdt_withdrawals').delete().neq('id', ''),
+        supabase
+          .from('sada_users')
+          .update({ coins: 0, diamonds: 0, level: 1 })
+          .neq('id', user.id),
+      ]);
+      const failedResult = results.find((result) => result.error);
+      if (failedResult?.error) {
+        throw new Error(`تعذّر تصفير بيانات التطبيق: ${failedResult.error.message}`);
+      }
+
+      showOk('تم تصفير بيانات التطبيق بنجاح');
+      await Promise.all([refreshUser(), loadOverview(true)]);
     } catch (err) {
       showErr(err, 'تعذّر تصفير بيانات التطبيق.');
+    } finally {
       setResettingApplication(false);
-      return;
     }
-
-    try {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
-    } catch {
-      showErr(
-        new Error('تم تصفير Supabase، لكن تعذّر مسح التخزين المحلي لهذا المتصفح.'),
-        ''
-      );
-      setResettingApplication(false);
-      return;
-    }
-
-    window.location.assign(
-      `${window.location.origin}${window.location.pathname}#/login`
-    );
   };
 
   // --- USERS & DEVICES ---
@@ -617,6 +691,35 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const handleReviewShamCashRequest = async (
+    requestId: string,
+    status: 'approved' | 'rejected'
+  ) => {
+    try {
+      const state = await getPlatformState({ forceRefresh: true });
+      const requests = getShamCashRequests(state.settings);
+      if (!requests.some((request) => request.id === requestId && request.status === 'pending')) {
+        throw new Error('الطلب غير موجود أو تمت مراجعته مسبقاً.');
+      }
+      const nextRequests = requests.map((request) =>
+        request.id === requestId
+          ? { ...request, status, reviewedAt: new Date().toISOString() }
+          : request
+      );
+      await savePlatformState({
+        settings: { ...state.settings, shamCashRequests: nextRequests },
+      });
+      showOk(
+        status === 'approved'
+          ? 'تم تأكيد استلام طلب شام كاش.'
+          : 'تم رفض طلب شام كاش.'
+      );
+      void loadOverview('silent');
+    } catch (err) {
+      showErr(err, 'تعذّرت مراجعة طلب شام كاش.');
+    }
+  };
+
   // --- FEMALE VOICE VERIFICATION ---
   const handleApproveFemaleVoice = async (requestId: string) => {
     try {
@@ -843,10 +946,18 @@ export const AdminPage: React.FC = () => {
     if (!settingsDraft) return;
     setSavingSettings(true);
     try {
-      const saved = await savePlatformSettingsInSupabase({
+      const settingsWithShamCash: PlatformSettings & {
+        adminShamCashAddress: string;
+        adminShamCashBarcode: string;
+        shamCashRequests: ShamCashRequest[];
+      } = {
         ...settingsDraft,
+        adminShamCashAddress: adminShamCashAddress.trim(),
+        adminShamCashBarcode: adminShamCashBarcode.trim(),
+        shamCashRequests: getShamCashRequests(settingsDraft),
         pmMessageCost: PM_MESSAGE_COST,
-      });
+      };
+      const saved = await savePlatformSettingsInSupabase(settingsWithShamCash);
       setSettingsDraft(saved);
       showOk('تم حفظ وتطبيق كافة الإعدادات الاقتصادية والمكافآت فورياً على المنصة!');
       void loadOverview('silent');
@@ -886,6 +997,43 @@ export const AdminPage: React.FC = () => {
     );
   }, [data?.users, hostSearch]);
 
+  const payrollRoster = useMemo(
+    () =>
+      (data?.users || [])
+        .filter((member) => member.isHost || member.isAgent)
+        .map((member) => {
+          const pendingWithdrawal = (data?.usdtWithdrawals || [])
+            .filter(
+              (withdrawal) =>
+                withdrawal.userId === member.id &&
+                withdrawal.status === 'pending' &&
+                withdrawal.network === 'TRC20'
+            )
+            .sort(
+              (first, second) =>
+                Date.parse(second.createdAt) - Date.parse(first.createdAt)
+            )[0];
+          const agency = (data?.agencies || []).find(
+            (item) => item.ownerId === member.id
+          );
+
+          return {
+            member,
+            role:
+              member.isHost && member.isAgent
+                ? 'مضيف / وكيل'
+                : member.isHost
+                  ? 'مضيف'
+                  : 'وكيل',
+            recordedDiamonds: member.isHost
+              ? member.hostDiamondsEarned
+              : agency?.totalHostDiamonds,
+            walletAddress: pendingWithdrawal?.trc20Address || '',
+          };
+        }),
+    [data?.agencies, data?.users, data?.usdtWithdrawals]
+  );
+
   const voiceRequestsToDisplay = useMemo(() => {
     const list = data?.femaleVoiceRequests || [];
     if (voiceFilter === 'pending') {
@@ -902,6 +1050,15 @@ export const AdminPage: React.FC = () => {
     data?.hostJoinApplications?.filter((a) => a.status === 'pending').length || 0;
   const pendingVoiceCount = data?.stats.pendingFemaleVoiceCount || 0;
   const pendingUsdtCount = data?.stats.pendingUsdtCount || 0;
+  const shamCashRequests = data ? getShamCashRequests(data.settings) : [];
+  const pendingShamCashCount = shamCashRequests.filter(
+    (request) => request.status === 'pending'
+  ).length;
+  const pendingPaymentCount = pendingUsdtCount + pendingShamCashCount;
+  const shamCashDeposits = shamCashRequests.filter((request) => request.type === 'deposit');
+  const shamCashWithdrawals = shamCashRequests.filter(
+    (request) => request.type === 'withdrawal'
+  );
 
   const tabs: Array<{ id: AdminTab; label: string; badge?: number }> = [
     { id: 'overview', label: 'نظرة عامة' },
@@ -913,7 +1070,7 @@ export const AdminPage: React.FC = () => {
       badge: pendingHostAppsCount,
     },
     { id: 'gifts_announcements', label: 'الهدايا والإعلانات' },
-    { id: 'usdt', label: 'طلبات USDT', badge: pendingUsdtCount },
+    { id: 'usdt', label: 'طلبات الشحن والسحب', badge: pendingPaymentCount },
     { id: 'competitions', label: 'المسابقات' },
     { id: 'grand_competition', label: 'إدارة مسابقة صدى الكبرى' },
     { id: 'questions', label: 'بنك الأسئلة' },
@@ -1136,9 +1293,9 @@ export const AdminPage: React.FC = () => {
                     className="royal-glass rounded-2xl p-4 flex items-center justify-between border border-white/10 hover:border-[#D4AF37]/45 cursor-pointer"
                   >
                     <div className="text-right">
-                      <span className="block text-xs text-slate-400">طلبات USDT المعلقة</span>
+                      <span className="block text-xs text-slate-400">طلبات الدفع المعلقة</span>
                       <span className="text-lg font-extrabold font-mono-num text-[#FCE9A6]">
-                        {pendingUsdtCount}
+                        {pendingPaymentCount}
                       </span>
                     </div>
                     <Coins className="w-5 h-5 text-[#D4AF37]" />
@@ -1323,10 +1480,10 @@ export const AdminPage: React.FC = () => {
                         منطقة التصفير الشامل
                       </h2>
                       <p className="text-xs leading-relaxed text-rose-100/80">
-                        يحذف الحسابات غير الإدارية وكل الغرف والرسائل والوكالات
-                        والمعاملات والمسابقات وبيانات المستخدمين من Supabase.
-                        يبقى حساب الإدارة وكتالوج الهدايا الأساسي فقط. ستُمسح
-                        بيانات التخزين المحلي وسيُطلب تسجيل الدخول مجدداً.
+                        يحذف رسائل الغرف والرسائل الخاصة وسجلات الهدايا والمعاملات
+                        وطلبات الشحن والسحب. تُصفّر أرصدة الكوينز والألماس والمستوى
+                        لجميع المستخدمين باستثناء حساب الإدارة الأساسي، مع إبقاء
+                        الحسابات وكتالوج الهدايا كما هما.
                       </p>
                     </div>
                   </div>
@@ -1350,7 +1507,7 @@ export const AdminPage: React.FC = () => {
                     onClick={() => void handleApplicationReset()}
                     className="min-h-[46px] rounded-xl bg-rose-700 px-5 text-sm font-extrabold text-white shadow-lg transition hover:bg-rose-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {resettingApplication ? 'جارٍ تصفير البيانات...' : 'تصفير شامل للتطبيق'}
+                    {resettingApplication ? 'جارٍ تصفير البيانات...' : 'تصفير التطبيق'}
                   </button>
                 </section>
               </section>
@@ -1676,6 +1833,118 @@ export const AdminPage: React.FC = () => {
                   )}
                 </section>
 
+                {/* Read-only payroll roster; monthly eligibility and payout data are not available here. */}
+                <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-[#F3D37A]">
+                      <Coins className="w-5 h-5" />
+                      <div>
+                        <h2 className="text-base font-bold">
+                          كشف رواتب المضيفين والوكلاء المستحقة ({payrollRoster.length})
+                        </h2>
+                        <p className="text-xs text-slate-400 mt-1">
+                          قائمة متابعة الحسابات المعتمدة، وليست تأكيداً بالاستحقاق الشهري.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    role="status"
+                    className="rounded-2xl border border-amber-400/30 bg-amber-950/30 px-4 py-3 text-xs leading-6 text-amber-100"
+                  >
+                    بيانات الشهر الحالي — بما فيها تارغت الألماس وساعات المايك الفعّالة — غير متاحة
+                    في لوحة الإدارة. مبلغ USDT ومحفظة الرواتب غير مسجلين؛ لذلك لا يمكن تحديد
+                    المستحقين أو اعتماد الصرف أو تصفير التارغت أو إرسال إشعار من هذا الجدول.
+                    عنوان TRC20، إن ظهر، مأخوذ فقط من طلب سحب معلّق.
+                  </div>
+
+                  {payrollRoster.length === 0 ? (
+                    <p className="py-6 text-center text-xs text-slate-400">
+                      لا توجد حسابات مضيفين أو وكلاء حالياً.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-2xl border border-[#D4AF37]/20">
+                      <table className="w-full min-w-[1050px] text-right text-xs">
+                        <thead className="bg-[#070913]/80 text-[#FCE9A6]">
+                          <tr>
+                            <th className="px-3 py-3 font-bold">المستخدم / ID</th>
+                            <th className="px-3 py-3 font-bold">الدور</th>
+                            <th className="px-3 py-3 font-bold">الألماس المسجل حالياً</th>
+                            <th className="px-3 py-3 font-bold">ساعات المايك الفعّالة</th>
+                            <th className="px-3 py-3 font-bold">المستحق USDT</th>
+                            <th className="px-3 py-3 font-bold">عنوان TRC20</th>
+                            <th className="px-3 py-3 font-bold">إجراء الصرف</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#D4AF37]/10">
+                          {payrollRoster.map(
+                            ({ member, role, recordedDiamonds, walletAddress }) => (
+                              <tr key={member.id} className="text-slate-200">
+                                <td className="px-3 py-3">
+                                  <div className="font-bold text-white">{member.displayName}</div>
+                                  <div
+                                    className="mt-1 max-w-[190px] truncate font-mono-num text-[10px] text-slate-400"
+                                    dir="ltr"
+                                    title={member.id}
+                                  >
+                                    {member.id}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-[#FCE9A6]">{role}</td>
+                                <td className="px-3 py-3 font-mono-num">
+                                  {typeof recordedDiamonds === 'number'
+                                    ? recordedDiamonds.toLocaleString('en-US')
+                                    : 'غير متاح'}
+                                  <div className="mt-1 text-[10px] text-slate-500">
+                                    لا يحدد إنجاز الشهر
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-slate-400">غير متاح</td>
+                                <td className="px-3 py-3 text-slate-400">غير قابل للاحتساب</td>
+                                <td className="px-3 py-3">
+                                  {walletAddress ? (
+                                    <div className="flex items-center gap-2">
+                                      <span
+                                        className="max-w-[190px] truncate font-mono-num text-slate-300"
+                                        dir="ltr"
+                                        title={walletAddress}
+                                      >
+                                        {walletAddress}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleCopyPayrollWallet(walletAddress)}
+                                        aria-label={`نسخ عنوان TRC20 للمستخدم ${member.displayName}`}
+                                        title="نسخ عنوان TRC20 من طلب السحب المعلّق"
+                                        className="rounded-lg border border-[#D4AF37]/30 p-1.5 text-[#FCE9A6] hover:bg-[#D4AF37]/10"
+                                      >
+                                        <Copy className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-500">لا يوجد عنوان بطلب معلّق</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-3">
+                                  <button
+                                    type="button"
+                                    disabled
+                                    title="يتطلب ربط بيانات التارغت الشهري وتسجيل الصرف والإشعارات."
+                                    className="cursor-not-allowed rounded-xl border border-slate-600/50 bg-slate-800/50 px-3 py-2 text-[11px] font-bold text-slate-500"
+                                  >
+                                    تأكيد الصرف ✓
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
                 {/* Agencies Approvals & Commission Payouts */}
                 <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                   <div className="flex items-center gap-2 text-[#F3D37A]">
@@ -1943,14 +2212,14 @@ export const AdminPage: React.FC = () => {
               />
             )}
 
-            {/* TAB 6: USDT DEPOSITS & WITHDRAWALS */}
+            {/* TAB 6: DEPOSITS & WITHDRAWALS */}
             {tab === 'usdt' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                   <h2 className="text-base font-bold text-[#F3D37A]">
-                    طلبات إيداع USDT TRC20 ({data.usdtDeposits.length})
+                    طلبات الشحن ({data.usdtDeposits.length + shamCashDeposits.length})
                   </h2>
-                  {data.usdtDeposits.length === 0 ? (
+                  {data.usdtDeposits.length + shamCashDeposits.length === 0 ? (
                     <p className="text-xs text-slate-400 py-4 text-center">
                       لا توجد طلبات إيداع حالياً.
                     </p>
@@ -1966,6 +2235,9 @@ export const AdminPage: React.FC = () => {
                                   ${dep.amountUsdt} USDT
                                 </span>
                               </p>
+                              <span className="inline-flex rounded-full border border-sky-400/30 bg-sky-950/40 px-2 py-0.5 text-[10px] font-bold text-sky-200">
+                                USDT · TRC20
+                              </span>
                               <p className="text-slate-300 font-mono-num">
                                 +{dep.coinsCredited.toLocaleString('en-US')} كوينز
                                 {dep.rewardTierLabel ? ` · ${dep.rewardTierLabel}` : ''}
@@ -2022,15 +2294,65 @@ export const AdminPage: React.FC = () => {
                           )}
                         </div>
                       ))}
+                      {shamCashDeposits.map((request) => (
+                        <div key={request.id} className="py-4 space-y-2.5 text-xs">
+                          <div className="space-y-1">
+                            <p className="font-bold text-white text-sm">
+                              {request.userDisplayName} ·{' '}
+                              <span className="text-[#FCE9A6] font-mono-num">
+                                {request.amount.toLocaleString('en-US')} شام كاش
+                              </span>
+                            </p>
+                            <span className="inline-flex rounded-full border border-emerald-400/30 bg-emerald-950/40 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
+                              شام كاش
+                            </span>
+                            <p className="text-[11px] text-slate-300">
+                              رقم عملية التحويل: {request.transferReference}
+                            </p>
+                          </div>
+                          {request.status === 'pending' ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleReviewShamCashRequest(request.id, 'approved')
+                                }
+                                className="gold-btn min-h-[38px] rounded-xl px-3.5 py-1.5 text-xs font-bold cursor-pointer"
+                              >
+                                تأكيد استلام المبلغ
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleReviewShamCashRequest(request.id, 'rejected')
+                                }
+                                className="min-h-[38px] rounded-xl px-3.5 py-1.5 text-xs font-bold bg-rose-950/60 border border-rose-500/40 text-rose-200 cursor-pointer"
+                              >
+                                رفض
+                              </button>
+                            </div>
+                          ) : (
+                            <p
+                              className={`font-bold ${
+                                request.status === 'approved'
+                                  ? 'text-emerald-300'
+                                  : 'text-rose-300'
+                              }`}
+                            >
+                              {request.status === 'approved' ? 'تم تأكيد الاستلام ✓' : 'مرفوض'}
+                            </p>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </section>
 
                 <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                   <h2 className="text-base font-bold text-[#F3D37A]">
-                    طلبات سحب أرباح USDT ({data.usdtWithdrawals.length})
+                    طلبات السحب ({data.usdtWithdrawals.length + shamCashWithdrawals.length})
                   </h2>
-                  {data.usdtWithdrawals.length === 0 ? (
+                  {data.usdtWithdrawals.length + shamCashWithdrawals.length === 0 ? (
                     <p className="text-xs text-slate-400 py-4 text-center">
                       لا توجد طلبات سحب حالياً.
                     </p>
@@ -2045,6 +2367,9 @@ export const AdminPage: React.FC = () => {
                                 {wd.amountUsdt} USDT
                               </span>
                             </p>
+                            <span className="inline-flex rounded-full border border-sky-400/30 bg-sky-950/40 px-2 py-0.5 text-[10px] font-bold text-sky-200">
+                              USDT · TRC20
+                            </span>
                             <p className="text-slate-300 font-mono-num">
                               {wd.sourceAmount.toLocaleString('en-US')}{' '}
                               {wd.sourceCurrency === 'diamonds' ? 'ألماسة 💎' : 'كوينز'}
@@ -2081,6 +2406,56 @@ export const AdminPage: React.FC = () => {
                               }`}
                             >
                               {wd.status === 'approved' ? 'تم التحويل ✓' : 'مرفوض (تم الاسترداد)'}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                      {shamCashWithdrawals.map((request) => (
+                        <div key={request.id} className="py-4 space-y-2.5 text-xs">
+                          <div className="space-y-1">
+                            <p className="font-bold text-white text-sm">
+                              {request.userDisplayName} ·{' '}
+                              <span className="text-emerald-300 font-mono-num">
+                                {request.amount.toLocaleString('en-US')} شام كاش
+                              </span>
+                            </p>
+                            <span className="inline-flex rounded-full border border-emerald-400/30 bg-emerald-950/40 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
+                              شام كاش
+                            </span>
+                            <p className="text-[11px] text-[#FCE9A6] font-mono-num break-all" dir="ltr">
+                              {request.accountAddress}
+                            </p>
+                          </div>
+                          {request.status === 'pending' ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleReviewShamCashRequest(request.id, 'approved')
+                                }
+                                className="gold-btn min-h-[38px] rounded-xl px-3.5 py-1.5 text-xs font-bold cursor-pointer"
+                              >
+                                تأكيد التحويل
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleReviewShamCashRequest(request.id, 'rejected')
+                                }
+                                className="min-h-[38px] rounded-xl px-3.5 py-1.5 text-xs font-bold bg-rose-950/60 border border-rose-500/40 text-rose-200 cursor-pointer"
+                              >
+                                رفض الطلب
+                              </button>
+                            </div>
+                          ) : (
+                            <p
+                              className={`font-bold ${
+                                request.status === 'approved'
+                                  ? 'text-emerald-300'
+                                  : 'text-rose-300'
+                              }`}
+                            >
+                              {request.status === 'approved' ? 'تم التحويل ✓' : 'مرفوض'}
                             </p>
                           )}
                         </div>
@@ -2436,6 +2811,53 @@ export const AdminPage: React.FC = () => {
             {/* TAB 9: GLOBAL PLATFORM ECONOMY SETTINGS */}
             {tab === 'settings' && settingsDraft && (
               <form onSubmit={handleSaveSettings} className="space-y-5">
+                <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
+                  <div className="flex items-center gap-2 text-[#FCE9A6]">
+                    <Wallet className="w-5 h-5 text-[#D4AF37]" />
+                    <h2 className="text-sm font-extrabold">عناوين الدفع للإدارة</h2>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                    <div className="space-y-2">
+                      <label className="block text-slate-300">
+                        محفظة USDT TRC20
+                      </label>
+                      <code
+                        dir="ltr"
+                        className="block rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2.5 text-[#FCE9A6] font-mono-num break-all"
+                      >
+                        {ADMIN_USDT_TRC20_ADDRESS}
+                      </code>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-slate-300 mb-1">
+                          عنوان / رقم حساب شام كاش
+                        </label>
+                        <input
+                          type="text"
+                          value={adminShamCashAddress}
+                          onChange={(e) => setAdminShamCashAddress(e.target.value)}
+                          dir="ltr"
+                          placeholder="أدخل رقم حساب شام كاش"
+                          className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2.5 text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 mb-1">
+                          بيانات الباركود (QR)
+                        </label>
+                        <input
+                          type="text"
+                          value={adminShamCashBarcode}
+                          onChange={(e) => setAdminShamCashBarcode(e.target.value)}
+                          dir="ltr"
+                          placeholder="اتركه فارغاً لاستخدام رقم الحساب"
+                          className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2.5 text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </section>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <section className="royal-glass rounded-3xl p-5 space-y-3.5">
                     <div className="flex items-center gap-2 text-[#FCE9A6]">

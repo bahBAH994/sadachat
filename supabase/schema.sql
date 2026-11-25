@@ -93,6 +93,9 @@ CREATE TABLE IF NOT EXISTS public.sada_rooms (
   host_id TEXT NOT NULL,
   host_name TEXT NOT NULL,
   host_avatar TEXT NOT NULL,
+  avatar_url TEXT,
+  cover_url TEXT,
+  background_url TEXT,
   cover_image TEXT NOT NULL DEFAULT 'royal_stage',
   is_private BOOLEAN NOT NULL DEFAULT FALSE,
   password TEXT,
@@ -103,6 +106,15 @@ CREATE TABLE IF NOT EXISTS public.sada_rooms (
   total_gifts_coins BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE public.sada_rooms
+  ADD COLUMN IF NOT EXISTS avatar_url TEXT,
+  ADD COLUMN IF NOT EXISTS cover_url TEXT,
+  ADD COLUMN IF NOT EXISTS background_url TEXT;
+
+UPDATE public.sada_rooms
+SET avatar_url = COALESCE(avatar_url, host_avatar),
+    cover_url = COALESCE(cover_url, avatar_url, host_avatar),
+    background_url = COALESCE(background_url, cover_image);
 
 -- 6. جدول الدردشة الفورية داخل الغرف الصوتية
 CREATE TABLE IF NOT EXISTS public.sada_room_messages (

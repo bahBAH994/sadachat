@@ -2,13 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeftRight,
-  ArrowRight,
   Coins,
   Gem,
   Lock,
   Send,
   ShieldCheck,
-  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { isFemaleVoiceLocked } from '../lib/sadaCatalog';
@@ -122,26 +120,6 @@ export const DiamondWalletPage: React.FC = () => {
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#F5F6FA]">
       <div className="w-full max-w-3xl mx-auto px-4 pt-3 space-y-4 shrink-0">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => navigate('/profile')}
-            className="inline-flex items-center gap-1.5 rounded-2xl bg-white border border-slate-200 px-3.5 py-2 text-xs font-extrabold text-slate-700 hover:border-sky-400 cursor-pointer shadow-sm"
-          >
-            <ArrowRight className="w-4 h-4" />
-            <span>العودة إلى أنا</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/wallet')}
-            className="inline-flex items-center gap-1.5 rounded-2xl bg-white border border-slate-200 px-3.5 py-2 text-xs font-extrabold text-emerald-700 hover:border-emerald-400 cursor-pointer shadow-sm"
-          >
-            <Wallet className="w-4 h-4" />
-            <span>شحن الكوينز USDT</span>
-          </button>
-        </div>
-
         {/* Hero Diamond Wallet Banner */}
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#122645] to-[#064E3B] p-5 sm:p-6 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">

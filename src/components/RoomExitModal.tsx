@@ -7,6 +7,7 @@ interface RoomExitModalProps {
   roomTitle: string;
   roomAvatar: string;
   isOnMic: boolean;
+  isAgency: boolean;
   onCancel: () => void;
 }
 
@@ -14,8 +15,10 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
   roomTitle,
   roomAvatar,
   isOnMic,
+  isAgency,
   onCancel,
 }) => {
+  const placeName = isAgency ? 'الوكالة' : 'الغرفة';
   const modalContent = (
     <div
       style={{ zIndex: 999999 }}
@@ -27,7 +30,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
       }}
       role="dialog"
       aria-modal="true"
-      aria-label="خيارات الخروج من الوكالة"
+      aria-label={`خيارات الخروج من ${placeName}`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -62,8 +65,8 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
           </h3>
           <p className="text-xs text-slate-300 leading-relaxed">
             {isOnMic
-              ? 'أنت جالس على المايك حالياً. يمكنك تصغير الوكالة ككرة عائمة مع استمرار صوتك!'
-              : 'هل تريد تصغير الوكالة أثناء التصفح أم الخروج نهائياً؟'}
+              ? `أنت جالس على المايك حالياً. يمكنك تصغير ${placeName} ككرة عائمة مع استمرار صوتك!`
+              : `هل تريد تصغير ${placeName} أثناء التصفح أم الخروج نهائياً؟`}
           </p>
         </div>
 
@@ -90,7 +93,7 @@ export const RoomExitModal: React.FC<RoomExitModalProps> = ({
             className="min-h-[46px] rounded-2xl bg-rose-600/30 border border-rose-500/60 text-rose-100 hover:bg-rose-600/45 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer pointer-events-auto touch-manipulation active:scale-95 transition"
           >
             <LogOut className="w-4 h-4" />
-            <span>خروج من الوكالة</span>
+            <span>خروج من {placeName}</span>
           </button>
         </div>
       </div>

@@ -883,7 +883,7 @@ export async function applyRoomBackgroundToMyRoomInSupabase(
 
   await supabase
     .from('sada_rooms')
-    .update({ cover_image: bgId })
+    .update({ background_url: bgId })
     .eq('host_id', user.id)
     .eq('is_active', true);
 

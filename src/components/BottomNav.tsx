@@ -14,9 +14,9 @@ export const BottomNav: React.FC = () => {
 
   const items = [
     { to: '/', label: 'حفلة', icon: Home },
-    { to: '/meet', label: 'لقاء', icon: Compass },
+    { to: '/meet', label: 'الأصدقاء', icon: Compass },
     { to: '/messages', label: 'صندوق الوارد', icon: MessageCircle },
-    { to: '/profile', label: 'أنا', icon: UserCircle2 },
+    { to: '/profile', label: 'شخصي', icon: UserCircle2 },
   ];
 
   return (

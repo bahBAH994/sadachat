@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeftRight,
   Award,
+  Check,
   Coins,
   Copy,
   Gem,
@@ -14,12 +15,19 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
+import { genId } from '../lib/sadaCatalog';
 import {
   convertDiamondsToCoinsInSupabase,
   getWalletOverviewFromSupabase,
   submitUsdtDepositInSupabase,
   submitUsdtWithdrawalInSupabase,
 } from '../lib/sadaWalletService';
+import {
+  getCachedPlatformSettingsSync,
+  getPlatformState,
+  savePlatformState,
+} from '../lib/sadaMappers';
+import type { PlatformSettings } from '../types';
 
 interface RewardTierInfo {
   id: string;
@@ -60,14 +68,45 @@ function compressReceiptImage(file: File): Promise<string> {
   });
 }
 
-type WalletTab = 'deposit' | 'withdraw';
+type WalletTab =
+  | 'usdt_deposit'
+  | 'usdt_withdraw'
+  | 'sham_cash_deposit'
+  | 'sham_cash_withdraw';
+
+interface ShamCashRequest {
+  id: string;
+  type: 'deposit' | 'withdrawal';
+  userId: string;
+  userEmail: string;
+  userDisplayName: string;
+  amount: number;
+  accountAddress: string;
+  transferReference: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
+interface ShamCashSettings {
+  adminShamCashAddress?: unknown;
+  adminShamCashBarcode?: unknown;
+  shamCashRequests?: unknown;
+}
+
+type ShamCashRequestInput = Pick<
+  ShamCashRequest,
+  'type' | 'amount' | 'accountAddress' | 'transferReference'
+>;
 
 export const WalletPage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
-  const [tab, setTab] = useState<WalletTab>('deposit');
+  const [tab, setTab] = useState<WalletTab>('usdt_deposit');
   const [adminTrc20Address, setAdminTrc20Address] = useState(
     'TFXPytN94bSAUzD893hjpSwp6DGWqGkGSa'
   );
+  const [adminShamCashAddress, setAdminShamCashAddress] = useState('');
+  const [adminShamCashBarcode, setAdminShamCashBarcode] = useState('');
   const [usdtToCoinsRate, setUsdtToCoinsRate] = useState(1000);
   const [diamondToCoinsRate, setDiamondToCoinsRate] = useState(2);
   const [rewardTiers, setRewardTiers] = useState<RewardTierInfo[]>([]);
@@ -84,10 +123,15 @@ export const WalletPage: React.FC = () => {
   const [txId, setTxId] = useState('');
   const [proofImage, setProofImage] = useState('');
   const [copiedAddr, setCopiedAddr] = useState(false);
+  const [copiedShamCashAddress, setCopiedShamCashAddress] = useState(false);
 
   const [withdrawCurrency, setWithdrawCurrency] = useState<'diamonds' | 'coins'>('diamonds');
   const [withdrawAmount, setWithdrawAmount] = useState('500');
   const [withdrawAddress, setWithdrawAddress] = useState('');
+  const [shamCashDepositAmount, setShamCashDepositAmount] = useState('');
+  const [shamCashTransferReference, setShamCashTransferReference] = useState('');
+  const [shamCashWithdrawalAmount, setShamCashWithdrawalAmount] = useState('');
+  const [shamCashWithdrawalAddress, setShamCashWithdrawalAddress] = useState('');
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
@@ -104,8 +148,19 @@ export const WalletPage: React.FC = () => {
   const loadWallet = useCallback(async () => {
     if (!user?.id) return;
     const data = await getWalletOverviewFromSupabase(user.id);
+    const settings = getCachedPlatformSettingsSync() as PlatformSettings & ShamCashSettings;
     updateLocalUser(data.user);
     setAdminTrc20Address(data.adminTrc20Address);
+    setAdminShamCashAddress(
+      typeof settings.adminShamCashAddress === 'string'
+        ? settings.adminShamCashAddress
+        : ''
+    );
+    setAdminShamCashBarcode(
+      typeof settings.adminShamCashBarcode === 'string'
+        ? settings.adminShamCashBarcode
+        : ''
+    );
     setUsdtToCoinsRate(data.usdtToCoinsRate);
     setDiamondToCoinsRate(data.diamondToCoinsRate || 2);
     setRewardTiers(data.rewardTiers);
@@ -144,6 +199,105 @@ export const WalletPage: React.FC = () => {
       setTimeout(() => setCopiedAddr(false), 2200);
     } catch {
       setFeedback({ type: 'err', text: 'تعذّر النسخ التلقائي، يرجى نسخ العنوان يدوياً.' });
+    }
+  };
+
+  const handleCopyShamCashAddress = async () => {
+    try {
+      await navigator.clipboard.writeText(adminShamCashAddress);
+      setCopiedShamCashAddress(true);
+      setTimeout(() => setCopiedShamCashAddress(false), 2200);
+    } catch {
+      setFeedback({ type: 'err', text: 'تعذّر النسخ التلقائي، يرجى نسخ رقم شام كاش يدوياً.' });
+    }
+  };
+
+  const submitShamCashRequest = async (request: ShamCashRequestInput) => {
+    if (!user) return;
+    if (!Number.isFinite(request.amount) || request.amount <= 0) {
+      throw new Error('يرجى إدخال مبلغ صحيح أكبر من صفر.');
+    }
+    if (request.type === 'deposit' && request.transferReference.trim().length < 3) {
+      throw new Error('يرجى إدخال رقم عملية التحويل بشكل صحيح.');
+    }
+    if (request.type === 'withdrawal' && request.accountAddress.trim().length < 3) {
+      throw new Error('يرجى إدخال رقم حساب شام كاش صحيح.');
+    }
+    const state = await getPlatformState({ forceRefresh: true });
+    const settings = state.settings as typeof state.settings & ShamCashSettings;
+    const existingRequests = Array.isArray(settings.shamCashRequests)
+      ? settings.shamCashRequests
+      : [];
+    const nextRequest: ShamCashRequest = {
+      ...request,
+      id: genId('sham'),
+      userId: user.id,
+      userEmail: user.email,
+      userDisplayName: user.displayName,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      reviewedAt: null,
+    };
+    const nextSettings = {
+      ...state.settings,
+      shamCashRequests: [...existingRequests, nextRequest],
+    };
+    await savePlatformState({ settings: nextSettings });
+  };
+
+  const handleSubmitShamCashDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setBusyId('sham_cash_deposit');
+    setFeedback(null);
+    try {
+      await submitShamCashRequest({
+        type: 'deposit',
+        amount: Number(shamCashDepositAmount),
+        accountAddress: adminShamCashAddress,
+        transferReference: shamCashTransferReference.trim(),
+      });
+      setShamCashDepositAmount('');
+      setShamCashTransferReference('');
+      setFeedback({
+        type: 'ok',
+        text: 'تم إرسال طلب شحن شام كاش للإدارة للمراجعة.',
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'تعذّر إرسال طلب الشحن عبر شام كاش.',
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleSubmitShamCashWithdrawal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setBusyId('sham_cash_withdraw');
+    setFeedback(null);
+    try {
+      await submitShamCashRequest({
+        type: 'withdrawal',
+        amount: Number(shamCashWithdrawalAmount),
+        accountAddress: shamCashWithdrawalAddress.trim(),
+        transferReference: '',
+      });
+      setShamCashWithdrawalAmount('');
+      setShamCashWithdrawalAddress('');
+      setFeedback({
+        type: 'ok',
+        text: 'تم إرسال طلب سحب شام كاش للإدارة للمراجعة.',
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'تعذّر إرسال طلب السحب عبر شام كاش.',
+      });
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -250,23 +404,25 @@ export const WalletPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
-            محفظة الشحن والسحب USDT (TRC20)
+            محفظة الشحن والسحب
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 mt-1">
-            شحن فوري وسحب أرباح عبر USDT (TRC20) حصراً
+            اختر وسيلة الدفع المناسبة: USDT أو شام كاش
           </p>
         </div>
 
-        <div className="w-full sm:w-auto grid grid-cols-2 items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25">
+        <div className="w-full sm:w-[420px] grid grid-cols-2 gap-2.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25">
           {[
-            { id: 'deposit', label: 'إيداع USDT (TRC20)' },
-            { id: 'withdraw', label: 'سحب الأرباح USDT' },
+            { id: 'usdt_deposit', label: 'إيداع USDT' },
+            { id: 'usdt_withdraw', label: 'سحب USDT' },
+            { id: 'sham_cash_deposit', label: 'شحن شام كاش' },
+            { id: 'sham_cash_withdraw', label: 'سحب شام كاش' },
           ].map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => handleTabChange(item.id as WalletTab)}
-              className={`w-full min-h-[40px] rounded-xl px-3 py-2 text-xs font-bold whitespace-nowrap cursor-pointer transition ${
+              className={`w-full min-h-[44px] rounded-xl px-2 py-2 text-xs font-bold cursor-pointer transition ${
                 tab === item.id
                   ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
                   : 'text-slate-300 hover:text-white'
@@ -331,7 +487,7 @@ export const WalletPage: React.FC = () => {
         </button>
       </form>
       {/* TAB 1: USDT TRC20 DEPOSIT */}
-      {tab === 'deposit' && (
+      {tab === 'usdt_deposit' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
             {/* Permanent Admin TRC20 Wallet + QR + Reward Tiers */}
@@ -590,7 +746,7 @@ export const WalletPage: React.FC = () => {
       )}
 
       {/* TAB 2: USDT TRC20 WITHDRAWAL (WINNERS, AGENTS, HOSTS) */}
-      {tab === 'withdraw' && (
+      {tab === 'usdt_withdraw' && (
         <div className="space-y-6">
           <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -726,6 +882,145 @@ export const WalletPage: React.FC = () => {
           </section>
 
         </div>
+      )}
+      {tab === 'sham_cash_deposit' && (
+        <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-5">
+          <div className="flex items-center gap-2 text-[#FCE9A6]">
+            <QrCode className="w-5 h-5 text-[#D4AF37]" />
+            <h2 className="text-base font-extrabold">شحن عبر شام كاش</h2>
+          </div>
+          {adminShamCashAddress ? (
+            <div className="flex flex-col items-center gap-3 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/30 p-4">
+              <div className="rounded-2xl bg-white p-3 shadow-[0_0_24px_rgba(243,211,122,0.28)]">
+                <QRCodeSVG
+                  value={adminShamCashBarcode || adminShamCashAddress}
+                  size={164}
+                  level="M"
+                  bgColor="#FFFFFF"
+                  fgColor="#070913"
+                />
+              </div>
+              <p className="text-[11px] text-amber-200 text-center">
+                امسح الباركود أو حوّل إلى حساب شام كاش للإدارة
+              </p>
+              <div className="w-full flex items-center gap-2 rounded-xl bg-[#0D1226] border border-[#D4AF37]/30 p-2.5">
+                <code
+                  dir="ltr"
+                  className="flex-1 text-xs font-mono-num text-[#FCE9A6] break-all select-all text-left"
+                >
+                  {adminShamCashAddress}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyShamCashAddress()}
+                  className="gold-btn min-h-[38px] rounded-lg px-3 text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  {copiedShamCashAddress ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>تم النسخ</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>نسخ</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-2xl border border-amber-500/35 bg-amber-950/35 p-4 text-sm text-amber-100">
+              لم تُضف الإدارة حساب شام كاش بعد.
+            </p>
+          )}
+
+          <form onSubmit={handleSubmitShamCashDeposit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                المبلغ المحوّل عبر شام كاش
+              </label>
+              <input
+                type="number"
+                min={1}
+                step="any"
+                required
+                value={shamCashDepositAmount}
+                onChange={(e) => setShamCashDepositAmount(e.target.value)}
+                dir="ltr"
+                className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                رقم عملية التحويل
+              </label>
+              <input
+                type="text"
+                required
+                minLength={3}
+                value={shamCashTransferReference}
+                onChange={(e) => setShamCashTransferReference(e.target.value)}
+                className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-[#D4AF37]"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={busyId === 'sham_cash_deposit' || !adminShamCashAddress}
+              className="gold-btn w-full min-h-[46px] rounded-xl py-2.5 text-sm font-extrabold cursor-pointer disabled:opacity-50"
+            >
+              {busyId === 'sham_cash_deposit' ? 'جارٍ إرسال الطلب...' : 'إرسال طلب الشحن للإدارة'}
+            </button>
+          </form>
+        </section>
+      )}
+      {tab === 'sham_cash_withdraw' && (
+        <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-5">
+          <div>
+            <h2 className="text-base font-extrabold text-[#FCE9A6]">سحب عبر شام كاش</h2>
+            <p className="text-xs text-slate-300 mt-1">
+              أرسل المبلغ المطلوب ورقم حساب شام كاش لاستلامه، وسيُراجع الطلب من الإدارة.
+            </p>
+          </div>
+          <form onSubmit={handleSubmitShamCashWithdrawal} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                المبلغ المطلوب سحبه
+              </label>
+              <input
+                type="number"
+                min={1}
+                step="any"
+                required
+                value={shamCashWithdrawalAmount}
+                onChange={(e) => setShamCashWithdrawalAmount(e.target.value)}
+                dir="ltr"
+                className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                رقم / عنوان حساب شام كاش الخاص بك
+              </label>
+              <input
+                type="text"
+                required
+                minLength={3}
+                value={shamCashWithdrawalAddress}
+                onChange={(e) => setShamCashWithdrawalAddress(e.target.value)}
+                dir="ltr"
+                className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={busyId === 'sham_cash_withdraw'}
+              className="gold-btn w-full min-h-[46px] rounded-xl py-2.5 text-sm font-extrabold cursor-pointer disabled:opacity-50"
+            >
+              {busyId === 'sham_cash_withdraw' ? 'جارٍ إرسال الطلب...' : 'إرسال طلب السحب للإدارة'}
+            </button>
+          </form>
+        </section>
       )}
         </div>
       </div>

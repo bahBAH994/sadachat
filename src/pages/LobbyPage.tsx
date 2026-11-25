@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Check,
   ChevronDown,
-  Flame,
   Headphones,
   Heart,
   Lock,
@@ -35,15 +34,14 @@ import {
 import {
   getDiscoveryDirectoryFromSupabase,
   getFollowStatus,
-  getPmOverviewFromSupabase,
   toggleFollowUserInSupabase,
 } from '../lib/sadaSocialService';
 import { supabase } from '../lib/supabase';
-import type { PrivateConversation, Room, RoomExtrasConfig, User, VipTierKey } from '../types';
+import type { Room, RoomExtrasConfig, User, VipTierKey } from '../types';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 
-type FilterChip = 'جديدة' | 'أكثر شعبية' | 'لايف' | 'محادثة';
+type FilterChip = 'الوكالات' | 'الغرف الخاصة' | 'لايف';
 
 interface PresenceUser {
   roomId: string;
@@ -56,13 +54,37 @@ interface PresenceUser {
 }
 
 const COUNTRY_FILTERS = [
-  { code: 'AR', label: 'كل الدول العربية', flag: '🌍' },
-  { code: 'SA', label: 'السعودية', flag: '🇸🇦' },
-  { code: 'EG', label: 'مصر', flag: '🇪🇬' },
-  { code: 'AE', label: 'الإمارات', flag: '🇦🇪' },
+  { code: 'ALL', label: 'الكل', flag: '🌍' },
   { code: 'SY', label: 'سوريا', flag: '🇸🇾' },
+  { code: 'SA', label: 'السعودية', flag: '🇸🇦' },
+  { code: 'AE', label: 'الإمارات', flag: '🇦🇪' },
+  { code: 'EG', label: 'مصر', flag: '🇪🇬' },
   { code: 'IQ', label: 'العراق', flag: '🇮🇶' },
+  { code: 'JO', label: 'الأردن', flag: '🇯🇴' },
+  { code: 'LB', label: 'لبنان', flag: '🇱🇧' },
+  { code: 'KW', label: 'الكويت', flag: '🇰🇼' },
+  { code: 'QA', label: 'قطر', flag: '🇶🇦' },
+  { code: 'MA', label: 'المغرب', flag: '🇲🇦' },
+  { code: 'TR', label: 'تركيا', flag: '🇹🇷' },
+  { code: 'US', label: 'أمريكا', flag: '🇺🇸' },
+  { code: 'DE', label: 'ألمانيا', flag: '🇩🇪' },
+  { code: 'GB', label: 'بريطانيا', flag: '🇬🇧' },
+  { code: 'FR', label: 'فرنسا', flag: '🇫🇷' },
+  { code: 'CA', label: 'كندا', flag: '🇨🇦' },
+  { code: 'SE', label: 'السويد', flag: '🇸🇪' },
 ];
+
+const getCountryFlag = (country?: string) => {
+  const normalizedCountry = country?.trim();
+  return (
+    COUNTRY_FILTERS.find(
+      (c) =>
+        c.code === normalizedCountry?.toUpperCase() || c.label === normalizedCountry
+    )?.flag || '🎙️'
+  );
+};
+
+const getLobbyRoomCover = (room: Room) => room.coverImage || room.hostAvatar;
 
 interface LobbyRoomCardProps {
   room: Room;
@@ -86,8 +108,7 @@ const LobbyRoomCard = memo<LobbyRoomCardProps>(
     onEnter,
     onOpenMiniProfile,
   }) => {
-    const flag =
-      ARAB_COUNTRIES.find((c) => c.code === hostCountryCode)?.flag || '🎙️';
+    const flag = getCountryFlag(hostCountryCode);
 
     return (
       <article
@@ -98,7 +119,7 @@ const LobbyRoomCard = memo<LobbyRoomCardProps>(
       >
         <div className="relative w-24 h-24 rounded-2xl overflow-hidden shrink-0 border border-slate-200 bg-slate-900">
           <img
-            src={resolveAsset(room.coverImage || room.hostAvatar)}
+            src={resolveAsset(getLobbyRoomCover(room))}
             alt={room.title}
             loading="lazy"
             decoding="async"
@@ -249,13 +270,15 @@ export const LobbyPage: React.FC = () => {
   const [loadingAgencyMap, setLoadingAgencyMap] = useState(true);
   const [pendingMyRoomEntry, setPendingMyRoomEntry] = useState(false);
   const [mainTab, setMainTab] = useState<'party' | 'mine'>('party');
-  const [activeChip, setActiveChip] = useState<FilterChip>('أكثر شعبية');
+  const [activeChip, setActiveChip] = useState<FilterChip>('الوكالات');
+  const [showMyRoomMenu, setShowMyRoomMenu] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(COUNTRY_FILTERS[0]);
   const [showCountryMenu, setShowCountryMenu] = useState(false);
 
   const [presenceByRoom, setPresenceByRoom] = useState<Record<string, PresenceUser[]>>({});
+  const [presenceReady, setPresenceReady] = useState(false);
   const [directoryUsers, setDirectoryUsers] = useState<User[]>([]);
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
   const [userMeta, setUserMeta] = useState<Record<string, { age?: number; country?: string }>>({});
@@ -263,10 +286,9 @@ export const LobbyPage: React.FC = () => {
   const [agencyOwnerMap, setAgencyOwnerMap] = useState<Record<string, string>>({});
   const [roomConfigs, setRoomConfigs] = useState<Record<string, RoomExtrasConfig>>({});
   const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
-  const [pmConversations, setPmConversations] = useState<PrivateConversation[]>([]);
-  const [loadingPm, setLoadingPm] = useState(false);
   const [seatedUserIds, setSeatedUserIds] = useState<string[]>([]);
   const [togglingFollowId, setTogglingFollowId] = useState<string | null>(null);
+  const publishedPresenceCountsRef = useRef<Record<string, number>>({});
 
   const [showCreate, setShowCreate] = useState(false);
   const [agencyToastVisible, setAgencyToastVisible] = useState(false);
@@ -350,27 +372,9 @@ export const LobbyPage: React.FC = () => {
     [user?.id]
   );
 
-  const loadPrivateConversations = useCallback(
-    async (silent = false) => {
-      const currentUser = userRef.current;
-      if (!currentUser?.id) return;
-      if (!silent) setLoadingPm(true);
-      try {
-        const ov = await getPmOverviewFromSupabase(currentUser);
-        setPmConversations(ov.conversations);
-      } catch {
-        // ignore transient error
-      } finally {
-        if (!silent) setLoadingPm(false);
-      }
-    },
-    [user?.id]
-  );
-
   useEffect(() => {
     void loadRooms();
     void loadDirectory();
-    void loadPrivateConversations();
     const dbChannel = supabase
       .channel('sada-lobby-rooms')
       .on(
@@ -385,13 +389,6 @@ export const LobbyPage: React.FC = () => {
         { event: '*', schema: 'public', table: 'sada_platform_state' },
         () => {
           void loadDirectory(true);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'sada_private_messages' },
-        () => {
-          void loadPrivateConversations(true);
         }
       )
       .subscribe();
@@ -422,6 +419,7 @@ export const LobbyPage: React.FC = () => {
           });
         });
         setPresenceByRoom(grouped);
+        setPresenceReady(true);
       } catch {
         // ignore transient presence errors
       }
@@ -456,7 +454,27 @@ export const LobbyPage: React.FC = () => {
       }
       presenceChannelRef.current = null;
     };
-  }, [loadRooms, loadDirectory, loadPrivateConversations]);
+  }, [loadRooms, loadDirectory]);
+
+  useEffect(() => {
+    if (!presenceReady) return;
+
+    rooms.forEach((room) => {
+      const liveCount = presenceByRoom[room.id]?.length || 0;
+      if (publishedPresenceCountsRef.current[room.id] === liveCount) return;
+      publishedPresenceCountsRef.current[room.id] = liveCount;
+
+      void supabase
+        .from('sada_rooms')
+        .update({ listeners_count: liveCount })
+        .eq('id', room.id)
+        .then(({ error: countError }) => {
+          if (countError) {
+            console.warn('Failed to sync room participant count:', countError);
+          }
+        });
+    });
+  }, [presenceByRoom, presenceReady, rooms]);
 
   const targetGender: 'male' | 'female' = user?.gender === 'female' ? 'male' : 'female';
   const onlineDiscoveryUsers = useMemo(() => {
@@ -500,16 +518,25 @@ export const LobbyPage: React.FC = () => {
       const presUsers = presenceByRoom[room.id] || [];
       return {
         members: presUsers,
-        liveCount: presUsers.length,
+        liveCount: presenceReady ? presUsers.length : room.listenersCount,
       };
     },
-    [presenceByRoom]
+    [presenceByRoom, presenceReady]
   );
 
   const myOwnedRooms = useMemo(() => {
     if (!user) return [];
-    return rooms.filter((r) => r.hostId === user.id);
+    return rooms.filter((r) => r.hostId === user.id && r.is_agency !== true);
   }, [rooms, user]);
+
+  const myAgencyRoom = useMemo(() => {
+    if (!user?.agencyId) return undefined;
+    const ownerId = agencyOwnerMap[user.agencyId];
+    return (
+      rooms.find((r) => r.is_agency === true && ownerId && r.hostId === ownerId) ||
+      rooms.find((r) => r.is_agency === true && r.hostId === user.id)
+    );
+  }, [rooms, user, agencyOwnerMap]);
 
   const myFollowedRooms = useMemo(() => {
     if (!followedAgencyRoomIds.length) return [];
@@ -519,11 +546,17 @@ export const LobbyPage: React.FC = () => {
   const filteredRooms = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = rooms.filter((r) => {
-      if (
-        selectedCountry.code !== 'AR' &&
-        !`${r.title} ${r.description}`.includes(selectedCountry.label)
-      ) {
-        // Keep all rooms accessible unless search excludes
+      if (activeChip === 'الوكالات' && r.is_agency !== true) return false;
+      if (activeChip === 'الغرف الخاصة' && r.is_agency === true) return false;
+      if (selectedCountry.code !== 'ALL') {
+        const hostCountry = userMeta[r.hostId]?.country?.trim();
+        if (
+          !hostCountry ||
+          (hostCountry.toUpperCase() !== selectedCountry.code &&
+            hostCountry !== selectedCountry.label)
+        ) {
+          return false;
+        }
       }
       if (q) {
         return (
@@ -540,40 +573,12 @@ export const LobbyPage: React.FC = () => {
       return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
     };
 
-    if (activeChip === 'أكثر شعبية') {
-      const engagementScore = (r: Room) => {
-        const live = getRoomLiveInfo(r).liveCount;
-        const support = Math.max(
-          r.totalGiftsCoins || 0,
-          roomConfigs[r.id]?.playVolumeCoins || 0
-        );
-        return live * 1_000_000 + support + (r.listenersCount || 0) * 10;
-      };
-      return [...list].sort((a, b) => {
-        const pDiff = pinRank(a.id) - pinRank(b.id);
-        if (pDiff !== 0) return pDiff;
-        const diff = engagementScore(b) - engagementScore(a);
-        if (diff !== 0) return diff;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
-    }
     return [...list].sort((a, b) => {
       const pDiff = pinRank(a.id) - pinRank(b.id);
       if (pDiff !== 0) return pDiff;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [rooms, activeChip, search, selectedCountry, getRoomLiveInfo, roomConfigs, pinnedRoomIds]);
-
-  const filteredPmConversations = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return pmConversations;
-    return pmConversations.filter(
-      (c) =>
-        c.peer.displayName.toLowerCase().includes(q) ||
-        formatShortNumericId(c.peer.id).includes(q) ||
-        (c.lastMessage?.text || '').toLowerCase().includes(q)
-    );
-  }, [pmConversations, search]);
+  }, [rooms, activeChip, search, selectedCountry, userMeta, pinnedRoomIds]);
 
   const handleGoToAgencyChat = () => {
     if (!user) return;
@@ -581,15 +586,18 @@ export const LobbyPage: React.FC = () => {
       setPendingMyRoomEntry(true);
       return;
     }
-    if (user.agencyId) {
-      const ownerId = agencyOwnerMap[user.agencyId];
-      const agencyRoom =
-        rooms.find((r) => ownerId && r.hostId === ownerId) ||
-        rooms.find((r) => r.hostId === user.id);
-      if (agencyRoom) {
-        enterRoom(agencyRoom);
-        return;
-      }
+    const privateRoom = myOwnedRooms[0];
+    if (privateRoom && myAgencyRoom) {
+      setShowMyRoomMenu(true);
+      return;
+    }
+    if (privateRoom) {
+      enterRoom(privateRoom);
+      return;
+    }
+    if (myAgencyRoom) {
+      enterRoom(myAgencyRoom);
+      return;
     }
     setAgencyToastVisible(true);
     window.setTimeout(() => setAgencyToastVisible(false), 2600);
@@ -770,12 +778,8 @@ export const LobbyPage: React.FC = () => {
               onClick={() => setShowCountryMenu((prev) => !prev)}
               className="flex items-center gap-1 rounded-full bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700 cursor-pointer transition"
             >
-              <span className="flex items-center -space-x-1 space-x-reverse text-sm">
-                <span>🇸🇦</span>
-                <span>🇪🇬</span>
-                <span>🇸🇾</span>
-              </span>
-              <span className="font-mono-num">{selectedCountry.code}</span>
+              <span className="text-sm">{selectedCountry.flag}</span>
+              <span>{selectedCountry.label}</span>
               <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
             </button>
 
@@ -790,7 +794,7 @@ export const LobbyPage: React.FC = () => {
 
             {showCountryMenu && (
               <div
-                className="absolute top-11 left-0 z-40 w-44 rounded-2xl bg-white border border-slate-200 shadow-xl p-1.5 space-y-0.5"
+                className="absolute top-11 left-0 z-40 w-48 max-h-72 overflow-y-auto rounded-2xl bg-white border border-slate-200 shadow-xl p-1.5 space-y-0.5"
                 onClick={(e) => e.stopPropagation()}
               >
                 {COUNTRY_FILTERS.map((c) => (
@@ -969,39 +973,26 @@ export const LobbyPage: React.FC = () => {
 
       {mainTab === 'party' && (
         <div className="w-full max-w-3xl mx-auto shrink-0 px-3.5 sm:px-4 pt-3 space-y-3">
-          <section className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => navigate('/agency')}
-              className="rounded-2xl bg-gradient-to-b from-pink-100 to-rose-50 border border-pink-200/70 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:scale-[1.02] transition"
-            >
-              <div className="flex -space-x-2 space-x-reverse">
-                <img src={resolveAsset('host_female')} alt="مضيفة" loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover ring-2 ring-white" />
-                <img src={resolveAsset('host_male')} alt="مضيف" loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover ring-2 ring-white" />
-              </div>
-              <div>
-                <span className="block text-xs font-extrabold text-slate-800">الوكالات</span>
-                <span className="block text-[10px] text-rose-500 font-semibold">المضيفون</span>
-              </div>
-            </button>
+          <section className="grid grid-cols-1 gap-2">
             <button
               type="button"
               onClick={() => navigate('/grand-competition')}
-              className="rounded-2xl bg-white border border-slate-200/80 p-2.5 flex flex-col items-center justify-between gap-1.5 text-center cursor-pointer hover:border-sky-300 transition shadow-sm"
+              className="w-full min-h-[92px] rounded-3xl bg-gradient-to-l from-sky-50 via-white to-indigo-50 border border-sky-200/80 p-4 flex items-center justify-between gap-4 text-right cursor-pointer hover:border-sky-300 hover:shadow-md transition shadow-sm"
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white shadow-sm">
-                <Trophy className="w-5 h-5" />
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center text-white shadow-md shrink-0">
+                <Trophy className="w-7 h-7" />
               </div>
-              <div>
-                <span className="block text-[11px] font-extrabold text-slate-800 line-clamp-1">مسابقة صدى الكبرى</span>
-                <span className="block text-[10px] text-slate-400 font-semibold">الجوائز وشروط المشاركة</span>
+              <div className="flex-1 min-w-0">
+                <span className="block text-base sm:text-lg font-black text-slate-900">مسابقة صدى الكبرى</span>
+                <span className="block mt-1 text-xs text-slate-500 font-semibold">الجوائز وشروط المشاركة</span>
               </div>
+              <ChevronDown className="w-5 h-5 -rotate-90 text-sky-600 shrink-0" />
             </button>
           </section>
 
           <section className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x no-scrollbar py-0.5">
-              {(['جديدة', 'أكثر شعبية', 'لايف', 'محادثة'] as FilterChip[]).map((chip) => {
+              {(['الوكالات', 'الغرف الخاصة', 'لايف'] as FilterChip[]).map((chip) => {
                 const active = activeChip === chip;
                 return (
                   <button
@@ -1014,7 +1005,6 @@ export const LobbyPage: React.FC = () => {
                         : 'bg-white border border-slate-200/70 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    {chip === 'أكثر شعبية' && <Flame className="w-3.5 h-3.5 text-orange-500" />}
                     <span>{chip}</span>
                   </button>
                 );
@@ -1028,7 +1018,7 @@ export const LobbyPage: React.FC = () => {
         <div className="max-w-3xl mx-auto px-3.5 sm:px-4 pt-3 space-y-4">
         {mainTab === 'party' && (
           <>
-        {/* Agencies / Live / Private Chats Content */}
+        {/* Agencies / Private Rooms / Live Content */}
         <section className="space-y-2.5">
           {activeChip === 'لايف' ? (
             <div className="light-card rounded-3xl p-10 text-center space-y-3">
@@ -1042,90 +1032,6 @@ export const LobbyPage: React.FC = () => {
                 نعمل حالياً على تجهيز تجربة البث المرئي المباشر لتنطلق بأعلى جودة قريباً.
               </p>
             </div>
-          ) : activeChip === 'محادثة' ? (
-            loadingPm ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((n) => (
-                  <div key={n} className="light-card rounded-2xl h-20 animate-pulse" />
-                ))}
-              </div>
-            ) : filteredPmConversations.length === 0 ? (
-              <div className="light-card rounded-3xl p-8 text-center space-y-3">
-                <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
-                  <MessageCircle className="w-6 h-6" />
-                </div>
-                <p className="text-sm font-bold text-slate-800">
-                  لا توجد محادثات خاصة جارية حالياً
-                </p>
-                <p className="text-xs text-slate-500">
-                  يمكنك اكتشاف الأعضاء المتصلين ومراسلتهم مباشرة من تبويب لقاء.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => navigate('/meet')}
-                  className="emerald-btn rounded-xl px-5 py-2 text-xs font-extrabold cursor-pointer"
-                >
-                  استكشاف الأشخاص الآن
-                </button>
-              </div>
-            ) : (
-              filteredPmConversations.map((conv) => {
-                const isOnline =
-                  onlineUserIds.includes(conv.peer.id) ||
-                  (conv.peer.lastSeen
-                    ? Date.now() - new Date(conv.peer.lastSeen).getTime() <= 5 * 60 * 1000
-                    : false);
-                const lastTime = conv.lastMessage?.createdAt
-                  ? new Date(conv.lastMessage.createdAt).toLocaleTimeString('ar-EG', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  : '';
-
-                return (
-                  <article
-                    key={conv.id}
-                    onClick={() => navigate(`/messages?to=${encodeURIComponent(conv.peer.id)}`)}
-                    className="light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer"
-                  >
-                    <div className="relative shrink-0">
-                      <AvatarWithFrame
-                        src={conv.peer.avatarUrl}
-                        alt={conv.peer.displayName}
-                        frameId={conv.peer.frameId}
-                        vipTier={getUserVipTierInfo(conv.peer).key}
-                        size="md"
-                      />
-                      {isOnline && (
-                        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white z-20" />
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                          <h3 className="text-sm font-extrabold text-slate-900 truncate">
-                            <VipUserName name={conv.peer.displayName} vipTier={getUserVipTierInfo(conv.peer).key} />
-                          </h3>
-                          <VipTierBadge vipTier={getUserVipTierInfo(conv.peer).key} compact />
-                          {conv.peer.femaleVerifiedBadge && (
-                            <FemaleVerifiedBadge badge={conv.peer.femaleVerifiedBadge} />
-                          )}
-                        </div>
-                        {lastTime && (
-                          <span className="text-[10px] font-mono-num text-slate-400 shrink-0">
-                            {lastTime}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-500 truncate">
-                        {conv.lastMessage?.text || 'ابدأ المحادثة الخاصة الآن...'}
-                      </p>
-                    </div>
-                  </article>
-                );
-              })
-            )
           ) : loading ? (
             <div className="space-y-3">
               {[1, 2, 3, 4].map((n) => (
@@ -1135,13 +1041,15 @@ export const LobbyPage: React.FC = () => {
           ) : filteredRooms.length === 0 ? (
             <div className="light-card rounded-3xl p-8 text-center space-y-3">
               <p className="text-sm font-bold text-slate-700">
-                لا توجد وكالات صوتية مطابقة حالياً
+                {activeChip === 'الوكالات'
+                  ? 'لا توجد وكالات صوتية مطابقة حالياً'
+                  : 'لا توجد غرف خاصة مطابقة حالياً'}
               </p>
               <button
                 type="button"
                 onClick={() => {
                   setMainTab('party');
-                  setActiveChip('جديدة');
+                  setActiveChip('الوكالات');
                   setSearch('');
                 }}
                 className="emerald-btn rounded-xl px-5 py-2 text-xs cursor-pointer"
@@ -1215,7 +1123,7 @@ export const LobbyPage: React.FC = () => {
                       className="light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer border-emerald-200"
                     >
                       <img
-                        src={resolveAsset(room.coverImage || room.hostAvatar)}
+                        src={resolveAsset(getLobbyRoomCover(room))}
                         alt={room.title}
                         loading="lazy"
                         decoding="async"
@@ -1228,6 +1136,7 @@ export const LobbyPage: React.FC = () => {
                         </span>
                         <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
                           <span className="inline-flex items-center gap-1">
+                            <span>{getCountryFlag(userMeta[room.hostId]?.country)}</span>
                             {room.title}
                             {roomConfigs[room.id]?.agencyLockEnabled && (
                               <Lock
@@ -1276,7 +1185,7 @@ export const LobbyPage: React.FC = () => {
                       className="light-card light-card-hover rounded-2xl p-3 flex items-center gap-3 cursor-pointer"
                     >
                       <img
-                        src={resolveAsset(room.coverImage || room.hostAvatar)}
+                        src={resolveAsset(getLobbyRoomCover(room))}
                         alt={room.title}
                         loading="lazy"
                         decoding="async"
@@ -1286,6 +1195,7 @@ export const LobbyPage: React.FC = () => {
                       <div className="flex-1 min-w-0 space-y-1">
                         <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
                           <span className="inline-flex items-center gap-1">
+                            <span>{getCountryFlag(userMeta[room.hostId]?.country)}</span>
                             {room.title}
                             {roomConfigs[room.id]?.agencyLockEnabled && (
                               <Lock
@@ -1315,14 +1225,40 @@ export const LobbyPage: React.FC = () => {
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={handleGoToAgencyChat}
-        className="fixed bottom-24 left-3 z-30 emerald-btn rounded-full px-3 py-1.5 text-xs shadow-lg font-extrabold flex items-center gap-2 cursor-pointer"
-      >
-        <Mic2 className="w-4 h-4" />
-        <span>وكالتي</span>
-      </button>
+      <div className="fixed bottom-24 left-3 z-30">
+        {showMyRoomMenu && myOwnedRooms[0] && myAgencyRoom && (
+          <div className="absolute bottom-full left-0 mb-2 w-48 rounded-2xl bg-white border border-slate-200 p-1.5 shadow-xl space-y-1">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMyRoomMenu(false);
+                enterRoom(myOwnedRooms[0]);
+              }}
+              className="w-full rounded-xl px-3 py-2.5 text-right text-xs font-extrabold text-slate-800 hover:bg-emerald-50 cursor-pointer transition"
+            >
+              غرفتي الخاصة
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMyRoomMenu(false);
+                enterRoom(myAgencyRoom);
+              }}
+              className="w-full rounded-xl px-3 py-2.5 text-right text-xs font-extrabold text-slate-800 hover:bg-emerald-50 cursor-pointer transition"
+            >
+              وكالتي
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={handleGoToAgencyChat}
+          className="emerald-btn rounded-full px-3 py-1.5 text-xs shadow-lg font-extrabold flex items-center gap-2 cursor-pointer"
+        >
+          <Mic2 className="w-4 h-4" />
+          <span>غرفتي</span>
+        </button>
+      </div>
 
       {/* Create Personal Room Modal */}
       {showCreate && (

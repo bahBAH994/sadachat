@@ -235,6 +235,7 @@ export interface RoomExtrasConfig {
   agencyLockPassword?: string;
   kickedUserIds: string[];
   kickedUserNames?: Record<string, string>;
+  temporaryKickExpiresAt?: Record<string, string>;
   mutedUserIds: string[];
   gifters: Record<string, RoomGifterEntry>;
   players?: Record<string, RoomPlayerEntry>;
@@ -246,6 +247,8 @@ export interface RoomExtrasConfig {
 
 export interface Room {
   id: string;
+  isAgency?: boolean;
+  is_agency?: boolean;
   title: string;
   category: 'مسابقات' | 'شعر وأدب' | 'طرب' | 'حوار';
   description: string;
@@ -253,6 +256,7 @@ export interface Room {
   hostName: string;
   hostAvatar: string;
   coverImage: string;
+  backgroundImage: string;
   isPrivate: boolean;
   hasPassword?: boolean;
   maxSeats: number;

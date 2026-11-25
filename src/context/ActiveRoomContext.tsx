@@ -220,6 +220,7 @@ interface ActiveRoomContextValue {
     maxSeats?: number;
     hostAvatar?: string;
     coverImage?: string;
+    backgroundImage?: string;
     description?: string;
     title?: string;
     requireMicPermission?: boolean;
@@ -232,6 +233,7 @@ interface ActiveRoomContextValue {
       | { type: 'clear_all' }
       | { type: 'mute_user'; targetUserId: string; isMuted: boolean }
       | { type: 'kick_seat'; targetUserId: string }
+      | { type: 'temporary_kick_room'; targetUserId: string; targetName?: string }
       | { type: 'kick_room'; targetUserId: string; targetName?: string }
       | { type: 'unban_room'; targetUserId: string }
       | { type: 'toggle_deputy'; targetUserId: string; targetName?: string }
@@ -773,7 +775,16 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                   title: typeof r.title === 'string' ? r.title : prev.title,
                   description: typeof r.description === 'string' ? r.description : prev.description,
                   hostAvatar: typeof r.host_avatar === 'string' ? r.host_avatar : prev.hostAvatar,
-                  coverImage: typeof r.cover_image === 'string' ? r.cover_image : prev.coverImage,
+                  coverImage:
+                    typeof r.cover_url === 'string'
+                      ? r.cover_url
+                      : typeof r.avatar_url === 'string'
+                        ? r.avatar_url
+                        : prev.coverImage,
+                  backgroundImage:
+                    typeof r.background_url === 'string'
+                      ? r.background_url
+                      : prev.backgroundImage,
                   maxSeats: typeof r.max_seats === 'number' ? r.max_seats : prev.maxSeats,
                   seats: Array.isArray(r.seats) ? (r.seats as Room['seats']) : prev.seats,
                   listenersCount:
@@ -1020,7 +1031,24 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       void leaveActiveRoom();
       setError('تم طردك من هذه الوكالة بقرار من إدارة الوكالة.');
     }
-  }, [extras?.kickedUserIds, leaveActiveRoom, room?.hostId, user?.id, user?.is_admin]);
+    const temporaryExpiry = extras?.temporaryKickExpiresAt?.[activeUser.id];
+    if (
+      temporaryExpiry &&
+      new Date(temporaryExpiry).getTime() > Date.now() &&
+      !activeUser.is_admin &&
+      activeUser.id !== activeRoom.hostId
+    ) {
+      void leaveActiveRoom();
+      setError('تم طردك من هذه الوكالة لمدة 3 أيام');
+    }
+  }, [
+    extras?.kickedUserIds,
+    extras?.temporaryKickExpiresAt,
+    leaveActiveRoom,
+    room?.hostId,
+    user?.id,
+    user?.is_admin,
+  ]);
 
   // Cleanup everything on user logout
   useEffect(() => {
@@ -1217,8 +1245,8 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         isMuted: !mySeat.isMuted,
       });
       setRoom((prev) => (prev ? { ...prev, seats: nextSeats } : prev));
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذّر تغيير حالة المايك.');
     }
   }, [mySeat, room, user]);
 
@@ -1553,6 +1581,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       maxSeats?: number;
       hostAvatar?: string;
       coverImage?: string;
+      backgroundImage?: string;
       description?: string;
       title?: string;
       requireMicPermission?: boolean;
@@ -1580,6 +1609,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         | { type: 'clear_all' }
         | { type: 'mute_user'; targetUserId: string; isMuted: boolean }
         | { type: 'kick_seat'; targetUserId: string }
+        | { type: 'temporary_kick_room'; targetUserId: string; targetName?: string }
         | { type: 'kick_room'; targetUserId: string; targetName?: string }
         | { type: 'unban_room'; targetUserId: string }
         | { type: 'toggle_deputy'; targetUserId: string; targetName?: string }

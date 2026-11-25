@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Ban,
   Check,
-  ClipboardList,
   Copy,
   Coins,
   Crown,
@@ -44,7 +43,10 @@ import {
   parseVipTierKey,
 } from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
-import { toggleFollowAgencyInSupabase } from '../lib/sadaSocialService';
+import {
+  getUserGiftLevelsFromSupabase,
+  toggleFollowAgencyInSupabase,
+} from '../lib/sadaSocialService';
 import {
   canClearRoomChatFromData,
   getRoomExtrasFromSupabase,
@@ -62,21 +64,30 @@ import { DragonCinemaOverlay } from '../components/DragonCinemaOverlay';
 import { DragonStageBackdrop } from '../components/DragonStageBackdrop';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { Fluent3DAsset } from '../components/Fluent3DAsset';
-import { RoomContestModal } from '../components/RoomContestModal';
 import { RoomExitModal } from '../components/RoomExitModal';
 import { RoomGamesModal } from '../components/RoomGamesModal';
 import { RoomMusicModal } from '../components/RoomMusicModal';
 import { RoomSettingsModal } from '../components/RoomSettingsModal';
 import { Royal3DDieFaceBadge } from '../components/Royal3DDice';
 import { TieredGiftEffectsOverlay } from '../components/TieredGiftEffectsOverlay';
-import { VipEntranceOverlay } from '../components/VipEntranceOverlay';
 import { safeGetItem } from '../lib/safeStorage';
 import { supabase } from '../lib/supabase';
 
 const FIXED_CHAT_EMOJIS = ['😀', '😂', '😍', '🥰', '😎', '😭', '😡', '👍', '👏', '🙏', '❤️', '🔥'];
 const AGENCY_ID = '954546';
-const ROOM_WHEEL_ENTRY_FEES = [100, 500, 1000, 5000];
-const ROOM_WHEEL_SPIN_DURATION_MS = 2500;
+const ROOM_WHEEL_ENTRY_FEES = [1000, 5000, 10000, 50000];
+const ROOM_WHEEL_SPIN_DURATION_MS = 3500;
+const ROOM_WHEEL_MAX_PLAYERS = 8;
+const ROOM_WHEEL_COLORS = [
+  '#B8872D',
+  '#14213D',
+  '#047857',
+  '#7F1D3D',
+  '#0F766E',
+  '#4C1D95',
+  '#92400E',
+  '#334155',
+];
 
 interface RoomWheelPlayer {
   userId: string;
@@ -157,7 +168,6 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [addingCompetitor, setAddingCompetitor] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const roundRef = useRef<RoomWheelRound | null>(round);
@@ -248,7 +258,12 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
         const player = payload?.player as RoomWheelPlayer | undefined;
         if (!player || player.test || !joinedRoundId) return;
         const current = roundRef.current;
-        if (!current || current.id !== joinedRoundId || current.status !== 'registering') {
+        if (
+          !current ||
+          current.id !== joinedRoundId ||
+          current.status !== 'registering' ||
+          current.players.length >= ROOM_WHEEL_MAX_PLAYERS
+        ) {
           return;
         }
         if (current.players.some((candidate) => candidate.userId === player.userId)) return;
@@ -323,8 +338,6 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
     : [];
   const isCreator = Boolean(round && user && round.creatorId === user.id);
   const hasJoined = Boolean(round?.players.some((player) => player.userId === user?.id));
-  const practiceRound = Boolean(round?.players.some((player) => player.test));
-
   const handleCreateRound = async () => {
     if (!user || busy) return;
     setBusy(true);
@@ -354,7 +367,15 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
   };
 
   const handleJoinRound = async () => {
-    if (!user || !round || busy || joiningRef.current || hasJoined || practiceRound) return;
+    if (
+      !user ||
+      !round ||
+      busy ||
+      joiningRef.current ||
+      hasJoined ||
+      round.status !== 'registering' ||
+      round.players.length >= ROOM_WHEEL_MAX_PLAYERS
+    ) return;
     joiningRef.current = true;
     setBusy(true);
     setNotice(null);
@@ -402,15 +423,33 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
     }
   };
 
-  const handleAddCompetitor = async (member: RoomWheelMember) => {
-    if (!user || !round || busy || !isCreator || round.prizePool > 0) return;
+  const handleAddCompetitor = async () => {
+    if (
+      !user ||
+      !round ||
+      busy ||
+      !isCreator ||
+      round.status !== 'registering' ||
+      round.players.length >= ROOM_WHEEL_MAX_PLAYERS
+    ) return;
     setBusy(true);
     setNotice(null);
     try {
-      const nextPlayer: RoomWheelPlayer = { ...member, test: true };
-      const next = { ...round, players: [...round.players, nextPlayer] };
+      const availableAvatar = members.find(
+        (member) => !round.players.some((player) => player.userId === member.userId)
+      )?.avatarUrl;
+      const nextPlayer: RoomWheelPlayer = {
+        userId: `test_${round.id}_${Date.now()}`,
+        displayName: `منافس تجريبي ${round.players.filter((player) => player.test).length + 1}`,
+        avatarUrl: availableAvatar || user.avatarUrl,
+        test: true,
+      };
+      const next = {
+        ...round,
+        players: [...round.players, nextPlayer],
+        prizePool: round.prizePool + round.entryFee,
+      };
       await publishRound(next);
-      setAddingCompetitor(false);
     } catch (addError) {
       setNotice(addError instanceof Error ? addError.message : 'تعذّرت إضافة المنافس.');
     } finally {
@@ -423,7 +462,9 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
       !user ||
       !round ||
       !isCreator ||
+      round.status !== 'registering' ||
       round.players.length < 2 ||
+      round.players.length > ROOM_WHEEL_MAX_PLAYERS ||
       busy ||
       startingRef.current
     ) {
@@ -443,7 +484,13 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
         (player) => !currentRound.eliminated.includes(player.userId)
       );
       while (alive.length > 1) {
-        const eliminated = alive[Math.floor(Math.random() * alive.length)];
+        const remainingRealPlayers = alive.filter((player) => !player.test);
+        const eliminationCandidates =
+          remainingRealPlayers.length === 1
+            ? alive.filter((player) => player.test)
+            : alive;
+        const eliminated =
+          eliminationCandidates[Math.floor(Math.random() * eliminationCandidates.length)];
         const spinningRound = {
           ...currentRound,
           spinningPlayerId: eliminated.userId,
@@ -471,6 +518,9 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
           );
         }
         alive = alive.filter((player) => player.userId !== eliminated.userId);
+        if (alive.length > 1) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 2000));
+        }
       }
 
       const winner = alive[0];
@@ -536,16 +586,6 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
     }
   };
 
-  const wheelGradient = alivePlayers.length
-    ? `conic-gradient(${alivePlayers
-        .map((_, index) => {
-          const angle = (index * 360) / alivePlayers.length;
-          const nextAngle = ((index + 1) * 360) / alivePlayers.length;
-          return `${index % 2 ? '#18213A' : '#9A7021'} ${angle}deg ${nextAngle}deg`;
-        })
-        .join(', ')})`
-    : 'conic-gradient(#9A7021 0deg 180deg, #18213A 180deg 360deg)';
-
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-3 backdrop-blur-md"
@@ -587,7 +627,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
         {!round ? (
           <div className="space-y-3 rounded-2xl bg-black/25 p-3">
             <p className="text-sm font-bold text-white">أنشئ جولة واختر قيمة الدخول</p>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {ROOM_WHEEL_ENTRY_FEES.map((fee) => (
                 <button
                   key={fee}
@@ -626,103 +666,163 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
 
             <div className="relative mx-auto h-64 w-64 shrink-0 rounded-full border-[7px] border-[#D4AF37] p-1 shadow-[0_0_35px_rgba(212,175,55,0.35)]">
               <span className="absolute -top-3 left-1/2 z-20 -translate-x-1/2 border-x-[12px] border-t-[22px] border-x-transparent border-t-rose-500 drop-shadow-md" />
-              <div
-                className="relative h-full w-full overflow-hidden rounded-full border-2 border-[#FCE9A6]/70 transition-transform"
-                style={{
-                  background: wheelGradient,
-                  transform: `rotate(${rotation}deg)`,
-                  transitionDuration: spinning ? `${ROOM_WHEEL_SPIN_DURATION_MS}ms` : '0ms',
-                  transitionTimingFunction: 'cubic-bezier(0.12, 0.78, 0.22, 1)',
-                }}
+              <svg
+                viewBox="0 0 320 320"
+                role="img"
+                aria-label={`دولاب الإقصاء، ${alivePlayers.length} متنافس`}
+                className="h-full w-full overflow-visible rounded-full border-2 border-[#FCE9A6]/70"
               >
-                {alivePlayers.map((player, index) => {
-                  const angle = (index * 360) / alivePlayers.length + 180 / alivePlayers.length - 90;
-                  const radians = (angle * Math.PI) / 180;
-                  const left = 50 + 36 * Math.cos(radians);
-                  const top = 50 + 36 * Math.sin(radians);
-                  return (
-                    <div
-                      key={player.userId}
-                      className="absolute flex w-16 -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center"
-                      style={{ left: `${left}%`, top: `${top}%` }}
-                    >
-                      <img
-                        src={player.avatarUrl}
-                        alt=""
-                        className="h-9 w-9 rounded-full border-2 border-[#FCE9A6] bg-slate-800 object-cover"
-                      />
-                      <span className="mt-0.5 max-w-full truncate rounded bg-black/70 px-1 text-[9px] font-bold text-white">
-                        {player.displayName}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="h-10 w-10 rounded-full border-2 border-[#FCE9A6] bg-[#070913] shadow-lg" />
-              </div>
+                <g
+                  style={{
+                    transform: `rotate(${rotation}deg)`,
+                    transformBox: 'view-box',
+                    transformOrigin: 'center',
+                    transition: spinning
+                      ? `transform ${ROOM_WHEEL_SPIN_DURATION_MS}ms cubic-bezier(0.12, 0.78, 0.22, 1)`
+                      : 'none',
+                  }}
+                >
+                  {alivePlayers.length === 0 && (
+                    <circle cx="160" cy="160" r="152" fill="#14213D" />
+                  )}
+                  {alivePlayers.map((player, index) => {
+                    const count = alivePlayers.length;
+                    const sectorAngle = 360 / count;
+                    const startAngle = (index * sectorAngle - 90) * (Math.PI / 180);
+                    const endAngle = ((index + 1) * sectorAngle - 90) * (Math.PI / 180);
+                    const radius = 152;
+                    const startX = 160 + radius * Math.cos(startAngle);
+                    const startY = 160 + radius * Math.sin(startAngle);
+                    const endX = 160 + radius * Math.cos(endAngle);
+                    const endY = 160 + radius * Math.sin(endAngle);
+                    const sectorPath =
+                      count === 1
+                        ? 'M 160 160 L 160 8 A 152 152 0 1 1 160 312 A 152 152 0 1 1 160 8 Z'
+                        : `M 160 160 L ${startX} ${startY} A 152 152 0 0 1 ${endX} ${endY} Z`;
+                    const centerAngle =
+                      (index * sectorAngle + sectorAngle / 2 - 90) * (Math.PI / 180);
+                    const labelX = 160 + 88 * Math.cos(centerAngle);
+                    const labelY = 160 + 88 * Math.sin(centerAngle);
+                    const avatarClipId = `room-wheel-avatar-${index}`;
+                    const displayName =
+                      player.displayName.length > 10
+                        ? `${player.displayName.slice(0, 9)}…`
+                        : player.displayName;
+                    return (
+                      <g key={player.userId}>
+                        <path
+                          d={sectorPath}
+                          fill={ROOM_WHEEL_COLORS[index % ROOM_WHEEL_COLORS.length]}
+                          stroke="#FCE9A6"
+                          strokeOpacity="0.8"
+                          strokeWidth="2"
+                        />
+                        <defs>
+                          <clipPath id={avatarClipId}>
+                            <circle cx="0" cy="-11" r="15" />
+                          </clipPath>
+                        </defs>
+                        <g transform={`translate(${labelX} ${labelY})`}>
+                          <circle
+                            cx="0"
+                            cy="-11"
+                            r="17"
+                            fill="#070913"
+                            stroke="#FCE9A6"
+                            strokeWidth="2"
+                          />
+                          {player.avatarUrl && (
+                            <image
+                              href={player.avatarUrl}
+                              x="-15"
+                              y="-26"
+                              width="30"
+                              height="30"
+                              preserveAspectRatio="xMidYMid slice"
+                              clipPath={`url(#${avatarClipId})`}
+                            />
+                          )}
+                          <rect
+                            x="-39"
+                            y="14"
+                            width="78"
+                            height="16"
+                            rx="7"
+                            fill="#070913"
+                            fillOpacity="0.88"
+                            stroke="#FCE9A6"
+                            strokeOpacity="0.7"
+                          />
+                          <text
+                            x="0"
+                            y="25"
+                            textAnchor="middle"
+                            fill="white"
+                            fontSize={count >= 7 ? '9' : '10'}
+                            fontWeight="700"
+                          >
+                            {displayName}
+                          </text>
+                        </g>
+                      </g>
+                    );
+                  })}
+                </g>
+                <circle
+                  cx="160"
+                  cy="160"
+                  r="20"
+                  fill="#070913"
+                  stroke="#FCE9A6"
+                  strokeWidth="3"
+                />
+              </svg>
             </div>
 
             <div className="flex items-center justify-center gap-2 text-xs text-slate-300">
               <Trophy className="h-4 w-4 text-[#F3D37A]" />
               {alivePlayers.length} متنافس متبقٍ من {round.players.length}
             </div>
+            {round.players.some((player) => player.test) && (
+              <p className="text-center text-[11px] text-slate-400">
+                المنافسون التجريبيون للمحاكاة فقط ولا يستلمون الجائزة.
+              </p>
+            )}
 
             {round.status === 'registering' && !hasJoined && (
               <button
                 type="button"
-                disabled={busy || practiceRound || userCoins < round.entryFee}
+                disabled={
+                  busy ||
+                  userCoins < round.entryFee ||
+                  round.players.length >= ROOM_WHEEL_MAX_PLAYERS
+                }
                 onClick={() => void handleJoinRound()}
                 className="gold-btn w-full rounded-xl py-2.5 text-sm font-extrabold disabled:opacity-50"
               >
-                {busy
-                  ? 'جارٍ الانضمام...'
-                  : practiceRound
-                  ? 'جولة تدريبية بدون رسوم'
+                {round.players.length >= ROOM_WHEEL_MAX_PLAYERS
+                  ? 'اكتمل عدد المتنافسين'
                   : `انضمام للجولة (${round.entryFee.toLocaleString('en-US')} كوينز)`}
               </button>
             )}
 
             {isCreator && round.status === 'registering' && (
               <div className="space-y-2">
-                {round.prizePool === 0 && (
-                  <>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setAddingCompetitor((value) => !value)}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/40 bg-white/5 py-2 text-xs font-bold text-[#FCE9A6]"
-                    >
-                      <Plus className="h-4 w-4" />
-                      إضافة منافس
-                    </button>
-                    {addingCompetitor && (
-                      <div className="max-h-28 space-y-1 overflow-y-auto rounded-xl bg-black/30 p-2">
-                        {members
-                          .filter(
-                            (member) =>
-                              member.userId !== user?.id &&
-                              !round.players.some((player) => player.userId === member.userId)
-                          )
-                          .map((member) => (
-                            <button
-                              key={member.userId}
-                              type="button"
-                              disabled={busy}
-                              onClick={() => void handleAddCompetitor(member)}
-                              className="flex w-full items-center gap-2 rounded-lg p-1.5 text-right text-xs text-white hover:bg-white/10"
-                            >
-                              <img src={member.avatarUrl} alt="" className="h-7 w-7 rounded-full object-cover" />
-                              <span>{member.displayName}</span>
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                  </>
-                )}
                 <button
                   type="button"
-                  disabled={busy || round.players.length < 2}
+                  disabled={busy || round.players.length >= ROOM_WHEEL_MAX_PLAYERS}
+                  onClick={() => void handleAddCompetitor()}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/40 bg-white/5 py-2 text-xs font-bold text-[#FCE9A6] disabled:opacity-45"
+                >
+                  <Plus className="h-4 w-4" />
+                  إضافة منافس للتجربة
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    busy ||
+                    round.players.length < 2
+                  }
                   onClick={() => void handleStartRound()}
                   className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-700 py-2.5 text-sm font-extrabold text-white disabled:opacity-45"
                 >
@@ -758,6 +858,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
 
 interface RoomSeatItemProps {
   seat: RoomSeat;
+  backgroundIsLight: boolean;
   isMe: boolean;
   isTop1: boolean;
   isHost: boolean;
@@ -774,6 +875,7 @@ interface RoomSeatItemProps {
 const RoomSeatItem = memo<RoomSeatItemProps>(
   ({
     seat,
+    backgroundIsLight,
     isMe,
     isTop1,
     isHost,
@@ -801,16 +903,20 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
               className={`inline-flex items-center gap-0.5 px-1.5 rounded-full text-[9px] font-mono-num font-extrabold leading-tight ${
                 isTop1
                   ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-[#070913]'
-                  : (seat.receivedDiamonds || 0) > 0
-                  ? 'bg-black/55 text-[#FCE9A6] border border-[#D4AF37]/40'
-                  : 'bg-black/40 text-slate-300'
+                  : backgroundIsLight
+                    ? 'bg-slate-950/75 backdrop-blur-md border border-white/20 text-white'
+                    : 'bg-white/15 backdrop-blur-md border border-white/15 text-white drop-shadow-sm'
               }`}
             >
               <span>{formatCompactMetric(seat.receivedDiamonds || 0)}</span>
               <span className="text-[8px]">💎</span>
             </span>
           ) : (
-            <span className="text-[9px] font-mono-num text-slate-300/80">
+            <span
+              className={`text-[9px] font-mono-num text-white ${
+                backgroundIsLight ? '' : 'drop-shadow-sm'
+              }`}
+            >
               {seat.seatIndex + 1}
             </span>
           )}
@@ -819,7 +925,11 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
         {/* Enlarged Circular Seat Container */}
         <div
           ref={(el) => registerSeatRef(seat.seatIndex, el)}
-          className="relative flex items-center justify-center"
+          className={`relative flex items-center justify-center rounded-full border ${
+            backgroundIsLight
+              ? 'bg-slate-950/75 backdrop-blur-md border-white/20'
+              : 'bg-white/15 backdrop-blur-md border-white/15 drop-shadow-sm'
+          }`}
         >
           {/* Golden Speaking Waves */}
           {isActiveSpeaker && (
@@ -877,10 +987,10 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
             />
           ) : (
             <div
-              className={`${sizeClass} rounded-full flex items-center justify-center border transition ${
+              className={`${sizeClass} rounded-full flex items-center justify-center transition ${
                 seat.isLocked
-                  ? 'bg-black/50 border-slate-700/70 text-slate-500'
-                  : 'bg-black/40 border-[#D4AF37]/35 text-[#D4AF37]/90 group-hover:border-[#FCE9A6] group-hover:bg-[#D4AF37]/15'
+                  ? 'text-white'
+                  : 'text-white group-hover:text-[#FCE9A6]'
               }`}
             >
               {seat.isLocked ? (
@@ -994,11 +1104,17 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
               <VipUserName
                 name={seat.displayName || 'متحدث'}
                 vipTier={resolvedVip}
-                className="text-[9px] font-medium text-white/95 truncate leading-tight w-full max-w-[52px] mx-auto px-0.5 text-center"
+                className={`text-[9px] font-medium text-white truncate leading-tight w-full max-w-[52px] mx-auto px-0.5 text-center ${
+                  backgroundIsLight ? '' : 'drop-shadow-sm'
+                }`}
               />
             </>
           ) : (
-            <span className="text-[9px] font-medium text-slate-400/90 truncate w-full max-w-[52px] mx-auto px-0.5 text-center">
+            <span
+              className={`text-[9px] font-medium text-white truncate w-full max-w-[52px] mx-auto px-0.5 text-center ${
+                backgroundIsLight ? '' : 'drop-shadow-sm'
+              }`}
+            >
               {seat.isLocked ? 'مقفل' : 'مايك'}
             </span>
           )}
@@ -1010,6 +1126,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
 
 interface RoomChatMessageItemProps {
   message: RoomMessage;
+  backgroundIsLight: boolean;
   senderAvatarUrl?: string;
   senderFrameId?: string;
   senderGender?: User['gender'];
@@ -1019,7 +1136,16 @@ interface RoomChatMessageItemProps {
 }
 
 const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
-  ({ message: m, senderAvatarUrl, senderFrameId, senderGender, senderLevel, senderVipTier, onOpenMiniProfile }) => {
+  ({
+    message: m,
+    backgroundIsLight,
+    senderAvatarUrl,
+    senderFrameId,
+    senderGender,
+    senderLevel,
+    senderVipTier,
+    onOpenMiniProfile,
+  }) => {
     const resolvedVip: VipTierKey =
       senderVipTier && senderVipTier !== 'none'
         ? senderVipTier
@@ -1040,7 +1166,13 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
 
     if (m.type === 'system') {
       return (
-        <div className="inline-block rounded-xl bg-black/15 px-2.5 py-1 text-[11px] text-amber-100/90">
+        <div
+          className={`inline-block rounded-xl border px-2.5 py-1 text-[11px] text-white ${
+            backgroundIsLight
+              ? 'bg-slate-950/75 backdrop-blur-md border-white/20'
+              : 'bg-white/15 backdrop-blur-md border-white/15 drop-shadow-sm'
+          }`}
+        >
           {m.text}
         </div>
       );
@@ -1088,7 +1220,13 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
     }
 
     return (
-      <div className="rounded-xl bg-black/15 px-2.5 py-1.5 text-xs leading-snug flex items-start gap-2">
+      <div
+        className={`rounded-xl border px-2.5 py-1.5 text-xs leading-snug text-white flex items-start gap-2 ${
+          backgroundIsLight
+            ? 'bg-slate-950/75 backdrop-blur-md border-white/20'
+            : 'bg-white/15 backdrop-blur-md border-white/15 drop-shadow-sm'
+        }`}
+      >
         <button
           type="button"
           onClick={() =>
@@ -1168,7 +1306,6 @@ export const RoomPage: React.FC = () => {
     extras,
     loading,
     error,
-    clearError,
     isMinimized,
     exitModalOpen,
     setExitModalOpen,
@@ -1185,11 +1322,10 @@ export const RoomPage: React.FC = () => {
     approveMicRequest,
     denyMicRequest,
     presenceMembers,
-    topGifters,
+    liveListenersCount,
     supportAndPlayLeaderboard,
     giftBanner,
     wheelBanner,
-    entryBanner,
     flyingGifts,
     tier1SideNotices,
     mediumCelebrationGift,
@@ -1219,13 +1355,6 @@ export const RoomPage: React.FC = () => {
     toggleMusicPlayPause,
     stopRoomMusic,
     addPlayVolume,
-    startContest,
-    joinContest,
-    voteContest,
-    finishContest,
-    clearContest,
-    submitContestQuizAnswer,
-    advanceContestQuizQuestion,
     giftTargetRequest,
     clearGiftTargetRequest,
   } = useActiveRoom();
@@ -1237,6 +1366,10 @@ export const RoomPage: React.FC = () => {
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [visualViewportTop, setVisualViewportTop] = useState(0);
   const [canManageRoomActions, setCanManageRoomActions] = useState(false);
+  const [clearChatAuthorization, setClearChatAuthorization] = useState<{
+    roomId: string;
+    userId: string;
+  } | null>(null);
   const [isAgencyOwner, setIsAgencyOwner] = useState(false);
   const [canManageAgencyLock, setCanManageAgencyLock] = useState(false);
   const [agencyLockRoleChecked, setAgencyLockRoleChecked] = useState(false);
@@ -1250,11 +1383,13 @@ export const RoomPage: React.FC = () => {
   const [inboxSessionId, setInboxSessionId] = useState(0);
   const [clearingRoomChat, setClearingRoomChat] = useState(false);
   const [hiddenRoomMessageIds, setHiddenRoomMessageIds] = useState<string[]>([]);
+  const [giftLevelLookup, setGiftLevelLookup] = useState<Record<string, number>>({});
   const [roomAgencyId, setRoomAgencyId] = useState<string | null>(null);
+  const isAgency = room?.isAgency ?? room?.is_agency ?? Boolean(roomAgencyId);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [micPermissionOverride, setMicPermissionOverride] = useState<boolean | null>(null);
   const [showAgencyInfo, setShowAgencyInfo] = useState(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'agency' | 'members' | 'logs' | 'contests'>(
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'agency' | 'members' | 'logs'>(
     'agency'
   );
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
@@ -1264,12 +1399,18 @@ export const RoomPage: React.FC = () => {
     'heroes'
   );
   const [showMusicModal, setShowMusicModal] = useState(false);
-  const [showContestModal, setShowContestModal] = useState(false);
   const [seatActionTarget, setSeatActionTarget] = useState<RoomSeat | null>(null);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [toastVariant, setToastVariant] = useState<'success' | 'error'>('success');
+  const [roomOwnerId, setRoomOwnerId] = useState<string | null>(null);
+  const [inlineSystemNotices, setInlineSystemNotices] = useState<
+    Array<{ id: number; text: string; variant: 'success' | 'error' }>
+  >([]);
   const [agencyIdCopied, setAgencyIdCopied] = useState(false);
   const agencyCopyTimeoutRef = useRef<number | null>(null);
+  const roomPresenceCountSyncRef = useRef<{
+    roomId: string;
+    count: number;
+    micSeatKeys: string;
+  } | null>(null);
   const [isFollowingAgency, setIsFollowingAgency] = useState(false);
   const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
   const requireMicPermission = micPermissionOverride ?? extras.requireMicPermission;
@@ -1316,6 +1457,37 @@ export const RoomPage: React.FC = () => {
   }, [extras.requireMicPermission, micPermissionOverride]);
 
   useEffect(() => {
+    if (!activeRoomId || room?.id !== activeRoomId) return;
+
+    const micSeatKeys = (room.seats || [])
+      .map((seat) => `${seat.seatIndex}:${seat.userId || ''}`)
+      .join('|');
+    const lastSync = roomPresenceCountSyncRef.current;
+    if (
+      lastSync?.roomId === activeRoomId &&
+      lastSync.count === liveListenersCount &&
+      lastSync.micSeatKeys === micSeatKeys
+    ) {
+      return;
+    }
+
+    roomPresenceCountSyncRef.current = {
+      roomId: activeRoomId,
+      count: liveListenersCount,
+      micSeatKeys,
+    };
+    void supabase
+      .from('sada_rooms')
+      .update({ listeners_count: liveListenersCount })
+      .eq('id', activeRoomId)
+      .then(({ error: countError }) => {
+        if (countError) {
+          console.warn('Failed to sync room participant count:', countError);
+        }
+      });
+  }, [activeRoomId, liveListenersCount, room?.id, room?.seats]);
+
+  useEffect(() => {
     const viewport = window.visualViewport;
     let maxViewportHeight = Math.max(window.innerHeight, viewport?.height || 0);
     let orientationTimer: number | undefined;
@@ -1358,12 +1530,82 @@ export const RoomPage: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const headerAnchorRef = useRef<HTMLDivElement | null>(null);
   const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const backgroundBrightnessCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [backgroundBrightness, setBackgroundBrightness] = useState(0);
+  const backgroundIsLight = backgroundBrightness > 140;
+
+  useEffect(() => {
+    setBackgroundBrightness(0);
+    if (!room?.backgroundImage) return;
+
+    const canvas = backgroundBrightnessCanvasRef.current;
+    const context = canvas?.getContext('2d', { willReadFrequently: true });
+    if (!canvas || !context) return;
+
+    let active = true;
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      if (!active) return;
+      try {
+        const sampleSize = 32;
+        canvas.width = sampleSize;
+        canvas.height = sampleSize;
+        context.drawImage(image, 0, 0, sampleSize, sampleSize);
+
+        const pixels = context.getImageData(0, 0, sampleSize, sampleSize).data;
+        let brightnessTotal = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+          brightnessTotal +=
+            pixels[index] * 0.299 +
+            pixels[index + 1] * 0.587 +
+            pixels[index + 2] * 0.114;
+        }
+        setBackgroundBrightness(brightnessTotal / (pixels.length / 4));
+      } catch {
+        setBackgroundBrightness(0);
+      }
+    };
+    image.onerror = () => {
+      if (active) setBackgroundBrightness(0);
+    };
+    image.src = resolveAsset(room.backgroundImage);
+
+    return () => {
+      active = false;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [room?.backgroundImage]);
 
   const showToast = useCallback((msg: string, variant: 'success' | 'error' = 'success') => {
-    setToastMsg(msg);
-    setToastVariant(variant);
-    setTimeout(() => setToastMsg(null), 2600);
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    setInlineSystemNotices((current) => [
+      ...current.slice(-7),
+      { id, text: msg, variant },
+    ]);
+    window.setTimeout(() => {
+      setInlineSystemNotices((current) =>
+        current.filter((notice) => notice.id !== id)
+      );
+    }, 2600);
   }, []);
+
+  useEffect(() => {
+    if (!giftBanner) return;
+    showToast(
+      `هدية: أهدى ${giftBanner.senderName} ${giftBanner.gift.name} إلى ${giftBanner.recipientName}`
+    );
+  }, [giftBanner, showToast]);
+
+  useEffect(() => {
+    if (!wheelBanner) return;
+    showToast(`فاز ${wheelBanner.winnerName} بـ ${wheelBanner.segment.label}`);
+  }, [wheelBanner, showToast]);
+
+  useEffect(() => {
+    if (error) showToast(error, 'error');
+  }, [error, showToast]);
 
   useEffect(
     () => () => {
@@ -1374,7 +1616,75 @@ export const RoomPage: React.FC = () => {
     []
   );
 
-  const canClearRoomChat = Boolean(user?.is_admin || canManageRoomActions);
+  const canClearChat = Boolean(
+    user &&
+      room &&
+      (user.is_admin ||
+        user.role === 'super_admin' ||
+        room.hostId === user.id ||
+        (clearChatAuthorization?.roomId === room.id &&
+          clearChatAuthorization?.userId === user.id))
+  );
+  const isRoomOwner = Boolean(user?.id && roomOwnerId === user.id);
+  const canManageSeatActions = Boolean(
+    user &&
+      (canManageRoomActions ||
+        extras.moderatorIds.includes(user.id))
+  );
+
+  const runSeatAdminAction = useCallback(
+    async (
+      action: Parameters<typeof runAdminAction>[0],
+      successMessage: string
+    ) => {
+      try {
+        await runAdminAction(action);
+        showToast(successMessage);
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : 'تعذّر تنفيذ الإجراء الإداري.',
+          'error'
+        );
+      }
+    },
+    [runAdminAction, showToast]
+  );
+
+  useEffect(() => {
+    let active = true;
+    setRoomOwnerId(null);
+    if (!room?.hostId) return;
+
+    void (async () => {
+      const { data: hostUser, error: hostError } = await supabase
+        .from('sada_users')
+        .select('agency_id')
+        .eq('id', room.hostId)
+        .maybeSingle();
+      if (hostError) throw new Error(hostError.message);
+      if (!hostUser?.agency_id) {
+        if (active) setRoomOwnerId(room.hostId);
+        return;
+      }
+      const { data: agency, error: agencyError } = await supabase
+        .from('sada_agencies')
+        .select('owner_id')
+        .eq('id', String(hostUser.agency_id))
+        .maybeSingle();
+      if (agencyError) throw new Error(agencyError.message);
+      if (active) setRoomOwnerId(agency?.owner_id ? String(agency.owner_id) : null);
+    })().catch((err: unknown) => {
+      if (!active) return;
+      showToast(
+        err instanceof Error ? err.message : 'تعذّر التحقق من مالك الغرفة.',
+        'error'
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [room?.hostId, showToast]);
 
   const handleCopyAgencyId = async () => {
     try {
@@ -1392,14 +1702,16 @@ export const RoomPage: React.FC = () => {
       }, 2000);
     } catch (err) {
       showToast(
-        err instanceof Error ? err.message : 'تعذّر نسخ رقم الوكالة.',
+        err instanceof Error
+          ? err.message
+          : `تعذّر نسخ رقم ${isAgency ? 'الوكالة' : 'الغرفة'}.`,
         'error'
       );
     }
   };
 
   const handleClearRoomChat = async () => {
-    if (!canClearRoomChat || clearingRoomChat || !room) return;
+    if (!canClearChat || clearingRoomChat || !room) return;
     setClearingRoomChat(true);
     const messageIds = (room.messages || []).map((message) => message.id);
     setHiddenRoomMessageIds((current) =>
@@ -1428,6 +1740,7 @@ export const RoomPage: React.FC = () => {
   useEffect(() => {
     let active = true;
     setCanManageRoomActions(false);
+    setClearChatAuthorization(null);
     if (!room?.hostId || !user?.id) return;
 
     void canClearRoomChatFromData(
@@ -1436,7 +1749,11 @@ export const RoomPage: React.FC = () => {
       { deputyIds: extras.deputyIds }
     )
       .then((allowed) => {
-        if (active) setCanManageRoomActions(allowed);
+        if (!active) return;
+        setCanManageRoomActions(allowed);
+        if (allowed && room.id) {
+          setClearChatAuthorization({ roomId: room.id, userId: user.id });
+        }
       })
       .catch((err: unknown) => {
         if (!active) return;
@@ -1451,7 +1768,7 @@ export const RoomPage: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [extras.deputyIds, room?.hostId, showToast, user?.id]);
+  }, [extras.deputyIds, room?.hostId, room?.id, showToast, user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -1591,6 +1908,46 @@ export const RoomPage: React.FC = () => {
     canApproveMicRequests ||
     isAgencyOwner ||
     Boolean(user?.agencyId && user.agencyId === roomAgencyId);
+
+  useEffect(() => {
+    const userIds = new Set<string>();
+    if (user?.id) userIds.add(user.id);
+    for (const seat of room?.seats || []) {
+      if (seat.userId) userIds.add(seat.userId);
+    }
+    for (const member of presenceMembers) {
+      if (member.userId) userIds.add(member.userId);
+    }
+    for (const message of room?.messages || []) {
+      if (message.userId) userIds.add(message.userId);
+    }
+    if (userIds.size === 0) return;
+
+    let active = true;
+    void Promise.all(
+      Array.from(userIds).map(async (userId) => {
+        try {
+          const levels = await getUserGiftLevelsFromSupabase(userId);
+          return [userId, levels.sendLevel] as const;
+        } catch {
+          return [userId, null] as const;
+        }
+      })
+    ).then((entries) => {
+      if (!active) return;
+      setGiftLevelLookup((current) => {
+        const next = { ...current };
+        for (const [userId, sendLevel] of entries) {
+          if (sendLevel !== null) next[userId] = sendLevel;
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [presenceMembers, room?.messages, room?.seats, user?.id]);
 
   const userProfileLookup = useMemo(() => {
     const map = new Map<
@@ -1738,16 +2095,6 @@ export const RoomPage: React.FC = () => {
     }
   }, [micApprovedRequest, room, user, handleSeatClick, showToast]);
 
-  useEffect(() => {
-    if (extras.activeContest?.status === 'active' && extras.activeContest.agencyQuiz) {
-      setShowContestModal(true);
-    }
-  }, [
-    extras.activeContest?.agencyQuiz?.currentIndex,
-    extras.activeContest?.id,
-    extras.activeContest?.status,
-  ]);
-
   const handleSeatInteraction = useCallback(
     async (seat: RoomSeat) => {
       if (!user || !room) return;
@@ -1769,7 +2116,7 @@ export const RoomPage: React.FC = () => {
         return;
       }
 
-      if (seat.userId === user.id || canManage) {
+      if (seat.userId === user.id || canManageSeatActions) {
         setSeatActionTarget(seat);
         return;
       }
@@ -1785,7 +2132,7 @@ export const RoomPage: React.FC = () => {
     [
       user,
       room,
-      canManage,
+      canManageSeatActions,
       handleToggleLock,
       showToast,
       handleSeatClick,
@@ -1879,10 +2226,12 @@ export const RoomPage: React.FC = () => {
       showToast(
         res.following
           ? `♥ تمت متابعة "${room.title}" وإضافتها لقسم الخاص بي ✓`
-          : 'تم إلغاء متابعة الوكالة'
+          : `تم إلغاء متابعة ${isAgency ? 'الوكالة' : 'الغرفة'}`
       );
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'تعذّر تحديث متابعة الوكالة');
+      showToast(
+        err instanceof Error ? err.message : `تعذّر تحديث متابعة ${isAgency ? 'الوكالة' : 'الغرفة'}`
+      );
     }
   };
 
@@ -1977,6 +2326,7 @@ export const RoomPage: React.FC = () => {
     return (
       <RoomSeatItem
         key={seat.seatIndex}
+        backgroundIsLight={backgroundIsLight}
         isMe={seat.userId === user?.id}
         isTop1={Boolean(seat.userId && seat.seatIndex === topSpeakerSeatIndex)}
         isHost={Boolean(seat.userId && seat.userId === room?.hostId)}
@@ -2007,6 +2357,13 @@ export const RoomPage: React.FC = () => {
         fullscreenGift ? 'animate-dragon-shake' : ''
       }`}
     >
+      <canvas
+        ref={backgroundBrightnessCanvasRef}
+        width={32}
+        height={32}
+        className="hidden"
+        aria-hidden="true"
+      />
       {!room ? (
         loading ? (
           <div className="flex-1 flex items-center justify-center p-6 text-center">
@@ -2040,12 +2397,16 @@ export const RoomPage: React.FC = () => {
                 display: none !important;
               }
             `}</style>
-            <DragonStageBackdrop coverImage={room.coverImage} />
+            <DragonStageBackdrop coverImage={room.backgroundImage} />
           </div>
-      <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-1 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-1 pb-2">
+      <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-1 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-0 pb-2">
         {/* 1. ROOM TOP BAR */}
         <header
-          className="relative z-30 shrink-0 pt-2 px-2.5 pb-1 bg-black/15 flex items-center justify-between gap-1.5"
+          className={`relative z-30 shrink-0 py-1.5 px-2.5 flex items-center justify-between gap-1.5 border ${
+            backgroundIsLight
+              ? 'bg-slate-950/75 backdrop-blur-md border-white/20 text-white'
+              : 'bg-white/15 backdrop-blur-md border-white/15 text-white drop-shadow-sm'
+          }`}
         >
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
           <div
@@ -2055,9 +2416,9 @@ export const RoomPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowAgencyInfo(true)}
-              className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden border border-[#F3D37A]/70 shrink-0 cursor-pointer"
-              title="معلومات الوكالة"
-              aria-label="معلومات الوكالة"
+              className="relative w-8 h-8 rounded-xl overflow-hidden border border-[#F3D37A]/70 shrink-0 cursor-pointer"
+              title={`معلومات ${isAgency ? 'الوكالة' : 'الغرفة'}`}
+              aria-label={`معلومات ${isAgency ? 'الوكالة' : 'الغرفة'}`}
             >
               <img
                 src={resolveAsset(room.hostAvatar)}
@@ -2070,26 +2431,26 @@ export const RoomPage: React.FC = () => {
             </button>
 
             <div className="min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <button
-                type="button"
-                onClick={() => setShowAgencyInfo(true)}
-                className="min-w-0 break-words text-[11px] sm:text-sm font-extrabold text-white leading-tight text-right cursor-pointer hover:text-[#FCE9A6]"
-                title="معلومات الوكالة"
-              >
-                <h1 className="min-w-0 break-words text-[11px] sm:text-sm font-extrabold text-white leading-tight">
-                  <span className="inline-flex items-center gap-1">
-                    {room.title}
-                    {extras.agencyLockEnabled && (
-                      <Lock
-                        className="w-3 h-3 text-amber-300 shrink-0"
-                        aria-label="الوكالة مقفلة برمز سري"
-                        title="الوكالة مقفلة برمز سري"
-                      />
-                    )}
-                  </span>
-                </h1>
-              </button>
+              <div className="flex items-center gap-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setShowAgencyInfo(true)}
+                  className="min-w-0 max-w-[115px] truncate whitespace-nowrap text-[11px] sm:text-sm font-extrabold text-white leading-tight text-right cursor-pointer hover:text-[#FCE9A6]"
+                  title={`معلومات ${isAgency ? 'الوكالة' : 'الغرفة'}`}
+                >
+                  <h1 className="max-w-[115px] truncate whitespace-nowrap text-[11px] sm:text-sm font-extrabold text-white leading-tight">
+                    <span className="inline-flex max-w-full items-center gap-1">
+                      <span className="truncate">{room.title}</span>
+                      {extras.agencyLockEnabled && (
+                        <Lock
+                          className="w-3 h-3 text-amber-300 shrink-0"
+                          aria-label={`${isAgency ? 'الوكالة' : 'الغرفة'} مقفلة برمز سري`}
+                          title={`${isAgency ? 'الوكالة' : 'الغرفة'} مقفلة برمز سري`}
+                        />
+                      )}
+                    </span>
+                  </h1>
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleFollowAgency()}
@@ -2098,42 +2459,43 @@ export const RoomPage: React.FC = () => {
                       ? 'bg-rose-600/35 border border-rose-400 text-rose-300'
                       : 'bg-black/45 border border-white/20 text-rose-200 hover:bg-rose-950/50'
                   }`}
-                  aria-label={isFollowingAgency ? 'إلغاء متابعة الوكالة' : 'متابعة الوكالة'}
-                  title={isFollowingAgency ? 'إلغاء متابعة الوكالة' : 'متابعة الوكالة'}
+                  aria-label={
+                    isFollowingAgency
+                      ? `إلغاء متابعة ${isAgency ? 'الوكالة' : 'الغرفة'}`
+                      : `متابعة ${isAgency ? 'الوكالة' : 'الغرفة'}`
+                  }
+                  title={
+                    isFollowingAgency
+                      ? `إلغاء متابعة ${isAgency ? 'الوكالة' : 'الغرفة'}`
+                      : `متابعة ${isAgency ? 'الوكالة' : 'الغرفة'}`
+                  }
                 >
                   <Heart className={`w-3.5 h-3.5 ${isFollowingAgency ? 'fill-rose-400 text-rose-400' : ''}`} />
                 </button>
               </div>
-              <div className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-mono-num font-bold text-amber-100/95 shadow-inner backdrop-blur-md">
-                <span>ID الوكالة: {AGENCY_ID}</span>
+              <div className="inline-flex items-center gap-0.5 text-[10px] font-mono-num font-bold text-white leading-none">
+                <span>ID: {AGENCY_ID}</span>
                 <button
                   type="button"
                   onClick={() => void handleCopyAgencyId()}
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-amber-100 hover:bg-white/15 cursor-pointer"
-                  aria-label="نسخ رقم الوكالة"
-                  title="نسخ رقم الوكالة"
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full text-white hover:bg-white/15 cursor-pointer"
+                  aria-label={`نسخ رقم ${isAgency ? 'الوكالة' : 'الغرفة'}`}
+                  title={`نسخ رقم ${isAgency ? 'الوكالة' : 'الغرفة'}`}
                 >
                   {agencyIdCopied ? (
-                    <Check className="w-3 h-3 text-green-400" />
+                    <Check className="w-2.5 h-2.5 text-green-400" />
                   ) : (
-                    <Copy className="w-3 h-3" />
+                    <Copy className="w-2.5 h-2.5" />
                   )}
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Left Side (RTL end): Top 3 Gifters (1,2,3) + Live Counter + Heart (♥) + Settings (⚙️) + Minimize */}
+          {/* Left Side (RTL end): Top supporters + Live Counter + Heart (♥) + Settings (⚙️) + Minimize */}
           <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             <div className="flex items-center gap-1">
-              {[0, 1, 2].map((rankIdx) => {
-                const gifter = topGifters[rankIdx];
-                const rankBorder =
-                  rankIdx === 0
-                    ? 'border-amber-300 shadow-[0_0_10px_rgba(251,191,36,0.65)]'
-                    : rankIdx === 1
-                    ? 'border-slate-300'
-                    : 'border-amber-600';
+              {supportersLeaderboard.slice(0, 3).map((gifter, rankIdx) => {
                 const badgeBg =
                   rankIdx === 0
                     ? 'bg-gradient-to-r from-amber-400 to-yellow-600 text-[#070913]'
@@ -2141,49 +2503,40 @@ export const RoomPage: React.FC = () => {
                     ? 'bg-slate-200 text-slate-900'
                     : 'bg-amber-700 text-amber-100';
 
-                const gifterVip = gifter
-                  ? userProfileLookup.get(gifter.userId)?.vipLevel || gifter.vipLevel || 'none'
-                  : 'none';
+                const gifterVip =
+                  userProfileLookup.get(gifter.userId)?.vipLevel || gifter.vipLevel || 'none';
                 return (
                   <button
-                    key={rankIdx}
+                    key={gifter.userId}
                     type="button"
-                    onClick={() => {
-                      setLeaderboardModalTab('supporters');
-                      setShowLeaderboardModal(true);
-                    }}
-                    className="relative flex flex-col items-center cursor-pointer group"
-                    title={
-                      gifter
-                        ? `#${rankIdx + 1} ${gifter.displayName}: ${gifter.totalCoins.toLocaleString('en-US')}`
-                        : `المركز ${rankIdx + 1}`
+                    onClick={() =>
+                      openMiniProfile(gifter.userId, {
+                        displayName: gifter.displayName,
+                        avatarUrl: gifter.avatarUrl,
+                        frameId: gifter.frameId,
+                        vipLevel: gifterVip,
+                      })
                     }
+                    className="relative flex flex-col items-center cursor-pointer group"
+                    title={`#${rankIdx + 1} ${gifter.displayName}: ${gifter.supportCoins.toLocaleString('en-US')}`}
+                    aria-label={`فتح ملف الداعم ${gifter.displayName}، المركز ${rankIdx + 1}`}
                   >
-                    {/* Explicit Rank Number 1, 2, 3 */}
                     <span
                       className={`absolute -top-1 -right-1 z-20 w-3.5 h-3.5 rounded-full text-[8px] font-mono-num font-black flex items-center justify-center shadow ${badgeBg}`}
                     >
                       {rankIdx + 1}
                     </span>
-                    {gifter ? (
-                      <AvatarWithFrame
-                        src={gifter.avatarUrl}
-                        alt={gifter.displayName}
-                        frameId={gifter.frameId}
-                        vipTier={gifterVip}
-                        size="xs"
-                      />
-                    ) : (
-                      <div
-                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden border-2 bg-black/50 flex items-center justify-center ${rankBorder}`}
-                      >
-                        <Crown className="w-3.5 h-3.5 text-[#D4AF37]/60" />
-                      </div>
-                    )}
+                    <AvatarWithFrame
+                      src={gifter.avatarUrl}
+                      alt={gifter.displayName}
+                      frameId={gifter.frameId}
+                      vipTier={gifterVip}
+                      size="xs"
+                    />
                     <span
                       className={`-mt-1.5 relative z-10 px-1 rounded-full text-[8px] font-mono-num font-extrabold leading-tight shadow ${badgeBg}`}
                     >
-                      {gifter ? formatCompactMetric(gifter.totalCoins, true) : '0'}
+                      {formatCompactMetric(gifter.supportCoins, true)}
                     </span>
                   </button>
                 );
@@ -2196,11 +2549,15 @@ export const RoomPage: React.FC = () => {
                 setLeaderboardModalTab('presence');
                 setShowLeaderboardModal(true);
               }}
-              className="flex items-center gap-0.5 bg-black/40 border border-white/15 rounded-full px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-mono-num font-bold text-white cursor-pointer"
+              className={`flex items-center gap-0.5 border rounded-full px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-mono-num font-bold text-white cursor-pointer ${
+                backgroundIsLight
+                  ? 'bg-slate-950/75 backdrop-blur-md border-white/20'
+                  : 'bg-white/15 backdrop-blur-md border-white/15 drop-shadow-sm'
+              }`}
               title="المتواجدون الآن داخل الغرفة"
             >
               <span>{unifiedPresenceList.length}</span>
-              <Users className="w-3 h-3 text-slate-200" />
+              <Users className="w-3 h-3 text-white" />
             </button>
 
             {/* Agency Settings Icon right beside the Heart */}
@@ -2232,18 +2589,18 @@ export const RoomPage: React.FC = () => {
           </div>
         </header>
 
-        {/* SUB-HEADER ROW: Trophy Leaderboard + Mute Room | Device Music + Agent Mod Log */}
-        <div className="flex items-center justify-between gap-1.5 mt-1.5 mb-1.5 shrink-0 flex-wrap">
+        {/* SUB-HEADER ROW: Trophy Leaderboard + Mute Room */}
+        <div className="flex items-center justify-between gap-1.5 shrink-0 flex-wrap">
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => {
-                setLeaderboardModalTab('heroes');
+                setLeaderboardModalTab('supporters');
                 setShowLeaderboardModal(true);
               }}
               className="inline-flex w-7 h-7 sm:w-8 sm:h-8 items-center justify-center rounded-full overflow-hidden border-2 border-amber-300 bg-gradient-to-r from-[#2D2007]/90 to-[#141008]/90 shadow-[0_0_14px_rgba(212,175,55,0.3)] cursor-pointer hover:brightness-110"
-              title="تصنيف أبطال الألعاب والمسابقات"
-              aria-label="تصنيف أبطال الألعاب والمسابقات"
+              title="قائمة داعمي الغرفة"
+              aria-label="قائمة داعمي الغرفة"
             >
               <Trophy className="w-4 h-4 text-[#FDE047]" />
             </button>
@@ -2257,21 +2614,6 @@ export const RoomPage: React.FC = () => {
               <Sparkles className="w-3 h-3 text-amber-200" />
               <span>دولاب الإقصاء</span>
             </button>
-
-            {isAgencyOwner && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSettingsInitialTab('contests');
-                  setShowSettingsModal(true);
-                }}
-                className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-emerald-600/85 to-teal-700/85 border border-emerald-300/60 px-2.5 py-1 text-[10px] font-extrabold text-white hover:brightness-110 cursor-pointer"
-                title="إدارة مسابقة الوكالة الثقافية"
-              >
-                <Trophy className="w-3 h-3 text-[#FCE9A6]" />
-                <span>مسابقة الوكالة</span>
-              </button>
-            )}
 
             {/* One-tap Mute Room Audio Toggle */}
             <button
@@ -2298,7 +2640,7 @@ export const RoomPage: React.FC = () => {
               <span>{roomAudioMuted ? 'صوت مكتوم' : 'كتم الروم'}</span>
             </button>
 
-            {canClearRoomChat && (
+            {canClearChat && (
               <button
                 type="button"
                 disabled={clearingRoomChat}
@@ -2312,135 +2654,17 @@ export const RoomPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {canManageRoomActions && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSettingsInitialTab('logs');
-                    setShowSettingsModal(true);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-xl bg-amber-500/20 border border-[#F3D37A]/55 px-2.5 py-1 text-[10px] font-extrabold text-[#FCE9A6] hover:bg-amber-500/30 cursor-pointer"
-                  title="سجل حركة المشرفين (خاص بالوكيل)"
-                >
-                  <ClipboardList className="w-3 h-3" />
-                  <span>سجل المشرفين</span>
-                </button>
-              </>
-            )}
-          </div>
         </div>
 
-        {/* LIVE CONTEST BANNER FOR ALL ROOM MEMBERS */}
-        {extras?.activeContest && (
-          <button
-            type="button"
-            onClick={() => setShowContestModal(true)}
-            className="mb-1.5 w-full rounded-2xl border border-[#FCE9A6]/70 bg-gradient-to-r from-[#2E2107]/95 via-[#181209]/95 to-[#0B2E22]/95 px-3 py-1.5 flex items-center justify-between gap-2 shadow-[0_0_20px_rgba(212,175,55,0.35)] shrink-0 cursor-pointer hover:brightness-110 transition"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Trophy className="w-4 h-4 text-[#FCE9A6] shrink-0" />
-              <p className="text-[11px] font-extrabold text-white truncate">
-                {extras.activeContest.status === 'active'
-                  ? `مسابقة جارية: ${extras.activeContest.title}`
-                  : `الفائز: ${extras.activeContest.winnerName || extras.activeContest.title}`}
-              </p>
-            </div>
-            <span className="rounded-full bg-[#FCE9A6]/20 border border-[#FCE9A6]/50 px-2 py-0.5 text-[10px] font-mono-num font-extrabold text-[#FCE9A6] shrink-0">
-              {extras.activeContest.status === 'active'
-                ? `${Array.isArray(extras.activeContest.entries) ? extras.activeContest.entries.length : 0} مشارك · شارك/صوّت`
-                : 'عرض النتيجة'}
-            </span>
-          </button>
-        )}
-
-        {/* TOAST / ERROR FEEDBACK & CELEBRATION BANNERS */}
-        <AnimatePresence>
-          {(toastMsg || error) && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              onClick={clearError}
-              className={`mb-1.5 rounded-xl px-3 py-1.5 text-[11px] font-bold text-center shrink-0 cursor-pointer ${
-                error
-                  ? 'bg-rose-950/90 border border-rose-400/60 text-rose-100'
-                  : toastVariant === 'error'
-                  ? 'bg-rose-950/90 border border-rose-400/60 text-rose-100'
-                  : 'bg-emerald-950/90 border border-emerald-400/50 text-emerald-100'
-              }`}
-            >
-              {error || toastMsg}
-            </motion.div>
-          )}
-          {giftBanner && (
-            <motion.div
-              initial={{ opacity: 0, y: -12, scale: 0.94 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -12 }}
-              className="mb-1.5 rounded-2xl border border-[#FCE9A6]/80 bg-gradient-to-r from-[#362205]/95 via-[#1A1308]/95 to-[#362205]/95 px-3.5 py-2 flex items-center justify-between gap-2 shadow-[0_0_26px_rgba(243,211,122,0.55)] shrink-0"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Fluent3DAsset
-                  glyph={giftBanner.gift.glyph}
-                  imageUrl={giftBanner.gift.imageUrl}
-                  alt={giftBanner.gift.name}
-                  priority
-                  sizeClass="w-8 h-8"
-                  fallbackTextClass="text-2xl"
-                />
-                <p className="text-[11px] font-extrabold text-white truncate">
-                  أهدى <span className="text-[#FCE9A6]">{giftBanner.senderName}</span>{' '}
-                  {giftBanner.gift.name} إلى{' '}
-                  <span className="text-[#FCE9A6]">{giftBanner.recipientName}</span>
-                </p>
-              </div>
-              {giftBanner.luckyMultiplier ? (
-                <span className="rounded-full bg-emerald-500/25 border border-emerald-400/60 px-2 py-0.5 text-[10px] font-mono-num font-extrabold text-emerald-200 shrink-0">
-                  ×{giftBanner.luckyMultiplier}
-                </span>
-              ) : null}
-            </motion.div>
-          )}
-          {wheelBanner && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className="mb-1.5 rounded-xl border border-[#FCE9A6]/70 bg-[#2C1E06]/95 px-3 py-1.5 flex items-center justify-center gap-2 text-[11px] font-extrabold text-[#FCE9A6] shrink-0"
-            >
-              <Fluent3DAsset
-                glyph={wheelBanner.segment.glyph}
-                alt={wheelBanner.segment.label}
-                priority
-                sizeClass="w-5 h-5"
-                fallbackTextClass="text-sm"
-              />
-              <span>فاز {wheelBanner.winnerName} بـ {wheelBanner.segment.label}</span>
-            </motion.div>
-          )}
-          <VipEntranceOverlay
-            entry={
-              entryBanner &&
-              (entryBanner.vipLevel === 'svip' ||
-                entryBanner.vipLevel === 'vip3' ||
-                entryBanner.vipLevel === 'vip2')
-                ? entryBanner
-                : null
-            }
-          />
-        </AnimatePresence>
-
         {/* 2. TAKA MIC GRID */}
-        <section className="shrink-0 relative z-20 min-h-[270px] flex flex-col justify-center">
+        <section className="shrink-0 relative z-20 min-h-[270px] flex flex-col justify-start pt-0">
           <div className={`grid w-full content-center justify-items-center px-1.5 ${micGridClass}`}>
             {micSeats.map(renderMicSeat)}
           </div>
         </section>
 
         {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
-        <section className="flex-1 min-h-0 overflow-y-auto px-3 pb-1 py-1 flex flex-col mt-1">
+        <section className="flex-1 min-h-0 overflow-hidden px-3 pb-1 py-1 flex flex-col mt-1">
           {/* Compact Chat Filter Tabs */}
           <div
             className={`flex items-center gap-1.5 px-1 mb-1 shrink-0 ${
@@ -2474,8 +2698,27 @@ export const RoomPage: React.FC = () => {
           </div>
 
           <div ref={chatFeedRef} className="flex-1 min-h-0 overflow-y-auto mt-1 no-scrollbar space-y-1.5 px-1 py-0.5">
+            {inlineSystemNotices.map((notice) => (
+              <div
+                key={notice.id}
+                className={`w-fit max-w-full rounded-lg px-2 py-0.5 text-[10px] leading-4 ${
+                  notice.variant === 'error'
+                    ? 'bg-rose-950/35 text-rose-100'
+                    : 'bg-emerald-950/30 text-emerald-100'
+                }`}
+              >
+                {notice.text}
+              </div>
+            ))}
+
             {chatFilter === 'all' && (
-              <div className="rounded-2xl bg-black/45 border border-[#D4AF37]/25 px-3 py-1.5 text-xs leading-relaxed">
+              <div
+                className={`rounded-2xl border px-3 py-1.5 text-xs leading-relaxed ${
+                  backgroundIsLight
+                    ? 'bg-slate-950/75 backdrop-blur-md border-white/20 text-white'
+                    : 'bg-white/15 backdrop-blur-md border-white/15 text-white drop-shadow-sm'
+                }`}
+              >
                 <div className="flex items-center justify-between gap-2 mb-0.5">
                   <span className="font-extrabold text-[#FCE9A6]">إعلان الغرفة</span>
                   {canManage && (
@@ -2491,7 +2734,7 @@ export const RoomPage: React.FC = () => {
                     </button>
                   )}
                 </div>
-                <p className="text-[11px] font-semibold text-amber-50/95 whitespace-pre-line">
+                <p className="text-[11px] font-semibold text-white whitespace-pre-line">
                   {room.description || 'أهلاً بكم في الغرفة الصوتية · نتمنى لكم أطيب الأوقات!'}
                 </p>
               </div>
@@ -2510,13 +2753,13 @@ export const RoomPage: React.FC = () => {
                   <RoomChatMessageItem
                     key={m.id}
                     message={m}
+                    backgroundIsLight={backgroundIsLight}
                     senderAvatarUrl={senderInfo?.avatarUrl || m.avatarUrl}
                     senderFrameId={senderInfo?.frameId || m.frameId}
                     senderGender={senderInfo?.gender}
                     senderLevel={
-                      user && m.userId === user.id
-                        ? user.level
-                        : senderInfo?.level ?? m.level
+                      giftLevelLookup[m.userId] ??
+                      1
                     }
                     senderVipTier={senderInfo?.vipLevel}
                     onOpenMiniProfile={openMiniProfile}
@@ -2952,116 +3195,88 @@ export const RoomPage: React.FC = () => {
                     <span>نزول</span>
                   </button>
                 </div>
-              ) : (
-                <div className="space-y-2.5">
-                  <div className="grid grid-cols-2 gap-2">
+              ) : canManageSeatActions &&
+                seatActionTarget.userId !== room.hostId &&
+                seatActionTarget.userId !== roomOwnerId ? (
+                <div
+                  className={`grid gap-2 ${
+                    isRoomOwner ? 'grid-cols-3' : 'grid-cols-2'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isMuted = !seatActionTarget.isMuted;
+                      void runSeatAdminAction(
+                        {
+                          type: 'mute_user',
+                          targetUserId: seatActionTarget.userId!,
+                          isMuted,
+                        },
+                        isMuted ? 'تم كتم المستخدم ومنعه من فتح المايك.' : 'تم فك كتم المستخدم.'
+                      );
+                      setSeatActionTarget(null);
+                    }}
+                    className="min-h-[44px] rounded-xl bg-amber-500/20 border border-amber-400/40 text-xs font-bold text-[#FCE9A6] cursor-pointer"
+                  >
+                    {seatActionTarget.isMuted ? 'فك الكتم' : 'كتم'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void runSeatAdminAction(
+                        {
+                          type: 'temporary_kick_room',
+                          targetUserId: seatActionTarget.userId!,
+                          targetName: seatActionTarget.displayName || undefined,
+                        },
+                        'تم طرد المستخدم لمدة 3 أيام.'
+                      );
+                      setSeatActionTarget(null);
+                    }}
+                    className="min-h-[44px] rounded-xl bg-white/10 text-xs font-bold text-slate-200 cursor-pointer"
+                  >
+                    طرد
+                  </button>
+                  {isRoomOwner && (
                     <button
                       type="button"
                       onClick={() => {
-                        const target = seatActionTarget;
-                        setSeatActionTarget(null);
-                        openMiniProfile(target.userId!, {
-                          displayName: target.displayName || undefined,
-                          avatarUrl: target.avatarUrl || undefined,
-                          frameId: target.frameId || undefined,
-                          level: target.level || 1,
-                          femaleVerifiedBadge: target.femaleVerifiedBadge || null,
-                        });
-                      }}
-                      className="min-h-[40px] rounded-xl bg-white/10 text-white text-xs font-bold cursor-pointer"
-                    >
-                      عرض الملف الشخصي
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const targetUserId = seatActionTarget.userId!;
-                        setSeatActionTarget(null);
-                        window.dispatchEvent(new Event('sada:minimize'));
-                        navigate(`/messages?to=${encodeURIComponent(targetUserId)}&gift=1`);
-                      }}
-                      className="min-h-[40px] rounded-xl gold-btn text-xs font-extrabold cursor-pointer"
-                    >
-                      إرسال هدية 🎁
-                    </button>
-                  </div>
-
-                  {canManage && seatActionTarget.userId !== room.hostId && (
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 border-t border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void runAdminAction({
-                            type: 'mute_user',
-                            targetUserId: seatActionTarget.userId!,
-                            isMuted: !seatActionTarget.isMuted,
-                          });
-                          setSeatActionTarget(null);
-                        }}
-                        className="min-h-[38px] rounded-xl bg-amber-500/20 border border-amber-400/40 text-[11px] font-bold text-[#FCE9A6] cursor-pointer"
-                      >
-                        {seatActionTarget.isMuted ? 'فك كتمه' : 'كتم مايكه'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void runAdminAction({
-                            type: 'kick_seat',
-                            targetUserId: seatActionTarget.userId!,
-                          });
-                          setSeatActionTarget(null);
-                        }}
-                        className="min-h-[38px] rounded-xl bg-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
-                      >
-                        إنزال من المايك
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleToggleLock(
-                            seatActionTarget.seatIndex,
-                            seatActionTarget.isLocked
-                          );
-                          setSeatActionTarget(null);
-                        }}
-                        className="min-h-[38px] rounded-xl bg-sky-500/20 border border-sky-400/40 text-[11px] font-bold text-sky-200 cursor-pointer flex items-center justify-center gap-1"
-                      >
-                        <Lock className="w-3 h-3" />
-                        <span>قفل المايك</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void runAdminAction({
-                            type: 'toggle_moderator',
-                            targetUserId: seatActionTarget.userId!,
-                            targetName: seatActionTarget.displayName || undefined,
-                          });
-                          setSeatActionTarget(null);
-                        }}
-                        className="min-h-[38px] rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-[11px] font-bold text-emerald-200 cursor-pointer flex items-center justify-center gap-1"
-                      >
-                        <Shield className="w-3 h-3" />
-                        <span>مشرف</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void runAdminAction({
+                        void runSeatAdminAction(
+                          {
                             type: 'kick_room',
                             targetUserId: seatActionTarget.userId!,
                             targetName: seatActionTarget.displayName || undefined,
-                          });
-                          setSeatActionTarget(null);
-                        }}
-                        className="min-h-[38px] rounded-xl bg-rose-600/30 border border-rose-400/50 text-[11px] font-bold text-rose-200 cursor-pointer flex items-center justify-center gap-1"
-                      >
-                        <Ban className="w-3 h-3" />
-                        <span>طرد</span>
-                      </button>
-                    </div>
+                          },
+                          'تم حظر المستخدم نهائياً من الغرفة.'
+                        );
+                        setSeatActionTarget(null);
+                      }}
+                      className="min-h-[44px] rounded-xl bg-rose-600/30 border border-rose-400/50 text-xs font-bold text-rose-200 cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      <Ban className="w-3.5 h-3.5" />
+                      حظر
+                    </button>
                   )}
                 </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = seatActionTarget;
+                    setSeatActionTarget(null);
+                    openMiniProfile(target.userId!, {
+                      displayName: target.displayName || undefined,
+                      avatarUrl: target.avatarUrl || undefined,
+                      frameId: target.frameId || undefined,
+                      level: target.level || 1,
+                      femaleVerifiedBadge: target.femaleVerifiedBadge || null,
+                    });
+                  }}
+                  className="min-h-[40px] w-full rounded-xl bg-white/10 text-white text-xs font-bold cursor-pointer"
+                >
+                  عرض الملف الشخصي
+                </button>
               )}
             </motion.div>
           </div>
@@ -3229,20 +3444,6 @@ export const RoomPage: React.FC = () => {
                 </div>
               )}
 
-              {leaderboardModalTab === 'heroes' && canManageRoomActions && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowLeaderboardModal(false);
-                    setShowContestModal(true);
-                  }}
-                  className="min-h-[44px] shrink-0 rounded-xl border border-amber-300/50 bg-gradient-to-r from-amber-500/25 to-yellow-700/25 px-3 text-xs font-extrabold text-[#FCE9A6] cursor-pointer active:scale-95"
-                >
-                  <Trophy className="ml-1 inline h-4 w-4" />
-                  إطلاق المسابقات والأسئلة التفاعلية
-                </button>
-              )}
-
               {leaderboardModalTab === 'presence' ? (
                 <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
                   {unifiedPresenceList.length === 0 ? (
@@ -3328,7 +3529,7 @@ export const RoomPage: React.FC = () => {
                             className="flex items-center gap-2.5 min-w-0 text-right cursor-pointer"
                           >
                             <span
-                              className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-mono-num font-black shrink-0 ${
+                              className={`min-w-[30px] h-6 px-1 rounded-full flex items-center justify-center text-[10px] font-mono-num font-black shrink-0 ${
                                 idx === 0
                                   ? 'bg-[#FDE047] text-[#070913]'
                                   : idx === 1
@@ -3338,7 +3539,7 @@ export const RoomPage: React.FC = () => {
                                   : 'bg-white/10 text-slate-300'
                               }`}
                             >
-                              {idx + 1}
+                              #{idx + 1}
                             </span>
                             <AvatarWithFrame
                               src={entry.avatarUrl}
@@ -3411,13 +3612,13 @@ export const RoomPage: React.FC = () => {
             >
               <div className="flex items-center justify-between">
                 <h2 id="agency-info-title" className="text-lg font-extrabold gold-gradient-text">
-                  معلومات الوكالة
+                  معلومات {isAgency ? 'الوكالة' : 'الغرفة'}
                 </h2>
                 <button
                   type="button"
                   onClick={() => setShowAgencyInfo(false)}
                   className="w-8 h-8 rounded-full bg-white/10 text-slate-300 flex items-center justify-center cursor-pointer"
-                  aria-label="إغلاق معلومات الوكالة"
+                  aria-label={`إغلاق معلومات ${isAgency ? 'الوكالة' : 'الغرفة'}`}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -3435,7 +3636,7 @@ export const RoomPage: React.FC = () => {
                     onClick={() => void handleCopyAgencyId()}
                     className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-mono-num font-bold text-amber-100 backdrop-blur-md cursor-pointer hover:bg-white/15"
                   >
-                    <span>ID الوكالة: {AGENCY_ID}</span>
+                    <span>ID {isAgency ? 'الوكالة' : 'الغرفة'}: {AGENCY_ID}</span>
                     {agencyIdCopied ? (
                       <Check className="w-3.5 h-3.5 text-green-400" />
                     ) : (
@@ -3448,11 +3649,11 @@ export const RoomPage: React.FC = () => {
                 <div>
                   <p className="text-[10px] font-bold text-slate-400">الوصف</p>
                   <p className="whitespace-pre-line text-slate-100">
-                    {room.description || 'لا يوجد وصف للوكالة.'}
+                    {room.description || `لا يوجد وصف لـ${isAgency ? 'الوكالة' : 'الغرفة'}.`}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400">الوكيل</p>
+                  <p className="text-[10px] font-bold text-slate-400">{isAgency ? 'الوكيل' : 'المضيف'}</p>
                   <p className="font-bold text-[#FCE9A6]">{room.hostName || 'غير محدد'}</p>
                 </div>
               </div>
@@ -3468,9 +3669,10 @@ export const RoomPage: React.FC = () => {
           extras={roomSettingsExtras}
           presenceMembers={presenceMembers}
           isOwnerOrAdmin={isOwnerOrAdmin}
-          isAgencyOwner={isAgencyOwner}
+          isAgency={isAgency}
+          isAgencyOwner={isRoomOwner}
           isAgencyLockManager={canManageAgencyLock}
-          canClearRoomChat={canClearRoomChat}
+          canClearRoomChat={canClearChat}
           initialTab={settingsInitialTab}
           ownedBackgrounds={ownedBackgrounds}
           onOpenStore={() => {
@@ -3489,33 +3691,7 @@ export const RoomPage: React.FC = () => {
           onUpdateSettings={handleUpdateRoomSettings}
           onClearRoomChat={handleClearRoomChat}
           onAdminAction={runAdminAction}
-          onStartAgencyContest={async (payload) => {
-            await startContest(payload);
-            setShowSettingsModal(false);
-            setShowContestModal(true);
-          }}
           onClose={() => setShowSettingsModal(false)}
-        />
-      )}
-
-      {/* LIVE IN-ROOM CONTEST MODAL */}
-      {showContestModal && (
-        <RoomContestModal
-          contest={extras.activeContest || null}
-          canManageContest={
-            extras.activeContest?.agencyQuiz
-              ? isAgencyOwner
-              : canManageRoomActions
-          }
-          currentUserId={user?.id}
-          onStartContest={startContest}
-          onJoinContest={joinContest}
-          onVoteContest={voteContest}
-          onFinishContest={finishContest}
-          onClearContest={clearContest}
-          onSubmitQuizAnswer={submitContestQuizAnswer}
-          onAdvanceQuizQuestion={advanceContestQuizQuestion}
-          onClose={() => setShowContestModal(false)}
         />
       )}
 
@@ -3560,6 +3736,7 @@ export const RoomPage: React.FC = () => {
               roomTitle={room?.title || 'الغرفة'}
               roomAvatar={room?.hostAvatar || ''}
               isOnMic={Boolean(mySeat)}
+              isAgency={isAgency}
               onCancel={() => {
                 setExitModalOpen(false);
                 if (!window.history.state?.inRoom) {

@@ -217,7 +217,7 @@ export const GrandCompetitionPage: React.FC = () => {
       <div className="mx-auto max-w-3xl space-y-4">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/', { replace: true })}
           className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700"
         >
           <ArrowRight className="h-4 w-4" />

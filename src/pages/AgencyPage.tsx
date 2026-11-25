@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Award,
+  ArrowRight,
   BadgeCheck,
   Building2,
   Calendar,
@@ -233,13 +234,23 @@ export const AgencyPage: React.FC = () => {
 
   if (loading || !data) {
     return (
-      <div className="min-h-full bg-[#F5F6FA] pt-10 px-4 text-center text-sm font-bold text-slate-600">
-        جارٍ تحميل منظومة الوكالات والمضيفين...
+      <div className="min-h-full bg-[#F5F6FA] p-4 text-center text-sm font-bold text-slate-600">
+        <div className="max-w-5xl mx-auto space-y-3">
+          <button
+            type="button"
+            onClick={() => navigate('/', { replace: true })}
+            className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700"
+          >
+            <ArrowRight className="h-4 w-4" />
+            رجوع
+          </button>
+          <p className="pt-6">جارٍ تحميل منظومة الوكالات والمضيفين...</p>
+        </div>
       </div>
     );
   }
 
-  const { myAgency, joinedAgency, myApplications, publicAgencies } = data;
+  const { myAgency, joinedAgency, myApplications } = data;
   const canAccessMyAgency = Boolean(myAgency || user?.isAgent || user?.is_admin);
   const requestedTab = searchParams.get('tab');
   const activeTab: 'my-agency' | 'host-center' =
@@ -258,6 +269,14 @@ export const AgencyPage: React.FC = () => {
   return (
     <div className="min-h-full bg-[#F5F6FA]">
       <div className="max-w-5xl mx-auto p-4 space-y-3">
+        <button
+          type="button"
+          onClick={() => navigate('/', { replace: true })}
+          className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700"
+        >
+          <ArrowRight className="h-4 w-4" />
+          رجوع
+        </button>
         {/* Crisp Dark Royal Top Banner */}
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#17253D] to-[#064E3B] p-5 sm:p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1.5">
@@ -592,7 +611,7 @@ export const AgencyPage: React.FC = () => {
         {activeTab === 'my-agency' && !myAgency && (
           <div className="light-card rounded-3xl p-6 text-center space-y-3">
             <p className="text-sm font-bold text-slate-700">
-              لا تملك وكالة شخصية باسمك حالياً. يمكنك تأسيس وكالة جديدة من قسم "مركز المضيف" أو إدارة جميع الوكالات من لوحة الإدارة.
+              لا تملك وكالة شخصية باسمك حالياً. يمكنك تأسيس وكالة جديدة من قسم "مركز المضيف".
             </p>
             <button
               type="button"
@@ -724,30 +743,6 @@ export const AgencyPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Quick-pick from real registered agencies */}
-                  {publicAgencies.length > 0 && (
-                    <div className="space-y-1.5 pt-1">
-                      <span className="block text-[11px] font-bold text-slate-500">
-                        الوكالات المعتمدة في صَدَى (اضغط للاختيار السريع):
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        {publicAgencies.map((ag) => (
-                          <button
-                            key={ag.id}
-                            type="button"
-                            onClick={() => setAgencyInput(ag.code)}
-                            className={`min-h-[44px] rounded-xl px-3 py-1.5 text-xs font-bold border cursor-pointer transition ${
-                              agencyInput.trim().toUpperCase() === ag.code.toUpperCase()
-                                ? 'bg-emerald-50 border-emerald-400 text-emerald-800'
-                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-emerald-300'
-                            }`}
-                          >
-                            {ag.name} ({ag.code})
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 <div>
@@ -836,7 +831,7 @@ export const AgencyPage: React.FC = () => {
                         تأسيس وكالة جديدة كـ "وكيل" معتمد
                       </h3>
                       <p className="text-[11px] text-slate-500">
-                        افتح لوحة "وكالتي" وأدر مضيفيك وتابع التارجت الأسبوعي (العمولة تُحدد وتُصرف من الإدارة).
+                        افتح لوحة "وكالتي" وأدر مضيفيك وتابع التارجت الأسبوعي.
                       </p>
                     </div>
                   </div>

@@ -222,11 +222,34 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
     }
   };
 
-  const handleCopyReferral = () => {
-    const shareUrl = `${window.location.origin}/#/login?ref=${referralCode}`;
-    navigator.clipboard?.writeText(shareUrl).catch(() => {});
-    setCopiedRef(true);
-    setTimeout(() => setCopiedRef(false), 2000);
+  const handleCopyReferral = async () => {
+    if (!referralCode) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(referralCode);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = referralCode;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        const copied = document.execCommand('copy');
+        input.remove();
+        if (!copied) throw new Error('Clipboard copy was rejected');
+      }
+
+      setFeedback(null);
+      setCopiedRef(true);
+      setTimeout(() => setCopiedRef(false), 2000);
+    } catch {
+      setFeedback({
+        type: 'err',
+        text: 'تعذّر نسخ كود الدعوة. يرجى نسخه يدويًا.',
+      });
+    }
   };
 
   const xpNextLevel = Math.pow(user?.level || 1, 2) * 120;
@@ -545,10 +568,10 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <h2 className="text-lg sm:text-xl font-extrabold text-white">
-                    كود ورابط الدعوة الملكي
+                    كود الدعوة الملكي
                   </h2>
                   <p className="text-xs text-slate-300 mt-0.5">
-                    كل صديق يسجل عبر كودك يمنحك لفة مجانية في دولاب جوائز حتى 50,000 كوينز!
+                    انسخ كود الدعوة وأرسله لصديقك ليلصقه عند إنشاء حسابه. كل تسجيل يمنحك لفة مجانية في دولاب الجوائز!
                   </p>
                 </div>
                 <Gift className="w-6 h-6 text-[#F3D37A] shrink-0" />
@@ -564,17 +587,18 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                 <button
                   type="button"
                   onClick={handleCopyReferral}
-                  className="gold-btn min-h-[44px] rounded-xl px-5 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                  disabled={!referralCode}
+                  className="gold-btn min-h-[48px] rounded-xl px-5 text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {copiedRef ? (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>تم نسخ رابط الدعوة</span>
+                      <span>تم نسخ كود الدعوة</span>
                     </>
                   ) : (
                     <>
                       <Copy className="w-4 h-4" />
-                      <span>نسخ رابط الدعوة</span>
+                      <span>نسخ كود الدعوة</span>
                     </>
                   )}
                 </button>
