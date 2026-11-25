@@ -2379,8 +2379,8 @@ export const RoomPage: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                void leaveActiveRoom();
                 navigate('/', { replace: true });
+                void leaveActiveRoom();
               }}
               className="gold-btn rounded-2xl px-6 py-2.5 text-sm cursor-pointer"
             >

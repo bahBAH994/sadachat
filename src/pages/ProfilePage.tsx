@@ -857,23 +857,21 @@ export const ProfilePage: React.FC = () => {
           </div>
         )}
 
-        {/* Feature Tiles: "وكالتي" visible ONLY for Agency Owners / Admin */}
+        {/* Room and agency entry is available to every signed-in user. */}
         <section className="light-card rounded-3xl p-4 grid grid-cols-2 gap-3">
-          {canViewMyAgency && (
-            <button
-              type="button"
-              onClick={() => void handleOpenMyRoom()}
-              disabled={openingMyRoom}
-              className="rounded-2xl bg-emerald-50/90 hover:bg-emerald-100/80 border border-emerald-100 p-4 flex items-center justify-between cursor-pointer transition"
-            >
-              <span className="text-sm font-extrabold text-emerald-950">
-                {openingMyRoom ? 'جارٍ فتح الغرفة...' : 'غرفتي / وكالتي'}
-              </span>
-              <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-emerald-600 shadow-sm">
-                <Building2 className="w-5 h-5" />
-              </div>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => void handleOpenMyRoom()}
+            disabled={openingMyRoom}
+            className="rounded-2xl bg-emerald-50/90 hover:bg-emerald-100/80 border border-emerald-100 p-4 flex items-center justify-between cursor-pointer transition"
+          >
+            <span className="text-sm font-extrabold text-emerald-950">
+              {openingMyRoom ? 'جارٍ فتح الغرفة...' : 'غرفتي / وكالتي'}
+            </span>
+            <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-emerald-600 shadow-sm">
+              <Building2 className="w-5 h-5" />
+            </div>
+          </button>
 
           <button
             type="button"
