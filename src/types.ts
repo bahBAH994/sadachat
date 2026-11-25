@@ -231,6 +231,8 @@ export interface RoomExtrasConfig {
   deputyIds: string[];
   moderatorIds: string[];
   requireMicPermission?: boolean;
+  agencyLockEnabled?: boolean;
+  agencyLockPassword?: string;
   kickedUserIds: string[];
   kickedUserNames?: Record<string, string>;
   mutedUserIds: string[];

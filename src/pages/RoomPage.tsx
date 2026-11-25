@@ -1,13 +1,13 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Ban,
+  Check,
   ClipboardList,
   Copy,
   Coins,
   Crown,
-  Gamepad2,
   Gift,
   Heart,
   Lock,
@@ -47,6 +47,8 @@ import { getPlatformState } from '../lib/sadaMappers';
 import { toggleFollowAgencyInSupabase } from '../lib/sadaSocialService';
 import {
   canClearRoomChatFromData,
+  getRoomExtrasFromSupabase,
+  isRoomAgencyOwnerOrHostFromData,
   isRoomOrAgencyOwnerFromData,
 } from '../lib/sadaRoomsService';
 import type { RoomMessage, RoomSeat, User, VipTierKey } from '../types';
@@ -115,7 +117,7 @@ interface RoomWheelGameProps {
 async function changeProfileCoins(userId: string, amount: number): Promise<number> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const { data: profile, error: loadError } = await supabase
-      .from('profiles')
+      .from('sada_users')
       .select('coins')
       .eq('id', userId)
       .maybeSingle();
@@ -129,7 +131,7 @@ async function changeProfileCoins(userId: string, amount: number): Promise<numbe
     if (nextCoins < 0) throw new Error('رصيد الكوينز غير كافٍ لقيمة الدخول.');
 
     const { data: updatedProfile, error: updateError } = await supabase
-      .from('profiles')
+      .from('sada_users')
       .update({ coins: nextCoins })
       .eq('id', userId)
       .eq('coins', currentCoins)
@@ -1038,7 +1040,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
 
     if (m.type === 'system') {
       return (
-        <div className="inline-block rounded-xl bg-black/45 px-2.5 py-1 text-[11px] text-amber-100/90">
+        <div className="inline-block rounded-xl bg-black/15 px-2.5 py-1 text-[11px] text-amber-100/90">
           {m.text}
         </div>
       );
@@ -1086,7 +1088,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
     }
 
     return (
-      <div className="rounded-xl bg-black/50 px-2.5 py-1.5 text-xs leading-snug flex items-start gap-2">
+      <div className="rounded-xl bg-black/15 px-2.5 py-1.5 text-xs leading-snug flex items-start gap-2">
         <button
           type="button"
           onClick={() =>
@@ -1156,6 +1158,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
 
 export const RoomPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, updateLocalUser } = useAuth();
   const { openMiniProfile } = useMiniProfile();
 
@@ -1174,6 +1177,7 @@ export const RoomPage: React.FC = () => {
     totalVolumeCoins,
     canManage,
     isOwnerOrAdmin,
+    leaveActiveRoom,
     micDenied,
     manualSpeakPulse,
     micRequest,
@@ -1211,7 +1215,6 @@ export const RoomPage: React.FC = () => {
     sendSeatEmoji,
     updateSettings,
     runAdminAction,
-    clearRoomChat,
     playUploadedMusic,
     toggleMusicPlayPause,
     stopRoomMusic,
@@ -1235,12 +1238,19 @@ export const RoomPage: React.FC = () => {
   const [visualViewportTop, setVisualViewportTop] = useState(0);
   const [canManageRoomActions, setCanManageRoomActions] = useState(false);
   const [isAgencyOwner, setIsAgencyOwner] = useState(false);
+  const [canManageAgencyLock, setCanManageAgencyLock] = useState(false);
+  const [agencyLockRoleChecked, setAgencyLockRoleChecked] = useState(false);
+  const [agencyLockEntryAllowed, setAgencyLockEntryAllowed] = useState(false);
+  const [agencyEntryPassword, setAgencyEntryPassword] = useState('');
+  const [agencyEntryError, setAgencyEntryError] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showWheelModal, setShowWheelModal] = useState(false);
   const [showGamesOverlay, setShowGamesOverlay] = useState(false);
   const [showInboxOverlay, setShowInboxOverlay] = useState(false);
   const [inboxSessionId, setInboxSessionId] = useState(0);
   const [clearingRoomChat, setClearingRoomChat] = useState(false);
+  const [hiddenRoomMessageIds, setHiddenRoomMessageIds] = useState<string[]>([]);
+  const [roomAgencyId, setRoomAgencyId] = useState<string | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [micPermissionOverride, setMicPermissionOverride] = useState<boolean | null>(null);
   const [showAgencyInfo, setShowAgencyInfo] = useState(false);
@@ -1258,6 +1268,8 @@ export const RoomPage: React.FC = () => {
   const [seatActionTarget, setSeatActionTarget] = useState<RoomSeat | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<'success' | 'error'>('success');
+  const [agencyIdCopied, setAgencyIdCopied] = useState(false);
+  const agencyCopyTimeoutRef = useRef<number | null>(null);
   const [isFollowingAgency, setIsFollowingAgency] = useState(false);
   const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
   const requireMicPermission = micPermissionOverride ?? extras.requireMicPermission;
@@ -1265,6 +1277,20 @@ export const RoomPage: React.FC = () => {
     micPermissionOverride === null
       ? extras
       : { ...extras, requireMicPermission: micPermissionOverride };
+  const agencyLockAuthorizedByRoute = Boolean(
+    room &&
+      location.state &&
+      typeof location.state === 'object' &&
+      'agencyLockAuthorizedRoomId' in location.state &&
+      location.state.agencyLockAuthorizedRoomId === room.id
+  );
+  const shouldBlockAgencyRoom = Boolean(
+    room &&
+      extras.agencyLockEnabled &&
+      !canManageAgencyLock &&
+      !agencyLockAuthorizedByRoute &&
+      !agencyLockEntryAllowed
+  );
 
   const handleUpdateRoomSettings = useCallback(
     async (patch: Parameters<typeof updateSettings>[0]) => {
@@ -1339,6 +1365,15 @@ export const RoomPage: React.FC = () => {
     setTimeout(() => setToastMsg(null), 2600);
   }, []);
 
+  useEffect(
+    () => () => {
+      if (agencyCopyTimeoutRef.current !== null) {
+        window.clearTimeout(agencyCopyTimeoutRef.current);
+      }
+    },
+    []
+  );
+
   const canClearRoomChat = Boolean(user?.is_admin || canManageRoomActions);
 
   const handleCopyAgencyId = async () => {
@@ -1347,7 +1382,14 @@ export const RoomPage: React.FC = () => {
         throw new Error('النسخ غير متاح في هذا المتصفح.');
       }
       await navigator.clipboard.writeText(AGENCY_ID);
-      showToast('تم النسخ.');
+      if (agencyCopyTimeoutRef.current !== null) {
+        window.clearTimeout(agencyCopyTimeoutRef.current);
+      }
+      setAgencyIdCopied(true);
+      agencyCopyTimeoutRef.current = window.setTimeout(() => {
+        setAgencyIdCopied(false);
+        agencyCopyTimeoutRef.current = null;
+      }, 2000);
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : 'تعذّر نسخ رقم الوكالة.',
@@ -1357,12 +1399,23 @@ export const RoomPage: React.FC = () => {
   };
 
   const handleClearRoomChat = async () => {
-    if (!canClearRoomChat || clearingRoomChat) return;
+    if (!canClearRoomChat || clearingRoomChat || !room) return;
     setClearingRoomChat(true);
+    const messageIds = (room.messages || []).map((message) => message.id);
+    setHiddenRoomMessageIds((current) =>
+      Array.from(new Set([...current, ...messageIds]))
+    );
     try {
-      await clearRoomChat();
+      const { error: deleteError } = await supabase
+        .from('sada_room_messages')
+        .delete()
+        .eq('room_id', room.id);
+      if (deleteError) throw new Error(deleteError.message);
       showToast('تم مسح الدردشة من الغرفة.');
     } catch (err) {
+      setHiddenRoomMessageIds((current) =>
+        current.filter((messageId) => !messageIds.includes(messageId))
+      );
       showToast(
         err instanceof Error ? err.message : 'تعذّر مسح دردشة الغرفة.',
         'error'
@@ -1402,6 +1455,35 @@ export const RoomPage: React.FC = () => {
 
   useEffect(() => {
     let active = true;
+    setRoomAgencyId(null);
+    if (!room?.hostId) return;
+
+    void supabase
+      .from('sada_users')
+      .select('agency_id')
+      .eq('id', room.hostId)
+      .maybeSingle()
+      .then(({ data, error: agencyError }) => {
+        if (agencyError) throw new Error(agencyError.message);
+        if (active) setRoomAgencyId(data?.agency_id ? String(data.agency_id) : null);
+      })
+      .catch((agencyError: unknown) => {
+        if (!active) return;
+        showToast(
+          agencyError instanceof Error
+            ? agencyError.message
+            : 'تعذّر التحقق من وكالة الغرفة.',
+          'error'
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [room?.hostId, showToast]);
+
+  useEffect(() => {
+    let active = true;
     setIsAgencyOwner(false);
     if (!room?.hostId || !user?.id) return;
 
@@ -1422,6 +1504,80 @@ export const RoomPage: React.FC = () => {
     };
   }, [room?.hostId, showToast, user?.id]);
 
+  useEffect(() => {
+    let active = true;
+    setCanManageAgencyLock(false);
+    setAgencyLockRoleChecked(false);
+    if (!room?.hostId || !user?.id) {
+      setAgencyLockRoleChecked(true);
+      return;
+    }
+
+    void isRoomAgencyOwnerOrHostFromData(room.hostId, user.id)
+      .then((allowed) => {
+        if (!active) return;
+        setCanManageAgencyLock(allowed);
+        setAgencyLockRoleChecked(true);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setAgencyLockRoleChecked(true);
+        showToast(
+          err instanceof Error
+            ? err.message
+            : 'تعذّر التحقق من صلاحية قفل الوكالة.',
+          'error'
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [room?.hostId, showToast, user?.id]);
+
+  useEffect(() => {
+    setAgencyLockEntryAllowed(false);
+    setAgencyEntryPassword('');
+    setAgencyEntryError(null);
+  }, [room?.id]);
+
+  const handleAgencyEntryPasswordSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!room || !user?.id) return;
+    setAgencyEntryError(null);
+    try {
+      const currentExtras = await getRoomExtrasFromSupabase(room.id);
+      if (!currentExtras.agencyLockEnabled) {
+        setAgencyLockEntryAllowed(true);
+        return;
+      }
+      const canBypassLock = await isRoomAgencyOwnerOrHostFromData(room.hostId, user.id);
+      if (
+        !canBypassLock &&
+        agencyEntryPassword !== currentExtras.agencyLockPassword
+      ) {
+        throw new Error('الرمز السري للوكالة غير صحيح.');
+      }
+      setAgencyLockEntryAllowed(true);
+    } catch (err) {
+      setAgencyEntryError(
+        err instanceof Error ? err.message : 'تعذّر التحقق من الرمز السري.'
+      );
+    }
+  };
+
+  const handleLeaveLockedAgency = async () => {
+    try {
+      await leaveActiveRoom();
+      navigate('/');
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : 'تعذّر مغادرة الوكالة.',
+        'error'
+      );
+    }
+  };
+
   const registerSeatRef = useCallback((seatIndex: number, el: HTMLDivElement | null) => {
     seatRefs.current[seatIndex] = el;
   }, []);
@@ -1429,7 +1585,12 @@ export const RoomPage: React.FC = () => {
     ? safeGetItem('sada_equipped_frame') || user.frameId
     : undefined;
   const canApproveMicRequests = canManageRoomActions;
-  const canJoinMicWithoutApproval = !requireMicPermission || canApproveMicRequests;
+  const canJoinMicWithoutApproval =
+    !requireMicPermission ||
+    canManage ||
+    canApproveMicRequests ||
+    isAgencyOwner ||
+    Boolean(user?.agencyId && user.agencyId === roomAgencyId);
 
   const userProfileLookup = useMemo(() => {
     const map = new Map<
@@ -1726,7 +1887,8 @@ export const RoomPage: React.FC = () => {
   };
 
   const filteredMessages = useMemo(() => {
-    const list = room?.messages || [];
+    const hiddenIds = new Set(hiddenRoomMessageIds);
+    const list = (room?.messages || []).filter((message) => !hiddenIds.has(message.id));
     const seenJoinUserIds = new Set<string>();
     const seenEntryMessages = new Set<string>();
     const deduplicated = list.filter((m) => {
@@ -1748,7 +1910,7 @@ export const RoomPage: React.FC = () => {
       return deduplicated.filter((m) => m.type === 'chat');
     }
     return deduplicated;
-  }, [chatFilter, room?.messages]);
+  }, [chatFilter, hiddenRoomMessageIds, room?.messages]);
 
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1841,7 +2003,7 @@ export const RoomPage: React.FC = () => {
         top: `${visualViewportTop}px`,
         height: viewportHeight ? `${viewportHeight}px` : '100dvh',
       }}
-      className={`fixed inset-x-0 z-50 flex flex-col overflow-hidden bg-[#0b0e17] text-white ${
+      className={`fixed inset-x-0 z-50 flex flex-col overflow-hidden bg-transparent text-white ${
         fullscreenGift ? 'animate-dragon-shake' : ''
       }`}
     >
@@ -1869,18 +2031,26 @@ export const RoomPage: React.FC = () => {
       ) : (
         <>
           {/* Golden Dragon Dark Stage (or selected/uploaded agency backdrop) */}
-          <DragonStageBackdrop coverImage={room.coverImage} />
-          <div aria-hidden="true" className="fixed inset-0 z-[1] pointer-events-none bg-black/25" />
-
+          <div id="room-stage-backdrop">
+            <style>{`
+              #room-stage-backdrop > .fixed.inset-0.z-0 > img {
+                opacity: 1 !important;
+              }
+              #room-stage-backdrop > .fixed.inset-0.z-0 > img + .absolute.inset-0 {
+                display: none !important;
+              }
+            `}</style>
+            <DragonStageBackdrop coverImage={room.coverImage} />
+          </div>
       <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-1 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-1 pb-2">
         {/* 1. ROOM TOP BAR */}
         <header
-          className="relative z-30 shrink-0 pt-2 px-2.5 pb-1 bg-[#0b0e17]/95 flex items-center justify-between gap-1.5"
+          className="relative z-30 shrink-0 pt-2 px-2.5 pb-1 bg-black/15 flex items-center justify-between gap-1.5"
         >
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
           <div
             ref={headerAnchorRef}
-            className="flex items-center gap-1.5 min-w-0 bg-[#14161f]/95 border border-[#D4AF37]/35 rounded-2xl p-1 pl-2"
+            className="flex items-center gap-1.5 min-w-0 bg-black/15 border border-[#D4AF37]/35 rounded-2xl p-1 pl-2"
           >
             <button
               type="button"
@@ -1908,7 +2078,16 @@ export const RoomPage: React.FC = () => {
                 title="معلومات الوكالة"
               >
                 <h1 className="min-w-0 break-words text-[11px] sm:text-sm font-extrabold text-white leading-tight">
-                  {room.title}
+                  <span className="inline-flex items-center gap-1">
+                    {room.title}
+                    {extras.agencyLockEnabled && (
+                      <Lock
+                        className="w-3 h-3 text-amber-300 shrink-0"
+                        aria-label="الوكالة مقفلة برمز سري"
+                        title="الوكالة مقفلة برمز سري"
+                      />
+                    )}
+                  </span>
                 </h1>
               </button>
                 <button
@@ -1934,7 +2113,11 @@ export const RoomPage: React.FC = () => {
                   aria-label="نسخ رقم الوكالة"
                   title="نسخ رقم الوكالة"
                 >
-                  <Copy className="w-3 h-3" />
+                  {agencyIdCopied ? (
+                    <Check className="w-3 h-3 text-green-400" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
                 </button>
               </div>
             </div>
@@ -2010,13 +2193,8 @@ export const RoomPage: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                if (canManage) {
-                  setSettingsInitialTab('members');
-                  setShowSettingsModal(true);
-                } else {
-                  setLeaderboardModalTab('presence');
-                  setShowLeaderboardModal(true);
-                }
+                setLeaderboardModalTab('presence');
+                setShowLeaderboardModal(true);
               }}
               className="flex items-center gap-0.5 bg-black/40 border border-white/15 rounded-full px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-mono-num font-bold text-white cursor-pointer"
               title="المتواجدون الآن داخل الغرفة"
@@ -2026,7 +2204,7 @@ export const RoomPage: React.FC = () => {
             </button>
 
             {/* Agency Settings Icon right beside the Heart */}
-            {canManage && (
+            {(canManage || canManageAgencyLock) && (
               <button
                 type="button"
                 onClick={() => {
@@ -2242,7 +2420,16 @@ export const RoomPage: React.FC = () => {
               <span>فاز {wheelBanner.winnerName} بـ {wheelBanner.segment.label}</span>
             </motion.div>
           )}
-          <VipEntranceOverlay entry={entryBanner} />
+          <VipEntranceOverlay
+            entry={
+              entryBanner &&
+              (entryBanner.vipLevel === 'svip' ||
+                entryBanner.vipLevel === 'vip3' ||
+                entryBanner.vipLevel === 'vip2')
+                ? entryBanner
+                : null
+            }
+          />
         </AnimatePresence>
 
         {/* 2. TAKA MIC GRID */}
@@ -2326,7 +2513,11 @@ export const RoomPage: React.FC = () => {
                     senderAvatarUrl={senderInfo?.avatarUrl || m.avatarUrl}
                     senderFrameId={senderInfo?.frameId || m.frameId}
                     senderGender={senderInfo?.gender}
-                    senderLevel={senderInfo?.level}
+                    senderLevel={
+                      user && m.userId === user.id
+                        ? user.level
+                        : senderInfo?.level ?? m.level
+                    }
                     senderVipTier={senderInfo?.vipLevel}
                     onOpenMiniProfile={openMiniProfile}
                   />
@@ -2344,7 +2535,7 @@ export const RoomPage: React.FC = () => {
               initial={{ opacity: 0, y: 12, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.96 }}
-              className="mb-1.5 rounded-2xl bg-[#14161f]/95 border border-[#F3D37A]/45 p-2.5 shadow-[0_0_24px_rgba(0,0,0,0.7)] shrink-0"
+              className="mb-1.5 rounded-2xl bg-black/15 border border-[#F3D37A]/45 p-2.5 shadow-[0_0_24px_rgba(0,0,0,0.7)] shrink-0"
             >
               <div className="flex items-center justify-between px-1 mb-1.5">
                 <span className="text-[11px] font-extrabold text-[#FCE9A6]">
@@ -2438,7 +2629,7 @@ export const RoomPage: React.FC = () => {
             {/* 1. Public Chat Input Box */}
             <form
               onSubmit={handleSendChat}
-              className="flex-1 min-w-0 flex items-center gap-1 rounded-full bg-[#14161f]/95 border border-white/20 px-3 py-1"
+              className="flex-1 min-w-0 flex items-center gap-1 rounded-full bg-black/15 border border-white/20 px-3 py-1"
             >
               <input
                 ref={chatInputRef}
@@ -2510,16 +2701,6 @@ export const RoomPage: React.FC = () => {
               title="الدردشات الخارجية / صندوق الوارد"
             >
               <Mail className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowGamesOverlay(true)}
-              className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500/35 to-teal-700/45 border border-emerald-400/60 text-emerald-100 flex items-center justify-center shadow-[0_0_12px_rgba(16,185,129,0.35)] hover:border-emerald-300 cursor-pointer shrink-0 active:scale-95"
-              aria-label="الألعاب"
-              title="مركز الألعاب داخل الغرفة"
-            >
-              <Gamepad2 className="w-5 h-5" />
             </button>
 
             {/* Mic Control Button (🎙️ / 🔇) */}
@@ -2998,18 +3179,18 @@ export const RoomPage: React.FC = () => {
                   <div>
                     <h3 className="text-base font-extrabold gold-gradient-text">
                       {leaderboardModalTab === 'presence'
-                        ? `المتواجدون في الغرفة (${unifiedPresenceList.length})`
+                        ? 'المتواجدون في الغرفة'
                         : leaderboardModalTab === 'supporters'
                         ? 'أكبر الداعمين في الغرفة'
                         : 'تصنيف أبطال الألعاب والمسابقات'}
                     </h3>
-                    <p className="text-[11px] text-slate-400">
-                      {leaderboardModalTab === 'presence'
-                        ? 'مجموع الجالسين على المايكات والمستمعين دون تكرار'
-                        : leaderboardModalTab === 'supporters'
+                    {leaderboardModalTab !== 'presence' && (
+                      <p className="text-[11px] text-slate-400">
+                        {leaderboardModalTab === 'supporters'
                         ? 'ترتيب الداعمين بحسب قيمة الهدايا المرسلة'
                         : 'ترتيب الأعضاء بحسب نقاط الألعاب والمسابقات'}
-                    </p>
+                      </p>
+                    )}
                   </div>
                 </div>
                 <button
@@ -3021,41 +3202,32 @@ export const RoomPage: React.FC = () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/20 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setLeaderboardModalTab('supporters')}
-                  className={`min-h-[38px] rounded-xl px-1 text-[10px] sm:text-xs font-extrabold transition cursor-pointer ${
-                    leaderboardModalTab === 'supporters'
-                      ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  🎁 الداعمون
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLeaderboardModalTab('heroes')}
-                  className={`min-h-[38px] rounded-xl px-1 text-[10px] sm:text-xs font-extrabold transition cursor-pointer ${
-                    leaderboardModalTab === 'heroes'
-                      ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  🏆 الأبطال
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLeaderboardModalTab('presence')}
-                  className={`min-h-[38px] rounded-xl px-1 text-[10px] sm:text-xs font-extrabold transition cursor-pointer ${
-                    leaderboardModalTab === 'presence'
-                      ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  👥 المتواجدون ({unifiedPresenceList.length})
-                </button>
-              </div>
+              {leaderboardModalTab !== 'presence' && (
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/20 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setLeaderboardModalTab('supporters')}
+                    className={`min-h-[38px] rounded-xl px-1 text-[10px] sm:text-xs font-extrabold transition cursor-pointer ${
+                      leaderboardModalTab === 'supporters'
+                        ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    🎁 الداعمون
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeaderboardModalTab('heroes')}
+                    className={`min-h-[38px] rounded-xl px-1 text-[10px] sm:text-xs font-extrabold transition cursor-pointer ${
+                      leaderboardModalTab === 'heroes'
+                        ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    🏆 الأبطال
+                  </button>
+                </div>
+              )}
 
               {leaderboardModalTab === 'heroes' && canManageRoomActions && (
                 <button
@@ -3083,13 +3255,28 @@ export const RoomPage: React.FC = () => {
                         key={member.userId}
                         className="w-full rounded-2xl border border-white/10 bg-[#070913]/80 p-3 flex items-center gap-3 text-right"
                       >
-                        <AvatarWithFrame
-                          src={member.avatarUrl}
-                          alt={member.displayName}
-                          frameId={member.frameId}
-                          vipTier={member.vipLevel}
-                          size="sm"
-                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowLeaderboardModal(false);
+                            openMiniProfile(member.userId, {
+                              displayName: member.displayName,
+                              avatarUrl: member.avatarUrl,
+                              frameId: member.frameId,
+                              vipLevel: member.vipLevel,
+                            });
+                          }}
+                          className="shrink-0 rounded-full cursor-pointer"
+                          aria-label={`فتح ملف ${member.displayName}`}
+                        >
+                          <AvatarWithFrame
+                            src={member.avatarUrl}
+                            alt={member.displayName}
+                            frameId={member.frameId}
+                            vipTier={member.vipLevel}
+                            size="sm"
+                          />
+                        </button>
                         <VipUserName
                           name={member.displayName}
                           vipTier={member.vipLevel}
@@ -3249,7 +3436,11 @@ export const RoomPage: React.FC = () => {
                     className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-mono-num font-bold text-amber-100 backdrop-blur-md cursor-pointer hover:bg-white/15"
                   >
                     <span>ID الوكالة: {AGENCY_ID}</span>
-                    <Copy className="w-3.5 h-3.5" />
+                    {agencyIdCopied ? (
+                      <Check className="w-3.5 h-3.5 text-green-400" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
                   </button>
                 </div>
               </div>
@@ -3271,13 +3462,14 @@ export const RoomPage: React.FC = () => {
       </AnimatePresence>
 
       {/* AGENCY SETTINGS MODAL */}
-      {showSettingsModal && canManage && (
+      {showSettingsModal && (canManage || canManageAgencyLock) && (
         <RoomSettingsModal
           room={room}
           extras={roomSettingsExtras}
           presenceMembers={presenceMembers}
           isOwnerOrAdmin={isOwnerOrAdmin}
           isAgencyOwner={isAgencyOwner}
+          isAgencyLockManager={canManageAgencyLock}
           canClearRoomChat={canClearRoomChat}
           initialTab={settingsInitialTab}
           ownedBackgrounds={ownedBackgrounds}
@@ -3295,10 +3487,7 @@ export const RoomPage: React.FC = () => {
             );
           }}
           onUpdateSettings={handleUpdateRoomSettings}
-          onClearRoomChat={async () => {
-            await clearRoomChat();
-            showToast('تم مسح الدردشة بواسطة الإدارة');
-          }}
+          onClearRoomChat={handleClearRoomChat}
           onAdminAction={runAdminAction}
           onStartAgencyContest={async (payload) => {
             await startContest(payload);
@@ -3380,6 +3569,63 @@ export const RoomPage: React.FC = () => {
             />
           )}
         </>
+      )}
+      {shouldBlockAgencyRoom && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
+          <div className="w-full max-w-sm rounded-3xl border border-[#D4AF37]/35 bg-[#10131d] p-6 text-white shadow-2xl">
+            {!agencyLockRoleChecked ? (
+              <p className="text-center text-sm font-bold text-amber-100">
+                جارٍ التحقق من صلاحيات دخول الوكالة...
+              </p>
+            ) : (
+              <>
+                <div className="mb-4 flex items-center gap-2">
+                  <Lock className="h-5 w-5 text-amber-300" />
+                  <h2 className="text-base font-extrabold text-[#FCE9A6]">
+                    وكالة محمية برمز سري
+                  </h2>
+                </div>
+                <p className="mb-4 text-xs text-slate-300">{room?.title}</p>
+                {agencyEntryError && (
+                  <p className="mb-3 rounded-xl border border-rose-400/30 bg-rose-950/50 px-3 py-2 text-xs text-rose-200">
+                    {agencyEntryError}
+                  </p>
+                )}
+                <form onSubmit={handleAgencyEntryPasswordSubmit} className="space-y-3">
+                  <input
+                    type="password"
+                    inputMode="text"
+                    autoComplete="current-password"
+                    maxLength={4}
+                    required
+                    dir="ltr"
+                    value={agencyEntryPassword}
+                    onChange={(event) =>
+                      setAgencyEntryPassword(
+                        event.target.value.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 4)
+                      )
+                    }
+                    placeholder="أدخل 4 أرقام أو أحرف"
+                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3.5 py-3 text-left font-mono-num text-sm text-white focus:border-amber-300 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    className="w-full rounded-xl bg-amber-400 px-4 py-3 text-sm font-extrabold text-slate-950 cursor-pointer"
+                  >
+                    تحقق ودخول
+                  </button>
+                </form>
+                <button
+                  type="button"
+                  onClick={() => void handleLeaveLockedAgency()}
+                  className="mt-3 w-full rounded-xl border border-white/15 px-4 py-2.5 text-xs font-bold text-slate-300 cursor-pointer"
+                >
+                  العودة إلى القائمة
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

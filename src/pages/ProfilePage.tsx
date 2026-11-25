@@ -793,14 +793,6 @@ export const ProfilePage: React.FC = () => {
                 </p>
               </div>
             </div>
-
-            <button
-              type="button"
-              onClick={() => navigate('/wallet')}
-              className="gold-btn min-h-[36px] rounded-xl px-3.5 py-1.5 text-[11px] font-extrabold cursor-pointer"
-            >
-              ترقية بالشحن ✦
-            </button>
           </div>
 
           <div className="space-y-1.5">

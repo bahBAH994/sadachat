@@ -28,6 +28,7 @@ import { ARAB_COUNTRIES, formatShortNumericId, getUserVipTierInfo } from '../lib
 import { getPlatformState } from '../lib/sadaMappers';
 import {
   createRoomInSupabase,
+  isRoomAgencyOwnerOrHostFromData,
   listActiveRooms,
   verifyRoomPasswordInSupabase,
 } from '../lib/sadaRoomsService';
@@ -69,12 +70,22 @@ interface LobbyRoomCardProps {
   liveCount: number;
   hostCountryCode?: string;
   isPinned?: boolean;
+  isAgencyLocked?: boolean;
   onEnter: (room: Room) => void;
   onOpenMiniProfile: (userId: string, preview?: Partial<User>) => void;
 }
 
 const LobbyRoomCard = memo<LobbyRoomCardProps>(
-  ({ room, members, liveCount, hostCountryCode, isPinned, onEnter, onOpenMiniProfile }) => {
+  ({
+    room,
+    members,
+    liveCount,
+    hostCountryCode,
+    isPinned,
+    isAgencyLocked = false,
+    onEnter,
+    onOpenMiniProfile,
+  }) => {
     const flag =
       ARAB_COUNTRIES.find((c) => c.code === hostCountryCode)?.flag || '🎙️';
 
@@ -112,9 +123,18 @@ const LobbyRoomCard = memo<LobbyRoomCardProps>(
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex items-center gap-1.5">
             <span className="text-sm">{flag}</span>
-            <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
-              {room.title}
-            </h3>
+            <div className="flex items-center gap-1 min-w-0">
+              <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
+                {room.title}
+              </h3>
+              {isAgencyLocked && (
+                <Lock
+                  className="w-3.5 h-3.5 text-amber-600 shrink-0"
+                  aria-label="الوكالة مقفلة برمز سري"
+                  title="الوكالة مقفلة برمز سري"
+                />
+              )}
+            </div>
           </div>
 
           <p className="text-xs text-slate-500 truncate">{room.description}</p>
@@ -262,6 +282,8 @@ export const LobbyPage: React.FC = () => {
   const [passwordPromptRoom, setPasswordPromptRoom] = useState<Room | null>(null);
   const [roomPasswordInput, setRoomPasswordInput] = useState('');
   const [roomPasswordError, setRoomPasswordError] = useState<string | null>(null);
+  const [passwordPromptType, setPasswordPromptType] = useState<'room' | 'agency'>('room');
+  const [verifiedAgencyLockRoomId, setVerifiedAgencyLockRoomId] = useState<string | null>(null);
   const [micPermission, setMicPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
 
   const requestMicPermission = async () => {
@@ -588,16 +610,56 @@ export const LobbyPage: React.FC = () => {
   }, [pendingMyRoomEntry, loading, loadingAgencyMap, rooms, agencyOwnerMap, user]);
 
   const enterRoom = useCallback(
-    (room: Room) => {
-      if (room.hasPassword) {
+    async (room: Room) => {
+      setVerifiedAgencyLockRoomId(null);
+      setRoomPasswordError(null);
+      try {
+        const platformState = await getPlatformState({ forceRefresh: true });
+        const latestRoomConfigs = platformState.settings.roomConfigs || {};
+        setRoomConfigs(latestRoomConfigs);
+        const isAgencyLocked = latestRoomConfigs[room.id]?.agencyLockEnabled === true;
+        if (isAgencyLocked) {
+          let canBypassLock = false;
+          try {
+            canBypassLock = Boolean(
+              user?.id && (await isRoomAgencyOwnerOrHostFromData(room.hostId, user.id))
+            );
+          } catch (error) {
+            setPasswordPromptRoom(room);
+            setPasswordPromptType('agency');
+            setRoomPasswordInput('');
+            setRoomPasswordError(
+              error instanceof Error ? error.message : 'تعذّر التحقق من صلاحيات الوكالة.'
+            );
+            return;
+          }
+          if (!canBypassLock) {
+            setPasswordPromptRoom(room);
+            setPasswordPromptType('agency');
+            setRoomPasswordInput('');
+            return;
+          }
+          setVerifiedAgencyLockRoomId(room.id);
+        }
+        if (room.hasPassword) {
+          setPasswordPromptRoom(room);
+          setPasswordPromptType('room');
+          setRoomPasswordInput('');
+          return;
+        }
+        navigate(`/room/${room.id}`, {
+          state: isAgencyLocked ? { agencyLockAuthorizedRoomId: room.id } : undefined,
+        });
+      } catch (error) {
         setPasswordPromptRoom(room);
+        setPasswordPromptType('agency');
         setRoomPasswordInput('');
-        setRoomPasswordError(null);
-        return;
+        setRoomPasswordError(
+          error instanceof Error ? error.message : 'تعذّر التحقق من إعدادات الوكالة.'
+        );
       }
-      navigate(`/room/${room.id}`);
     },
-    [navigate]
+    [navigate, user?.id]
   );
 
   const handleVerifyPassword = async (e: React.FormEvent) => {
@@ -605,10 +667,36 @@ export const LobbyPage: React.FC = () => {
     if (!passwordPromptRoom) return;
     setRoomPasswordError(null);
     try {
-      await verifyRoomPasswordInSupabase(passwordPromptRoom.id, roomPasswordInput);
+      let lockAuthorized = verifiedAgencyLockRoomId === passwordPromptRoom.id;
+      if (passwordPromptType === 'agency') {
+        const platformState = await getPlatformState({ forceRefresh: true });
+        const latestRoomConfigs = platformState.settings.roomConfigs || {};
+        setRoomConfigs(latestRoomConfigs);
+        const roomLock = latestRoomConfigs[passwordPromptRoom.id];
+        if (roomLock?.agencyLockEnabled) {
+          const canBypassLock = Boolean(
+            user?.id &&
+              (await isRoomAgencyOwnerOrHostFromData(passwordPromptRoom.hostId, user.id))
+          );
+          if (!canBypassLock && roomPasswordInput !== roomLock.agencyLockPassword) {
+            throw new Error('الرمز السري للوكالة غير صحيح.');
+          }
+          lockAuthorized = true;
+          setVerifiedAgencyLockRoomId(passwordPromptRoom.id);
+        }
+        if (passwordPromptRoom.hasPassword) {
+          setPasswordPromptType('room');
+          setRoomPasswordInput('');
+          return;
+        }
+      } else {
+        await verifyRoomPasswordInSupabase(passwordPromptRoom.id, roomPasswordInput);
+      }
       const targetId = passwordPromptRoom.id;
       setPasswordPromptRoom(null);
-      navigate(`/room/${targetId}`);
+      navigate(`/room/${targetId}`, {
+        state: lockAuthorized ? { agencyLockAuthorizedRoomId: targetId } : undefined,
+      });
     } catch (err) {
       setRoomPasswordError(
         err instanceof Error ? err.message : 'كلمة المرور غير صحيحة.'
@@ -1072,6 +1160,7 @@ export const LobbyPage: React.FC = () => {
                   liveCount={liveCount}
                   hostCountryCode={userMeta[room.hostId]?.country}
                   isPinned={pinnedRoomIds.includes(room.id)}
+                  isAgencyLocked={roomConfigs[room.id]?.agencyLockEnabled === true}
                   onEnter={enterRoom}
                   onOpenMiniProfile={openMiniProfile}
                 />
@@ -1138,7 +1227,16 @@ export const LobbyPage: React.FC = () => {
                           غرفتي الملكية ✦
                         </span>
                         <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
-                          {room.title}
+                          <span className="inline-flex items-center gap-1">
+                            {room.title}
+                            {roomConfigs[room.id]?.agencyLockEnabled && (
+                              <Lock
+                                className="w-3.5 h-3.5 text-amber-600 shrink-0"
+                                aria-label="الوكالة مقفلة برمز سري"
+                                title="الوكالة مقفلة برمز سري"
+                              />
+                            )}
+                          </span>
                         </h3>
                         <p className="text-xs text-slate-500 truncate">{room.description}</p>
                       </div>
@@ -1187,7 +1285,16 @@ export const LobbyPage: React.FC = () => {
                       />
                       <div className="flex-1 min-w-0 space-y-1">
                         <h3 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
-                          {room.title}
+                          <span className="inline-flex items-center gap-1">
+                            {room.title}
+                            {roomConfigs[room.id]?.agencyLockEnabled && (
+                              <Lock
+                                className="w-3.5 h-3.5 text-amber-600 shrink-0"
+                                aria-label="الوكالة مقفلة برمز سري"
+                                title="الوكالة مقفلة برمز سري"
+                              />
+                            )}
+                          </span>
                         </h3>
                         <p className="text-xs text-slate-500 truncate">{room.description}</p>
                         <p className="text-[11px] text-emerald-700 font-bold">
@@ -1397,7 +1504,9 @@ export const LobbyPage: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-extrabold text-slate-900">
-              وكالة محمية برمز سري (PIN)
+              {passwordPromptType === 'agency'
+                ? 'أدخل الرمز السري للوكالة'
+                : 'وكالة محمية برمز سري (PIN)'}
             </h3>
             <p className="text-xs text-slate-500">{passwordPromptRoom.title}</p>
             {roomPasswordError && (
@@ -1408,12 +1517,23 @@ export const LobbyPage: React.FC = () => {
             <form onSubmit={handleVerifyPassword} className="space-y-3">
               <input
                 type="password"
-                inputMode="numeric"
+                inputMode={passwordPromptType === 'agency' ? 'text' : 'numeric'}
                 required
                 dir="ltr"
                 value={roomPasswordInput}
-                onChange={(e) => setRoomPasswordInput(e.target.value)}
-                placeholder="أدخل الرمز السري PIN"
+                onChange={(e) =>
+                  setRoomPasswordInput(
+                    passwordPromptType === 'agency'
+                      ? e.target.value.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 4)
+                      : e.target.value
+                  )
+                }
+                maxLength={passwordPromptType === 'agency' ? 4 : undefined}
+                placeholder={
+                  passwordPromptType === 'agency'
+                    ? 'أدخل 4 أرقام أو أحرف'
+                    : 'أدخل الرمز السري PIN'
+                }
                 className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 text-left font-mono-num focus:outline-none focus:border-emerald-500"
               />
               <button

@@ -223,6 +223,8 @@ interface ActiveRoomContextValue {
     description?: string;
     title?: string;
     requireMicPermission?: boolean;
+    agencyLockEnabled?: boolean;
+    agencyLockPassword?: string;
   }) => Promise<void>;
   runAdminAction: (
     action:
@@ -1554,11 +1556,17 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       description?: string;
       title?: string;
       requireMicPermission?: boolean;
+      agencyLockEnabled?: boolean;
+      agencyLockPassword?: string;
     }) => {
       if (!room || !user) return;
       const updatedRoom = await updateRoomSettingsInSupabase(room.id, user, patch);
       setRoom(updatedRoom);
-      if (typeof patch.requireMicPermission === 'boolean') {
+      if (
+        typeof patch.requireMicPermission === 'boolean' ||
+        patch.agencyLockEnabled !== undefined ||
+        patch.agencyLockPassword !== undefined
+      ) {
         setExtras(await getRoomExtrasFromSupabase(room.id));
       }
     },

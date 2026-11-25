@@ -666,11 +666,19 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
       const { data: savedMessage, error: saveError } = await supabase
         .from('sada_private_messages')
-        .select('id')
+        .select('id, conversation_id, sender_id, recipient_id, text')
         .eq('id', res.message.id)
         .maybeSingle();
       if (saveError) throw new Error(saveError.message);
-      if (!savedMessage) throw new Error('تعذّر حفظ الرسالة في قاعدة البيانات.');
+      if (
+        !savedMessage ||
+        savedMessage.conversation_id !== res.message.conversationId ||
+        savedMessage.sender_id !== user.id ||
+        savedMessage.recipient_id !== selectedPeerId ||
+        savedMessage.text !== res.message.text
+      ) {
+        throw new Error('تعذّر تأكيد حفظ الرسالة في المحادثة.');
+      }
 
       updateLocalUser(res.user);
       if (optimisticMessage) {

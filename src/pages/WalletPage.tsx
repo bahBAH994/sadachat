@@ -2,40 +2,24 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeftRight,
   Award,
-  CarFront,
-  Check,
-  Clock,
   Coins,
   Copy,
-  Crown,
   Gem,
-  History,
   ImagePlus,
-  Lock,
   QrCode,
   Send,
   ShieldCheck,
-  Sparkles,
   Trash2,
   Wallet,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
-import { getUserVipTierInfo } from '../lib/sadaCatalog';
 import {
   convertDiamondsToCoinsInSupabase,
   getWalletOverviewFromSupabase,
-  purchaseOrEquipFrameInSupabase,
   submitUsdtDepositInSupabase,
   submitUsdtWithdrawalInSupabase,
 } from '../lib/sadaWalletService';
-import type {
-  FrameItem,
-  Transaction,
-  UsdtDepositRequest,
-  UsdtWithdrawalRequest,
-} from '../types';
-import { AvatarWithFrame } from '../components/AvatarWithFrame';
 
 interface RewardTierInfo {
   id: string;
@@ -47,18 +31,6 @@ interface RewardTierInfo {
   entryName: string | null;
   bonusRate: number;
   label: string;
-}
-
-function formatCountdown(targetIso: string | null | undefined, nowMs: number) {
-  if (!targetIso) return null;
-  const diff = new Date(targetIso).getTime() - nowMs;
-  if (diff <= 0) return null;
-  const totalSec = Math.floor(diff / 1000);
-  const days = Math.floor(totalSec / 86400);
-  const hours = Math.floor((totalSec % 86400) / 3600);
-  const minutes = Math.floor((totalSec % 3600) / 60);
-  const seconds = totalSec % 60;
-  return { days, hours, minutes, seconds };
 }
 
 function compressReceiptImage(file: File): Promise<string> {
@@ -88,21 +60,17 @@ function compressReceiptImage(file: File): Promise<string> {
   });
 }
 
-type WalletTab = 'deposit' | 'withdraw' | 'frames';
+type WalletTab = 'deposit' | 'withdraw';
 
 export const WalletPage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
   const [tab, setTab] = useState<WalletTab>('deposit');
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [frames, setFrames] = useState<FrameItem[]>([]);
   const [adminTrc20Address, setAdminTrc20Address] = useState(
     'TFXPytN94bSAUzD893hjpSwp6DGWqGkGSa'
   );
   const [usdtToCoinsRate, setUsdtToCoinsRate] = useState(1000);
   const [diamondToCoinsRate, setDiamondToCoinsRate] = useState(2);
   const [rewardTiers, setRewardTiers] = useState<RewardTierInfo[]>([]);
-  const [usdtDeposits, setUsdtDeposits] = useState<UsdtDepositRequest[]>([]);
-  const [usdtWithdrawals, setUsdtWithdrawals] = useState<UsdtWithdrawalRequest[]>([]);
   const [eligibility, setEligibility] = useState({
     eligible: false,
     roleLabel: 'عضو',
@@ -125,10 +93,8 @@ export const WalletPage: React.FC = () => {
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
   );
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
-  const refreshedExpiredRewardsRef = useRef<string | null>(null);
 
   const handleTabChange = (nextTab: WalletTab) => {
     setTab(nextTab);
@@ -139,62 +105,16 @@ export const WalletPage: React.FC = () => {
     if (!user?.id) return;
     const data = await getWalletOverviewFromSupabase(user.id);
     updateLocalUser(data.user);
-    setTransactions(data.transactions);
-    setFrames(data.frames);
     setAdminTrc20Address(data.adminTrc20Address);
     setUsdtToCoinsRate(data.usdtToCoinsRate);
     setDiamondToCoinsRate(data.diamondToCoinsRate || 2);
     setRewardTiers(data.rewardTiers);
-    setUsdtDeposits(data.usdtDeposits);
-    setUsdtWithdrawals(data.usdtWithdrawals);
     setEligibility(data.withdrawalEligibility);
   }, [user?.id, updateLocalUser]);
 
   useEffect(() => {
     void loadWallet();
   }, [loadWallet]);
-
-  // Live 1s countdown clock & auto-refresh when temporary visual rewards expire
-  useEffect(() => {
-    const id = setInterval(() => {
-      const current = Date.now();
-      setNowMs(current);
-      const frameExp = user?.tempFrameExpiresAt
-        ? new Date(user.tempFrameExpiresAt).getTime()
-        : null;
-      const entryExp = user?.tempEntryExpiresAt
-        ? new Date(user.tempEntryExpiresAt).getTime()
-        : null;
-      const expiredRewards = [
-        frameExp !== null && current >= frameExp ? user?.tempFrameExpiresAt : null,
-        entryExp !== null && current >= entryExp ? user?.tempEntryExpiresAt : null,
-      ]
-        .filter((expiry): expiry is string => Boolean(expiry))
-        .join('|');
-      if (expiredRewards && refreshedExpiredRewardsRef.current !== expiredRewards) {
-        refreshedExpiredRewardsRef.current = expiredRewards;
-        void loadWallet().catch((err) => {
-          setFeedback({
-            type: 'err',
-            text: err instanceof Error ? err.message : 'تعذّر تحديث المحفظة بعد انتهاء المكافأة.',
-          });
-        });
-      } else if (!expiredRewards) {
-        refreshedExpiredRewardsRef.current = null;
-      }
-    }, 1000);
-    return () => clearInterval(id);
-  }, [user?.tempFrameExpiresAt, user?.tempEntryExpiresAt, loadWallet]);
-
-  const activeFrameCountdown = useMemo(
-    () => formatCountdown(user?.tempFrameExpiresAt, nowMs),
-    [user?.tempFrameExpiresAt, nowMs]
-  );
-
-  const activeEntryCountdown = useMemo(
-    () => formatCountdown(user?.tempEntryExpiresAt, nowMs),
-    [user?.tempEntryExpiresAt, nowMs]
-  );
 
   const depositNumeric = Math.max(0, Number(depositUsdt) || 0);
   const matchedTier = useMemo(() => {
@@ -322,25 +242,6 @@ export const WalletPage: React.FC = () => {
     }
   };
 
-  const handleFrameAction = async (frameId: string) => {
-    if (!user) return;
-    setBusyId(frameId);
-    setFeedback(null);
-    try {
-      const updatedUser = await purchaseOrEquipFrameInSupabase(user, frameId);
-      updateLocalUser(updatedUser);
-      await loadWallet();
-      setFeedback({ type: 'ok', text: 'تم تفعيل الإطار الملكي على حسابك!' });
-    } catch (err) {
-      setFeedback({
-        type: 'err',
-        text: err instanceof Error ? err.message : 'تعذّر تفعيل الإطار.',
-      });
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   if (!user) return null;
 
   return (
@@ -352,21 +253,20 @@ export const WalletPage: React.FC = () => {
             محفظة الشحن والسحب USDT (TRC20)
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 mt-1">
-            شحن فوري عبر USDT TRC20 حصراً مع إطارات ودخوليات مؤقتة وسحب أرباح الفائزين والوكلاء والمضيفين
+            شحن فوري وسحب أرباح عبر USDT (TRC20) حصراً
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25 overflow-x-auto touch-pan-x no-scrollbar">
+        <div className="w-full sm:w-auto grid grid-cols-2 items-center gap-1.5 p-1 rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/25">
           {[
             { id: 'deposit', label: 'إيداع USDT (TRC20)' },
             { id: 'withdraw', label: 'سحب الأرباح USDT' },
-            { id: 'frames', label: 'الإطارات والسجل' },
           ].map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => handleTabChange(item.id as WalletTab)}
-              className={`min-h-[40px] rounded-xl px-4 py-2 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition ${
+              className={`w-full min-h-[40px] rounded-xl px-3 py-2 text-xs font-bold whitespace-nowrap cursor-pointer transition ${
                 tab === item.id
                   ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
                   : 'text-slate-300 hover:text-white'
@@ -390,109 +290,10 @@ export const WalletPage: React.FC = () => {
         </div>
       )}
 
-      {/* Active Temporary Visual Rewards Countdown */}
-      {(activeFrameCountdown || activeEntryCountdown) && (
-        <section className="rounded-3xl border border-[#FCE9A6]/50 bg-gradient-to-r from-[#2D2007]/85 via-[#131830]/95 to-[#2D2007]/85 p-5 shadow-[0_0_32px_rgba(212,175,55,0.22)] flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <AvatarWithFrame
-              src={user.avatarUrl}
-              alt={user.displayName}
-              frameId={user.frameId}
-              vipTier={getUserVipTierInfo(user).key}
-              size="lg"
-            />
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-xs font-bold text-[#F3D37A]">
-                <Sparkles className="w-4 h-4" />
-                <span>المكافآت البصرية المؤقتة المفعّلة الآن</span>
-              </div>
-              <p className="text-sm sm:text-base font-extrabold text-white">
-                {frames.find((f) => f.id === user.frameId)?.name || 'إطار شحن ملكي'}
-                {user.activeEntryName ? ` + ${user.activeEntryName}` : ''}
-              </p>
-              <p className="text-xs text-slate-300">
-                تظهر دخوليتك لجميع الأعضاء عند دخول أي غرفة صوتية وتُزال تلقائياً عند انتهاء العداد
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
-            {activeFrameCountdown && (
-              <div className="rounded-2xl border border-[#D4AF37]/40 bg-[#070913]/85 px-4 py-2.5 text-center">
-                <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-[#F3D37A]" />
-                  <span>الوقت المتبقي</span>
-                </div>
-                <div
-                  className="mt-1 text-sm sm:text-base font-extrabold font-mono-num text-[#FCE9A6]"
-                  dir="ltr"
-                >
-                  {activeFrameCountdown.days}d : {String(activeFrameCountdown.hours).padStart(2, '0')}h :{' '}
-                  {String(activeFrameCountdown.minutes).padStart(2, '0')}m :{' '}
-                  {String(activeFrameCountdown.seconds).padStart(2, '0')}s
-                </div>
-              </div>
-            )}
-            {activeEntryCountdown && user.activeEntryName && (
-              <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-2.5 text-center">
-                <div className="text-[11px] text-amber-200 flex items-center justify-center gap-1">
-                  {user.activeEntryId === 'entry_car_15d' ? (
-                    <CarFront className="w-3.5 h-3.5" />
-                  ) : (
-                    <Crown className="w-3.5 h-3.5" />
-                  )}
-                  <span>{user.activeEntryName}</span>
-                </div>
-                <div className="mt-1 text-xs font-bold font-mono-num text-white">
-                  مفعّلة في الغرف ({activeEntryCountdown.days} يوم متبقٍ)
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* Fixed balance cards */}
-      <section className="grid grid-cols-2 gap-2">
-          <div className="royal-glass rounded-2xl p-2.5 min-w-0 flex flex-col justify-between gap-1.5">
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-[9px] sm:text-[11px] font-bold text-slate-300 leading-tight">رصيد الكوينز الذهبي</span>
-              <Coins className="w-4 h-4 text-[#D4AF37] shrink-0" />
-            </div>
-            <div className="text-lg sm:text-xl font-extrabold font-mono-num text-[#FCE9A6]">
-              {user.coins.toLocaleString('en-US')}
-            </div>
-            <p className="text-[8px] sm:text-[9px] text-slate-400 leading-tight line-clamp-2">
-              يُستخدم للهدايا ودولاب الحظ والرسائل الخاصة
-            </p>
-          </div>
-
-          <div className="royal-glass rounded-2xl p-2.5 min-w-0 flex flex-col justify-between gap-1.5">
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-[9px] sm:text-[11px] font-bold text-slate-300 leading-tight">رصيد الألماس المكتسب</span>
-              {user.gender === 'female' && !user.is_admin && user.femaleVoiceStatus !== 'verified' ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/50 bg-amber-500/15 px-1.5 py-0.5 text-[7px] font-bold text-[#FCE9A6]">
-                  <Lock className="w-2.5 h-2.5" />
-                  مقفل للتوثيق الصوتي
-                </span>
-              ) : (
-                <Gem className="w-4 h-4 text-sky-400 shrink-0" />
-              )}
-            </div>
-            <div className="text-lg sm:text-xl font-extrabold font-mono-num text-sky-200">
-              {user.diamonds.toLocaleString('en-US')}
-            </div>
-            <p className="text-[8px] sm:text-[9px] text-slate-400 leading-tight line-clamp-2">
-              {user.gender === 'female' && !user.is_admin && user.femaleVoiceStatus !== 'verified'
-                ? 'سيُفعّل رصيد الألماس واستقبال الرسائل المدفوعة فور اعتماد البصمة الصوتية من الإدارة.'
-                : `يُكتسب من الهدايا والرسائل الخاصة والعمولات (${eligibility.diamondsPerUsdt} 💎 = 1 USDT أو 1 💎 = ${diamondToCoinsRate} كوينز)`}
-            </p>
-          </div>
-      </section>
       </div>
 
       <div ref={contentScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y">
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-28 space-y-6">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-3 pb-28 space-y-4">
       <form
         onSubmit={handleConvert}
         className="royal-glass rounded-3xl p-5 flex flex-col sm:flex-row sm:items-end gap-3"
@@ -785,62 +586,6 @@ export const WalletPage: React.FC = () => {
             </form>
           </div>
 
-          {/* Deposit Requests History */}
-          <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
-            <h3 className="text-base font-bold text-[#F3D37A]">سجل طلبات الإيداع (USDT TRC20)</h3>
-            {usdtDeposits.length === 0 ? (
-              <p className="text-xs sm:text-sm text-slate-400 text-center py-4">
-                لا توجد طلبات إيداع مسجلة بعد.
-              </p>
-            ) : (
-              <div className="divide-y divide-[#D4AF37]/15">
-                {usdtDeposits.map((dep) => (
-                  <div
-                    key={dep.id}
-                    className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-sm"
-                  >
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-extrabold font-mono-num text-[#FCE9A6]">
-                          ${dep.amountUsdt} USDT
-                        </span>
-                        <span className="text-slate-400">·</span>
-                        <span className="font-mono-num text-white font-bold">
-                          +{dep.coinsCredited.toLocaleString('en-US')} كوينز
-                        </span>
-                        {dep.rewardTierLabel && (
-                          <>
-                            <span className="text-slate-400">·</span>
-                            <span className="text-amber-200 font-semibold">
-                              {dep.rewardTierLabel}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-mono-num truncate" dir="ltr">
-                        TxID: {dep.txId} · {new Date(dep.createdAt).toLocaleString('ar-EG')}
-                      </p>
-                    </div>
-                    <span
-                      className={`text-xs font-bold whitespace-nowrap shrink-0 ${
-                        dep.status === 'approved'
-                          ? 'text-emerald-300'
-                          : dep.status === 'rejected'
-                          ? 'text-rose-300'
-                          : 'text-amber-300'
-                      }`}
-                    >
-                      {dep.status === 'approved'
-                        ? 'مؤكد وممنوح ✓'
-                        : dep.status === 'rejected'
-                        ? 'مرفوض'
-                        : 'بانتظار تأكيد الإدارة'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
         </div>
       )}
 
@@ -980,157 +725,6 @@ export const WalletPage: React.FC = () => {
             </form>
           </section>
 
-          <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
-            <h3 className="text-base font-bold text-[#F3D37A]">سجل طلبات السحب (USDT TRC20)</h3>
-            {usdtWithdrawals.length === 0 ? (
-              <p className="text-xs sm:text-sm text-slate-400 text-center py-4">
-                لا توجد طلبات سحب مسجلة بعد.
-              </p>
-            ) : (
-              <div className="divide-y divide-[#D4AF37]/15">
-                {usdtWithdrawals.map((wd) => (
-                  <div
-                    key={wd.id}
-                    className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-sm"
-                  >
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-extrabold font-mono-num text-emerald-300">
-                          {wd.amountUsdt} USDT
-                        </span>
-                        <span className="text-slate-400">·</span>
-                        <span className="text-white font-mono-num">
-                          {wd.sourceAmount.toLocaleString('en-US')}{' '}
-                          {wd.sourceCurrency === 'diamonds' ? 'ألماسة 💎' : 'كوينز'}
-                        </span>
-                        <span className="text-slate-400">·</span>
-                        <span className="text-[#F3D37A]">{wd.userRoleLabel}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-mono-num truncate" dir="ltr">
-                        TRC20: {wd.trc20Address} · {new Date(wd.createdAt).toLocaleString('ar-EG')}
-                      </p>
-                    </div>
-                    <span
-                      className={`text-xs font-bold whitespace-nowrap shrink-0 ${
-                        wd.status === 'approved'
-                          ? 'text-emerald-300'
-                          : wd.status === 'rejected'
-                          ? 'text-rose-300'
-                          : 'text-amber-300'
-                      }`}
-                    >
-                      {wd.status === 'approved'
-                        ? 'تم التحويل ✓'
-                        : wd.status === 'rejected'
-                        ? 'مرفوض (تم الاسترداد)'
-                        : 'قيد المراجعة'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
-
-      {/* TAB 3: FRAMES & LEDGER */}
-      {tab === 'frames' && (
-        <div className="space-y-6">
-          <section className="space-y-3">
-            <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
-              <Crown className="w-5 h-5 text-[#D4AF37]" />
-              <span>الإطارات الملكية والمكافآت البصرية</span>
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {frames.map((frame) => {
-                const unlocked = user.unlockedFrames.includes(frame.id);
-                const equipped = user.frameId === frame.id;
-                return (
-                  <div
-                    key={frame.id}
-                    className="royal-glass rounded-3xl p-5 flex flex-col items-center text-center justify-between gap-4"
-                  >
-                    <div className="space-y-3 flex flex-col items-center">
-                      <AvatarWithFrame
-                        src={user.avatarUrl}
-                        alt={user.displayName}
-                        frameId={frame.id}
-                        vipTier={getUserVipTierInfo(user).key}
-                        size="lg"
-                      />
-                      <div>
-                        <h3 className="text-sm font-bold text-white">{frame.name}</h3>
-                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                          {frame.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={equipped || busyId === frame.id}
-                      onClick={() => handleFrameAction(frame.id)}
-                      className={`w-full min-h-[42px] rounded-xl py-2 text-xs font-bold cursor-pointer transition ${
-                        equipped
-                          ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 cursor-default'
-                          : unlocked
-                          ? 'bg-white/10 hover:bg-white/15 border border-[#D4AF37]/40 text-white'
-                          : 'gold-btn'
-                      }`}
-                    >
-                      {equipped ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Check className="w-4 h-4" />
-                          مُفعّل حالياً
-                        </span>
-                      ) : unlocked ? (
-                        'تفعيل الإطار'
-                      ) : (
-                        `اقتناء (${frame.priceCoins.toLocaleString('en-US')} كوينز)`
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
-            <div className="flex items-center gap-2 text-[#F3D37A]">
-              <History className="w-5 h-5" />
-              <h2 className="text-base font-bold">سجل العمليات المالية</h2>
-            </div>
-            {transactions.length === 0 ? (
-              <p className="text-xs sm:text-sm text-slate-400 py-4 text-center">
-                لا توجد عمليات مسجلة بعد.
-              </p>
-            ) : (
-              <div className="divide-y divide-[#D4AF37]/10">
-                {transactions.map((tx) => (
-                  <div
-                    key={tx.id}
-                    className="py-3 flex items-center justify-between gap-4 text-xs sm:text-sm"
-                  >
-                    <div>
-                      <p className="font-semibold text-white">{tx.description}</p>
-                      <p className="text-[11px] text-slate-400 font-mono-num">
-                        {new Date(tx.timestamp).toLocaleString('ar-EG')}
-                      </p>
-                    </div>
-                    <span
-                      className={`font-mono-num font-bold whitespace-nowrap ${
-                        tx.amount >= 0 ? 'text-emerald-300' : 'text-rose-300'
-                      }`}
-                      dir="ltr"
-                    >
-                      {tx.amount >= 0 ? `+${tx.amount}` : tx.amount}{' '}
-                      {tx.currency === 'coins' ? 'Coins' : '💎'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
         </div>
       )}
         </div>

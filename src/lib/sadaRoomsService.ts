@@ -45,6 +45,8 @@ export function createEmptyRoomExtras(): RoomExtrasConfig {
     deputyIds: [],
     moderatorIds: [],
     requireMicPermission: false,
+    agencyLockEnabled: false,
+    agencyLockPassword: '',
     kickedUserIds: [],
     kickedUserNames: {},
     mutedUserIds: [],
@@ -66,6 +68,9 @@ export async function getRoomExtrasFromSupabase(roomId: string): Promise<RoomExt
     ...base,
     ...raw,
     requireMicPermission: raw.requireMicPermission === true,
+    agencyLockEnabled: raw.agencyLockEnabled === true,
+    agencyLockPassword:
+      typeof raw.agencyLockPassword === 'string' ? raw.agencyLockPassword : '',
     deputyIds: Array.isArray(raw.deputyIds) ? raw.deputyIds : [],
     moderatorIds: Array.isArray(raw.moderatorIds) ? raw.moderatorIds : [],
     kickedUserIds: Array.isArray(raw.kickedUserIds) ? raw.kickedUserIds : [],
@@ -451,6 +456,32 @@ export async function isRoomOrAgencyOwnerFromData(
     .maybeSingle();
   if (agencyError) throw new Error(`تعذّر التحقق من مالك الوكالة: ${agencyError.message}`);
   return Boolean(agency && String(agency.owner_id) === user.id);
+}
+
+export async function isRoomAgencyOwnerOrHostFromData(
+  roomHostId: string,
+  userId: string
+): Promise<boolean> {
+  if (roomHostId === userId) return true;
+  const { data: hostUser, error: hostError } = await supabase
+    .from('sada_users')
+    .select('agency_id')
+    .eq('id', roomHostId)
+    .maybeSingle();
+  if (hostError) throw new Error(`تعذّر التحقق من وكالة الغرفة: ${hostError.message}`);
+  if (!hostUser?.agency_id) return false;
+  const { data: agency, error: agencyError } = await supabase
+    .from('sada_agencies')
+    .select('owner_id, host_ids')
+    .eq('id', String(hostUser.agency_id))
+    .maybeSingle();
+  if (agencyError) throw new Error(`تعذّر التحقق من صلاحيات الوكالة: ${agencyError.message}`);
+  return Boolean(
+    agency &&
+      (String(agency.owner_id) === userId ||
+        (Array.isArray(agency.host_ids) &&
+          agency.host_ids.some((hostId: unknown) => String(hostId) === userId)))
+  );
 }
 
 export async function canManageRoomMicRequestsFromData(
@@ -1477,6 +1508,8 @@ export async function updateRoomSettingsInSupabase(
     description?: string;
     title?: string;
     requireMicPermission?: boolean;
+    agencyLockEnabled?: boolean;
+    agencyLockPassword?: string;
   }
 ): Promise<Room> {
   const [{ data: roomRow }, extras] = await Promise.all([
@@ -1485,13 +1518,51 @@ export async function updateRoomSettingsInSupabase(
   ]);
   if (!roomRow) throw new Error('الغرفة غير موجودة.');
 
+  const hasStandardSettings =
+    patch.maxSeats !== undefined ||
+    patch.hostAvatar !== undefined ||
+    patch.coverImage !== undefined ||
+    patch.description !== undefined ||
+    patch.title !== undefined ||
+    patch.requireMicPermission !== undefined;
   const isAllowed =
     actor.is_admin ||
     String(roomRow.host_id) === actor.id ||
     extras.deputyIds.includes(actor.id) ||
     extras.moderatorIds.includes(actor.id);
-  if (!isAllowed) {
+  if (hasStandardSettings && !isAllowed) {
     throw new Error('هذه الصلاحية مخصصة للوكيل ونائب الوكيل والمشرفين فقط.');
+  }
+  const hasAgencyLockSettings =
+    patch.agencyLockEnabled !== undefined || patch.agencyLockPassword !== undefined;
+  if (
+    hasAgencyLockSettings &&
+    !(await isRoomAgencyOwnerOrHostFromData(String(roomRow.host_id), actor.id))
+  ) {
+    throw new Error('قفل الوكالة مخصص للوكيل والمضيفين فقط.');
+  }
+  const nextAgencyLockPassword =
+    typeof patch.agencyLockPassword === 'string' && patch.agencyLockPassword.length > 0
+      ? patch.agencyLockPassword
+      : extras.agencyLockPassword || '';
+  const nextAgencyLockEnabled =
+    typeof patch.agencyLockEnabled === 'boolean'
+      ? patch.agencyLockEnabled
+      : extras.agencyLockEnabled === true;
+  if (
+    hasAgencyLockSettings &&
+    typeof patch.agencyLockPassword === 'string' &&
+    patch.agencyLockPassword.length > 0 &&
+    !/^[\p{L}\p{N}]{4}$/u.test(patch.agencyLockPassword)
+  ) {
+    throw new Error('يجب أن يتكون الرمز السري من أربعة أرقام أو أحرف.');
+  }
+  if (
+    hasAgencyLockSettings &&
+    nextAgencyLockEnabled &&
+    !/^[\p{L}\p{N}]{4}$/u.test(nextAgencyLockPassword)
+  ) {
+    throw new Error('أدخل رمزاً سرياً من أربعة أرقام أو أحرف لتفعيل القفل.');
   }
 
   const updates: Record<string, unknown> = {};
@@ -1564,6 +1635,15 @@ export async function updateRoomSettingsInSupabase(
       ...current,
       requireMicPermission: patch.requireMicPermission,
     }));
+  }
+  if (hasAgencyLockSettings) {
+    await saveRoomExtrasConfig(roomId, (current) => {
+      return {
+        ...current,
+        agencyLockEnabled: nextAgencyLockEnabled,
+        agencyLockPassword: nextAgencyLockPassword,
+      };
+    });
   }
 
   const updated = await getRoomDetailsFromSupabase(roomId);

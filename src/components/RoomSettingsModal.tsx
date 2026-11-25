@@ -33,6 +33,7 @@ interface RoomSettingsModalProps {
   presenceMembers: RoomPresenceMember[];
   isOwnerOrAdmin: boolean;
   isAgencyOwner?: boolean;
+  isAgencyLockManager?: boolean;
   canClearRoomChat?: boolean;
   initialTab?: 'agency' | 'members' | 'logs' | 'contests';
   ownedBackgrounds?: string[];
@@ -46,6 +47,8 @@ interface RoomSettingsModalProps {
     description?: string;
     title?: string;
     requireMicPermission?: boolean;
+    agencyLockEnabled?: boolean;
+    agencyLockPassword?: string;
   }) => Promise<void>;
   onClearRoomChat?: () => Promise<void>;
   onAdminAction: (
@@ -84,6 +87,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   presenceMembers,
   isOwnerOrAdmin,
   isAgencyOwner = false,
+  isAgencyLockManager = false,
   canClearRoomChat = false,
   initialTab = 'agency',
   ownedBackgrounds = [],
@@ -105,6 +109,12 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   const [seatCount, setSeatCount] = useState<number>(room.maxSeats || 12);
   const [requireMicPermission, setRequireMicPermission] = useState(
     Boolean(extras.requireMicPermission)
+  );
+  const [agencyLockEnabled, setAgencyLockEnabled] = useState(
+    Boolean(extras.agencyLockEnabled)
+  );
+  const [agencyLockPassword, setAgencyLockPassword] = useState(
+    extras.agencyLockPassword || ''
   );
   const [avatarUrl, setAvatarUrl] = useState(room.hostAvatar);
   const [coverImage, setCoverImage] = useState(room.coverImage || 'dragon_dark');
@@ -130,6 +140,11 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   useEffect(() => {
     setRequireMicPermission(Boolean(extras.requireMicPermission));
   }, [extras.requireMicPermission]);
+
+  useEffect(() => {
+    setAgencyLockEnabled(Boolean(extras.agencyLockEnabled));
+    setAgencyLockPassword(extras.agencyLockPassword || '');
+  }, [extras.agencyLockEnabled, extras.agencyLockPassword]);
 
   const readImageFile = (
     file: File,
@@ -224,6 +239,43 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
       );
     } catch (err) {
       setFeedback(err instanceof Error ? err.message : 'تعذّر تحديث إذن المايك.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAgencyLockChange = async (enabled: boolean) => {
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await onUpdateSettings({
+        agencyLockEnabled: enabled,
+      });
+      setAgencyLockEnabled(enabled);
+      setFeedback(enabled ? 'تم تفعيل قفل الوكالة.' : 'تم إيقاف قفل الوكالة.');
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : 'تعذّر تحديث قفل الوكالة.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAgencyLockPasswordSave = async () => {
+    if (!/^[\p{L}\p{N}]{4}$/u.test(agencyLockPassword)) {
+      setFeedback('يجب أن يتكون الرمز السري من أربعة أرقام أو أحرف.');
+      return;
+    }
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await onUpdateSettings({
+        agencyLockEnabled: true,
+        agencyLockPassword,
+      });
+      setAgencyLockEnabled(true);
+      setFeedback('تم حفظ الرمز السري وتفعيل قفل الوكالة.');
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : 'تعذّر حفظ الرمز السري.');
     } finally {
       setSaving(false);
     }
@@ -680,6 +732,64 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                 {requireMicPermission ? 'مُفعّل' : 'مُتوقف'}
               </button>
             </div>
+
+            {isAgencyLockManager && (
+              <div className="rounded-2xl bg-[#070913]/85 border border-[#D4AF37]/30 p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-500/20 text-[#FCE9A6] border border-amber-400/40">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-extrabold text-white">
+                        قفل الوكالة برمز سري
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        لا يدخل الأعضاء إلا بعد إدخال الرمز الصحيح
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-200">
+                    {agencyLockEnabled ? 'مقفلة' : 'مفتوحة'}
+                  </span>
+                </div>
+                <input
+                  type="password"
+                  inputMode="text"
+                  autoComplete="new-password"
+                  dir="ltr"
+                  maxLength={4}
+                  value={agencyLockPassword}
+                  onChange={(event) =>
+                    setAgencyLockPassword(
+                      event.target.value.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 4)
+                    )
+                  }
+                  placeholder="أدخل 4 أرقام أو أحرف"
+                  className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white text-left font-mono-num focus:outline-none focus:border-[#D4AF37]"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void handleAgencyLockPasswordSave()}
+                    className="flex-1 min-h-[42px] rounded-xl bg-amber-500 px-3 text-xs font-extrabold text-[#070913] cursor-pointer disabled:opacity-50"
+                  >
+                    {agencyLockEnabled ? 'حفظ الرمز' : 'تفعيل القفل'}
+                  </button>
+                  {agencyLockEnabled && (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void handleAgencyLockChange(false)}
+                      className="min-h-[42px] rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-extrabold text-white cursor-pointer disabled:opacity-50"
+                    >
+                      إيقاف القفل
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Agency Title */}
             <div className="space-y-1.5">
