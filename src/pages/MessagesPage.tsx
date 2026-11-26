@@ -53,6 +53,20 @@ import { Fluent3DAsset } from '../components/Fluent3DAsset';
 import { CoinIcon, CrownIcon, DiamondIcon, InboxIcon } from '../components/AppIcons';
 
 type InboxFilter = 'كامل' | 'غير مقروء' | 'المجموعات';
+interface GroupSummary {
+  id: string;
+  name: string;
+  avatarUrl?: string | null;
+  ownerId: string;
+}
+interface GroupMessage {
+  id: string;
+  groupId: string;
+  senderId: string;
+  text: string;
+  createdAt: string;
+  sender?: User;
+}
 
 const QUANTITIES = [1, 9, 25, 50, 100] as const;
 const COMBO_DURATION_MS = 3000;
@@ -450,6 +464,14 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const [friendQuery, setFriendQuery] = useState('');
   const [friendResults, setFriendResults] = useState<User[]>([]);
   const [friendSearching, setFriendSearching] = useState(false);
+  const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [groupMessages, setGroupMessages] = useState<GroupMessage[]>([]);
+  const [groupText, setGroupText] = useState('');
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupMemberIds, setNewGroupMemberIds] = useState<string[]>([]);
+  const [creatingGroup, setCreatingGroup] = useState(false);
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -650,7 +672,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
   // Debounced friend search inside "إضافة صديق" modal
   useEffect(() => {
-    if (!showAddFriendModal || !user?.id) return;
+    if ((!showAddFriendModal && !showCreateGroupModal) || !user?.id) return;
     setFriendSearching(true);
     const timer = window.setTimeout(() => {
       searchUsersForFriendInSupabase(user.id, friendQuery)
@@ -659,7 +681,144 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         .finally(() => setFriendSearching(false));
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [friendQuery, showAddFriendModal, user?.id]);
+  }, [friendQuery, showAddFriendModal, showCreateGroupModal, user?.id]);
+
+  const loadGroups = useCallback(async () => {
+    if (!user?.id) return;
+    const memberships = await supabase
+      .from('sada_group_members')
+      .select('group_id')
+      .eq('user_id', user.id);
+    if (memberships.error) throw new Error(memberships.error.message);
+    const groupIds = (memberships.data || []).map((row) => String(row.group_id));
+    if (!groupIds.length) {
+      setGroups([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('sada_groups')
+      .select('id, name, owner_id, avatar_url')
+      .in('id', groupIds)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    setGroups(
+      (data || []).map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        ownerId: String(row.owner_id),
+        avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
+      }))
+    );
+  }, [user?.id]);
+
+  const loadGroupMessages = useCallback(async (groupId: string) => {
+    const { data, error } = await supabase
+      .from('sada_group_messages')
+      .select('id, group_id, sender_id, text, created_at')
+      .eq('group_id', groupId)
+      .order('created_at', { ascending: true })
+      .limit(300);
+    if (error) throw new Error(error.message);
+    const senderIds = Array.from(new Set((data || []).map((row) => String(row.sender_id))));
+    let senders: User[] = [];
+    if (senderIds.length) {
+      const { data: users } = await supabase
+        .from('sada_users')
+        .select('id, display_name, avatar_url, frame_id, vip_level, svip_level, level')
+        .in('id', senderIds);
+      senders = (users || []).map((row) => ({
+        id: String(row.id),
+        displayName: String(row.display_name || 'عضو'),
+        avatarUrl: String(row.avatar_url || 'host_male'),
+        frameId: String(row.frame_id || 'frame_obsidian'),
+        vipLevel: row.vip_level ? String(row.vip_level) as User['vipLevel'] : undefined,
+        level: Number(row.level || 1),
+      } as User));
+    }
+    const senderMap = new Map(senders.map((sender) => [sender.id, sender]));
+    setGroupMessages(
+      (data || []).map((row) => ({
+        id: String(row.id),
+        groupId: String(row.group_id),
+        senderId: String(row.sender_id),
+        text: String(row.text),
+        createdAt: String(row.created_at),
+        sender: senderMap.get(String(row.sender_id)),
+      }))
+    );
+  }, []);
+
+  useEffect(() => {
+    if (inboxFilter !== 'المجموعات') return;
+    void loadGroups().catch(() => setGroups([]));
+  }, [inboxFilter, loadGroups]);
+
+  useEffect(() => {
+    if (!selectedGroupId) return;
+    void loadGroupMessages(selectedGroupId).catch(() => setGroupMessages([]));
+    const channel = supabase
+      .channel(`sada-group-chat-${selectedGroupId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'sada_group_messages', filter: `group_id=eq.${selectedGroupId}` },
+        () => void loadGroupMessages(selectedGroupId)
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [selectedGroupId, loadGroupMessages]);
+
+  const handleCreateGroup = async () => {
+    if (!user?.id || creatingGroup) return;
+    const name = newGroupName.trim();
+    if (!name) return;
+    setCreatingGroup(true);
+    try {
+      const groupId = genId('group');
+      const { error } = await supabase.from('sada_groups').insert({
+        id: groupId,
+        name,
+        owner_id: user.id,
+        avatar_url: user.avatarUrl,
+        created_at: new Date().toISOString(),
+      });
+      if (error) throw new Error(error.message);
+      const memberIds = Array.from(new Set([user.id, ...newGroupMemberIds]));
+      const { error: membersError } = await supabase
+        .from('sada_group_members')
+        .insert(memberIds.map((memberId) => ({
+          group_id: groupId,
+          user_id: memberId,
+          role: memberId === user.id ? 'owner' : 'member',
+        })));
+      if (membersError) throw new Error(membersError.message);
+      setShowCreateGroupModal(false);
+      setNewGroupName('');
+      setNewGroupMemberIds([]);
+      setSelectedGroupId(groupId);
+      await loadGroups();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذّر إنشاء المجموعة.');
+    } finally {
+      setCreatingGroup(false);
+    }
+  };
+
+  const handleSendGroupMessage = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user?.id || !selectedGroupId || !groupText.trim()) return;
+    const text = groupText.trim();
+    setGroupText('');
+    const { error } = await supabase.from('sada_group_messages').insert({
+      id: genId('gmsg'),
+      group_id: selectedGroupId,
+      sender_id: user.id,
+      text,
+      created_at: new Date().toISOString(),
+    });
+    if (error) setError(error.message);
+  };
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.peer.id === selectedPeerId) || null,
@@ -1279,6 +1438,20 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                   </button>
                 )
               )}
+              {inboxFilter === 'المجموعات' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFriendQuery('');
+                    setFriendResults([]);
+                    setShowCreateGroupModal(true);
+                  }}
+                  className="rounded-xl px-3.5 py-1.5 text-xs font-extrabold whitespace-nowrap cursor-pointer bg-emerald-700 text-white flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  إنشاء مجموعة جديدة
+                </button>
+              )}
             </div>
 
             {/* Real Conversations List from Supabase */}
@@ -1287,6 +1460,43 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 <div className="p-6 text-center text-xs text-slate-400">
                   جارٍ تحميل المحادثات...
                 </div>
+              ) : inboxFilter === 'المجموعات' ? (
+                groups.length === 0 ? (
+                  <div className="p-6 text-center space-y-3">
+                    <p className="text-xs text-slate-500">أنت غير منضم إلى أي مجموعة بعد.</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateGroupModal(true)}
+                      className="rounded-xl bg-emerald-700 text-white px-4 py-2 text-xs font-extrabold cursor-pointer"
+                    >
+                      + إنشاء مجموعة جديدة
+                    </button>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {groups.map((group) => (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedGroupId(group.id);
+                          setMobileChatOpen(true);
+                        }}
+                        className={`w-full p-3 flex items-center gap-3 text-right cursor-pointer ${
+                          selectedGroupId === group.id ? 'bg-emerald-50' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black">
+                          {group.name.slice(0, 1)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-extrabold text-slate-900 truncate">{group.name}</p>
+                          <p className="text-[10px] text-slate-500">محادثة جماعية</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
               ) : filteredConversations.length === 0 ? (
                 <div className="p-6 text-center space-y-2">
                   <p className="text-xs text-slate-500">
@@ -1317,6 +1527,77 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           {/* Active Conversation Window */}
           {(() => {
             if (embedded && !selectedPeerId) return null;
+            if (inboxFilter === 'المجموعات' && selectedGroupId) {
+              const group = groups.find((item) => item.id === selectedGroupId);
+              return (
+                <section
+                  className={
+                    embedded
+                      ? 'light-card lg:col-span-7 h-[72dvh] max-h-[580px] min-h-0 overflow-hidden rounded-3xl flex flex-col'
+                      : `fixed inset-x-0 z-[9999] flex flex-col bg-slate-50 overflow-hidden ${mobileChatOpen ? 'flex' : 'hidden'}`
+                  }
+                  style={!embedded ? { top: `${visualViewportRect.top}px`, height: `${visualViewportRect.height}px` } : undefined}
+                >
+                  <div className="shrink-0 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 pt-[max(env(safe-area-inset-top),32px)]">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedGroupId(null)}
+                      className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 cursor-pointer lg:hidden"
+                      aria-label="رجوع للمجموعات"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black">
+                      {group?.name.slice(0, 1) || 'م'}
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-extrabold text-slate-900">{group?.name || 'المجموعة'}</h2>
+                      <p className="text-[10px] text-slate-500">محادثة جماعية فورية</p>
+                    </div>
+                  </div>
+                  <div ref={messagesFeedRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+                    {groupMessages.length === 0 ? (
+                      <p className="text-center text-xs text-slate-400 py-10">ابدأ المحادثة الجماعية بكتابة أول رسالة.</p>
+                    ) : (
+                      groupMessages.map((message) => (
+                        <div key={message.id} className={`flex ${message.senderId === user?.id ? 'justify-end' : 'justify-start'}`}>
+                          <div className="flex items-end gap-2 max-w-[85%]">
+                            {message.senderId !== user?.id && (
+                              <AvatarWithFrame
+                                src={message.sender?.avatarUrl || 'host_male'}
+                                alt={message.sender?.displayName || 'عضو'}
+                                frameId={message.sender?.frameId}
+                                vipTier={getUserVipTierInfo(message.sender || {}).key}
+                                size="xs"
+                              />
+                            )}
+                            <div className={`rounded-2xl px-3 py-2 ${message.senderId === user?.id ? 'bg-emerald-700 text-white' : 'bg-white border border-slate-200 text-slate-900'}`}>
+                              {message.senderId !== user?.id && (
+                                <p className="text-[10px] font-extrabold text-emerald-700 mb-1">{message.sender?.displayName || 'عضو'}</p>
+                              )}
+                              <p className="text-sm break-words">{message.text}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    <div ref={endRef} />
+                  </div>
+                  <form onSubmit={handleSendGroupMessage} className="shrink-0 bg-white border-t border-slate-200 p-3 flex gap-2">
+                    <input
+                      value={groupText}
+                      onChange={(event) => setGroupText(event.target.value)}
+                      placeholder="اكتب رسالة للمجموعة..."
+                      className="flex-1 rounded-2xl bg-slate-100 border border-slate-200 px-3.5 py-2 text-sm text-slate-900"
+                    />
+                    <button type="submit" disabled={!groupText.trim()} className="rounded-2xl bg-emerald-700 text-white px-4 text-xs font-extrabold flex items-center gap-1 disabled:opacity-50">
+                      <Send className="w-4 h-4" />
+                      إرسال
+                    </button>
+                  </form>
+                </section>
+              );
+            }
             const chatSection = (
           <section
             className={
@@ -1763,6 +2044,75 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
               onClick={(event) => event.stopPropagation()}
             />
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Create Group Modal */}
+      <AnimatePresence>
+        {showCreateGroupModal && (
+          <div
+            className="fixed inset-0 z-[76] flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4"
+            onClick={() => setShowCreateGroupModal(false)}
+          >
+            <motion.div
+              initial={{ y: 36, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 36, opacity: 0 }}
+              onClick={(event) => event.stopPropagation()}
+              className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl bg-white border border-slate-200 p-5 space-y-4 shadow-2xl text-slate-900 max-h-[82dvh] flex flex-col"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-black">إنشاء مجموعة جديدة</h3>
+                <button type="button" onClick={() => setShowCreateGroupModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center" aria-label="إغلاق">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <input
+                value={newGroupName}
+                onChange={(event) => setNewGroupName(event.target.value)}
+                placeholder="اسم المجموعة..."
+                className="w-full rounded-2xl bg-slate-100 border border-slate-200 px-4 py-2.5 text-sm"
+              />
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  value={friendQuery}
+                  onChange={(event) => setFriendQuery(event.target.value)}
+                  placeholder="ابحث عن الأصدقاء لإضافتهم..."
+                  className="w-full rounded-2xl bg-slate-100 border border-slate-200 pr-10 pl-4 py-2.5 text-sm"
+                />
+              </div>
+              <div className="flex-1 min-h-32 overflow-y-auto space-y-2">
+                {friendResults.map((member) => {
+                  const selected = newGroupMemberIds.includes(member.id);
+                  return (
+                    <button
+                      key={member.id}
+                      type="button"
+                      onClick={() => setNewGroupMemberIds((current) =>
+                        selected ? current.filter((id) => id !== member.id) : [...current, member.id]
+                      )}
+                      className={`w-full rounded-2xl border p-3 flex items-center justify-between ${selected ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <AvatarWithFrame src={member.avatarUrl} alt={member.displayName} frameId={member.frameId} vipTier={getUserVipTierInfo(member).key} size="xs" />
+                        <span className="text-sm font-extrabold">{member.displayName}</span>
+                      </div>
+                      {selected && <Check className="w-4 h-4 text-emerald-700" />}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                disabled={creatingGroup || !newGroupName.trim()}
+                onClick={() => void handleCreateGroup()}
+                className="min-h-[44px] rounded-2xl bg-emerald-700 text-white text-sm font-extrabold disabled:opacity-50"
+              >
+                {creatingGroup ? 'جارٍ الحفظ...' : `حفظ المجموعة${newGroupMemberIds.length ? ` (${newGroupMemberIds.length + 1} أعضاء)` : ''}`}
+              </button>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

@@ -331,7 +331,7 @@ export const MeetPage: React.FC = () => {
               <span>
                 {isSearching
                   ? `نتائج البحث (${searchResults.length})`
-                  : `الأصدقاء المتصلون حالياً (${onlineCount})`}
+                  : `المتصلون الآن (${onlineCount})`}
               </span>
             </span>
           </div>

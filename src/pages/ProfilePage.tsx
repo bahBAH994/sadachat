@@ -753,7 +753,7 @@ export const ProfilePage: React.FC = () => {
             <span className="text-[11px] font-extrabold text-slate-200">المتجر</span>
           </button>
           <button type="button" onClick={() => navigate('/bag')} className="flex flex-col items-center gap-1 cursor-pointer">
-            <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"><Briefcase className="w-5 h-5" /></div>
+            <div className="w-10 h-10 rounded-2xl bg-amber-400/10 border border-amber-300/25 flex items-center justify-center text-[#FCE9A6]"><Briefcase className="w-5 h-5" /></div>
             <span className="text-[11px] font-extrabold text-slate-200">الحقيبة</span>
           </button>
           <button type="button" onClick={() => navigate('/diamond-wallet')} className="flex flex-col items-center gap-1 cursor-pointer">
@@ -889,7 +889,7 @@ export const ProfilePage: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/agency?tab=my-agency')}
-            className="min-h-[82px] rounded-2xl bg-amber-400/10 hover:bg-amber-400/15 border border-amber-300/20 p-4 flex items-center justify-between cursor-pointer transition"
+            className="h-[88px] rounded-2xl bg-amber-400/10 hover:bg-amber-400/15 border border-amber-300/20 p-4 flex items-center justify-between cursor-pointer transition"
           >
             <span className="text-sm font-extrabold text-[#FCE9A6]">
               {canViewMyAgency ? 'وكالتي' : 'إنشاء وكالة رسمية'}
@@ -902,7 +902,7 @@ export const ProfilePage: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/agency?tab=host-center')}
-            className="min-h-[82px] rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 p-4 flex items-center justify-between cursor-pointer transition"
+            className="h-[88px] rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 p-4 flex items-center justify-between cursor-pointer transition"
           >
             <span className="text-sm font-extrabold text-slate-100">مركز المضيف</span>
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#32280F] to-[#9A6D18] flex items-center justify-center text-[#FCE9A6]">
@@ -913,11 +913,11 @@ export const ProfilePage: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowTasksModal(true)}
-            className="min-h-[82px] rounded-2xl bg-amber-400/10 hover:bg-amber-400/15 border border-amber-300/20 p-4 flex items-center justify-between cursor-pointer transition"
+            className="h-[88px] rounded-2xl bg-amber-400/10 hover:bg-amber-400/15 border border-amber-300/20 p-4 flex items-center justify-between cursor-pointer transition"
           >
             <div className="text-right">
               <span className="block text-sm font-extrabold text-[#FCE9A6]">مهام المضيف</span>
-              <span className="block text-[10px] font-bold text-amber-200 font-mono-num">
+              <span className="block whitespace-nowrap text-xs font-bold text-amber-200 font-mono-num">
                 السلسلة: {taskProgress.streakDays}/15 يوم
               </span>
             </div>
@@ -931,7 +931,7 @@ export const ProfilePage: React.FC = () => {
             onClick={() => navigate('/competitions?tab=referral&invite=1')}
             className={`${
               !canViewMyAgency ? 'col-span-2' : ''
-            } min-h-[82px] rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 p-4 flex items-center justify-between cursor-pointer transition`}
+            } h-[88px] rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 p-4 flex items-center justify-between cursor-pointer transition`}
           >
             <span className="text-sm font-extrabold text-slate-100">دعوة الأصدقاء</span>
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#32280F] to-[#9A6D18] flex items-center justify-center text-[#FCE9A6]">

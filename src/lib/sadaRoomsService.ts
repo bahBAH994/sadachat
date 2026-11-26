@@ -379,6 +379,21 @@ export async function createRoomInSupabase(
   }
   const isAgency = payload.isAgency === true;
   const agencyId = isAgency ? payload.agencyId?.trim() : undefined;
+  if (!isAgency) {
+    const { data: existingPersonalRooms, error: existingError } = await supabase
+      .from('sada_rooms')
+      .select('id, is_active')
+      .eq('host_id', user.id)
+      .eq('is_agency', false)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (existingError) {
+      throw new Error(`تعذّر التحقق من الغرفة الشخصية الحالية: ${existingError.message}`);
+    }
+    if (existingPersonalRooms?.length) {
+      throw new Error('لديك غرفة شخصية منشأة بالفعل ولا يجوز إنشاء غرفة مكررة.');
+    }
+  }
   if (isAgency && !agencyId) {
     throw new Error('معرّف الوكالة مطلوب لإنشاء غرفة وكالة.');
   }
@@ -400,6 +415,7 @@ export async function createRoomInSupabase(
     host_id: user.id,
     host_name: user.displayName,
     host_avatar: user.avatarUrl,
+    owner_id: isAgency ? agencyId || null : user.id,
     avatar_url: user.avatarUrl,
     cover_url: user.avatarUrl,
     background_url: 'dragon_dark',

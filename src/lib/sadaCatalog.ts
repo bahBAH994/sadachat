@@ -307,7 +307,7 @@ export const VIP_TIER_CONFIGS: VipTierConfig[] = [
   {
     key: 'vip2',
     rank: 2,
-    minScore: 300_000,
+    minScore: 250_000,
     label: 'VIP 2 الفضي',
     shortLabel: 'VIP 2',
     arabicTitle: 'الإطار الفضي الكرومي',
@@ -319,8 +319,8 @@ export const VIP_TIER_CONFIGS: VipTierConfig[] = [
   {
     key: 'vip3',
     rank: 3,
-    minScore: 800_000,
-    label: 'VIP 3 الملكي',
+    minScore: 500_000,
+    label: 'VIP 3 الذهبي',
     shortLabel: 'VIP 3',
     arabicTitle: 'الإطار الذهبي الملكي',
     badgeGlyph: '👑',
@@ -331,7 +331,7 @@ export const VIP_TIER_CONFIGS: VipTierConfig[] = [
   {
     key: 'svip',
     rank: 4,
-    minScore: 2_000_000,
+    minScore: 1_000_000,
     label: 'SVIP الإمبراطوري',
     shortLabel: 'SVIP',
     arabicTitle: 'الإمبراطور الألماسي',

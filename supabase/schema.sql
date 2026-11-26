@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS public.sada_rooms (
   host_id TEXT NOT NULL,
   host_name TEXT NOT NULL,
   host_avatar TEXT NOT NULL,
+  owner_id TEXT,
   avatar_url TEXT,
   cover_url TEXT,
   background_url TEXT,
@@ -113,7 +114,10 @@ ALTER TABLE public.sada_rooms
   ADD COLUMN IF NOT EXISTS cover_url TEXT,
   ADD COLUMN IF NOT EXISTS background_url TEXT,
   ADD COLUMN IF NOT EXISTS is_agency BOOLEAN NOT NULL DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS agency_id TEXT;
+  ADD COLUMN IF NOT EXISTS agency_id TEXT,
+  ADD COLUMN IF NOT EXISTS owner_id TEXT;
+
+UPDATE public.sada_rooms SET owner_id = host_id WHERE owner_id IS NULL;
 
 UPDATE public.sada_rooms
 SET avatar_url = COALESCE(avatar_url, host_avatar),
@@ -161,6 +165,51 @@ ALTER TABLE public.sada_private_messages
   ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_sada_pm_conv ON public.sada_private_messages(conversation_id, created_at);
+
+-- 7.1. الدردشة الجماعية والمجموعات
+CREATE TABLE IF NOT EXISTS public.sada_groups (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  avatar_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.sada_group_members (
+  group_id TEXT NOT NULL REFERENCES public.sada_groups(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member',
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.sada_group_messages (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES public.sada_groups(id) ON DELETE CASCADE,
+  sender_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sada_group_members_user ON public.sada_group_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_sada_group_messages_group ON public.sada_group_messages(group_id, created_at);
+
+ALTER TABLE public.sada_groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sada_group_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sada_group_messages ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT ON public.sada_groups TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.sada_group_members TO anon, authenticated, service_role;
+GRANT SELECT, INSERT ON public.sada_group_messages TO anon, authenticated, service_role;
+
+DROP POLICY IF EXISTS "sada_groups_access" ON public.sada_groups;
+CREATE POLICY "sada_groups_access" ON public.sada_groups
+  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "sada_group_members_access" ON public.sada_group_members;
+CREATE POLICY "sada_group_members_access" ON public.sada_group_members
+  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "sada_group_messages_access" ON public.sada_group_messages;
+CREATE POLICY "sada_group_messages_access" ON public.sada_group_messages
+  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
 
 -- 8. جدول كتالوج الهدايا (الثابتة والحظ)
 CREATE TABLE IF NOT EXISTS public.sada_gifts (

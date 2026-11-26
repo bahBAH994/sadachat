@@ -660,7 +660,10 @@ export const LobbyPage: React.FC = () => {
 
   const myOwnedRooms = useMemo(() => {
     if (!user) return [];
-    return rooms.filter((r) => r.hostId === user.id && r.isAgency !== true);
+    return rooms
+      .filter((r) => r.hostId === user.id && r.isAgency !== true)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 1);
   }, [rooms, user]);
 
   const myAgencyRoom = useMemo(() => {
@@ -859,6 +862,9 @@ export const LobbyPage: React.FC = () => {
     setCreateError(null);
     setCreating(true);
     try {
+      if (myOwnedRooms.length > 0) {
+        throw new Error('لديك غرفة شخصية منشأة بالفعل ولا يجوز إنشاء غرفة مكررة.');
+      }
       const room = await createRoomInSupabase(user, {
         title: newTitle,
         category: newCategory,
@@ -993,8 +999,8 @@ export const LobbyPage: React.FC = () => {
                     {search.trim()
                       ? `نتائج البحث في الأعضاء (${onlineDiscoveryUsers.length})`
                       : targetGender === 'female'
-                      ? `البنات المتصلات الآن (${onlineDiscoveryUsers.length})`
-                      : `الشباب المتصلون الآن (${onlineDiscoveryUsers.length})`}
+                      ? `المتصلون الآن (${onlineDiscoveryUsers.length})`
+                      : `المتصلون الآن (${onlineDiscoveryUsers.length})`}
                   </span>
                 </span>
                 <button
@@ -1230,19 +1236,21 @@ export const LobbyPage: React.FC = () => {
                   <MicIcon className="w-4 h-4 text-emerald-600" />
                   <span>غرفتي الصوتية</span>
                 </h2>
-                <button
-                  type="button"
-                  aria-label="+ إنشاء غرفة"
-                  onClick={() => {
-                    setNewTitle(`${user?.displayName || 'غرفتي'} الخاصة`);
-                    setCreateError(null);
-                    setShowCreate(true);
-                  }}
-                  className="emerald-btn rounded-xl px-3 py-1.5 text-xs font-extrabold flex items-center gap-1 cursor-pointer disabled:opacity-60"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>إنشاء غرفة</span>
-                </button>
+                {myOwnedRooms.length === 0 && (
+                  <button
+                    type="button"
+                    aria-label="+ إنشاء غرفة"
+                    onClick={() => {
+                      setNewTitle(`${user?.displayName || 'غرفتي'} الخاصة`);
+                      setCreateError(null);
+                      setShowCreate(true);
+                    }}
+                    className="emerald-btn rounded-xl px-3 py-1.5 text-xs font-extrabold flex items-center gap-1 cursor-pointer disabled:opacity-60"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>إنشاء غرفة</span>
+                  </button>
+                )}
               </div>
 
               {myOwnedRooms.length === 0 ? (
