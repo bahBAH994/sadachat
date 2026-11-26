@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   CheckCircle2,
   Image as ImageIcon,
   Lock,
@@ -245,15 +244,6 @@ export const StorePage: React.FC = () => {
                   <CoinIcon className="inline h-5 w-5 align-[-3px]" /> {user.coins.toLocaleString('en-US')}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => navigate('/wallet')}
-                className="emerald-btn rounded-2xl px-4 py-2 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <CoinIcon className="w-4 h-4" />
-                <span>شحن الكوينز</span>
-                <ArrowLeft className="w-4 h-4" />
-              </button>
             </div>
           </div>
 
