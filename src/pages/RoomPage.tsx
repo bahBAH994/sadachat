@@ -2437,6 +2437,7 @@ export const RoomPage: React.FC = () => {
   };
 
   return (
+    <>
     <div
       ref={roomContainerRef}
       style={{
@@ -3855,5 +3856,6 @@ export const RoomPage: React.FC = () => {
         </div>
       )}
     </div>
+    </>
   );
 };
