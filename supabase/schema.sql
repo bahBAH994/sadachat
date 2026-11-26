@@ -382,6 +382,44 @@ CREATE TABLE IF NOT EXISTS public.sada_platform_state (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.sada_economy_settings (
+  id TEXT PRIMARY KEY DEFAULT 'global' CHECK (id = 'global'),
+  weekly_agency_target BIGINT NOT NULL DEFAULT 10000 CHECK (weekly_agency_target > 0),
+  agency_background_price BIGINT NOT NULL DEFAULT 50000 CHECK (agency_background_price > 0),
+  room_background_price BIGINT NOT NULL DEFAULT 25000 CHECK (room_background_price > 0),
+  agency_commission_pct NUMERIC(5, 2) NOT NULL DEFAULT 10.00
+    CHECK (agency_commission_pct BETWEEN 0 AND 100),
+  wheel_commission_pct NUMERIC(5, 2) NOT NULL DEFAULT 10.00
+    CHECK (wheel_commission_pct BETWEEN 0 AND 100),
+  wheel_entry_fee BIGINT NOT NULL DEFAULT 1000 CHECK (wheel_entry_fee > 0),
+  diamond_conversion_rate NUMERIC(10, 2) NOT NULL DEFAULT 2.00
+    CHECK (diamond_conversion_rate > 0)
+);
+
+INSERT INTO public.sada_economy_settings (id)
+VALUES ('global')
+ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.sada_economy_settings ENABLE ROW LEVEL SECURITY;
+GRANT SELECT ON public.sada_economy_settings TO anon, authenticated, service_role;
+GRANT UPDATE ON public.sada_economy_settings TO authenticated, service_role;
+DROP POLICY IF EXISTS "sada_economy_settings_admin_read" ON public.sada_economy_settings;
+DROP POLICY IF EXISTS "sada_economy_settings_public_read" ON public.sada_economy_settings;
+CREATE POLICY "sada_economy_settings_public_read" ON public.sada_economy_settings
+  FOR SELECT TO anon, authenticated, service_role
+  USING (true);
+DROP POLICY IF EXISTS "sada_economy_settings_admin_update" ON public.sada_economy_settings;
+CREATE POLICY "sada_economy_settings_admin_update" ON public.sada_economy_settings
+  FOR UPDATE TO authenticated, service_role
+  USING (
+    auth.role() = 'service_role'
+    OR lower(coalesce(auth.jwt() ->> 'email', '')) = 'bahaa.f36@gmail.com'
+  )
+  WITH CHECK (
+    auth.role() = 'service_role'
+    OR lower(coalesce(auth.jwt() ->> 'email', '')) = 'bahaa.f36@gmail.com'
+  );
+
 CREATE TABLE IF NOT EXISTS public.sada_grand_competition_entries (
   user_id TEXT PRIMARY KEY REFERENCES public.sada_users(id) ON DELETE CASCADE,
   weight BIGINT NOT NULL CHECK (weight > 0)
@@ -1576,6 +1614,7 @@ DECLARE
   v_winner_name TEXT;
   v_payout BIGINT;
   v_alive_count INTEGER;
+  v_commission_pct NUMERIC;
 BEGIN
   IF auth.uid() IS NULL OR auth.uid()::TEXT IS DISTINCT FROM p_creator_id THEN
     RAISE EXCEPTION 'منشئ الجولة فقط يمكنه تسويتها.';
@@ -1596,7 +1635,12 @@ BEGIN
     RAISE EXCEPTION 'يجب أن يبقى لاعب واحد فقط قبل تسوية الجولة.';
   END IF;
 
-  v_payout := floor(v_round.prize_pool * 0.8)::BIGINT;
+  SELECT COALESCE(
+    (SELECT wheel_commission_pct FROM public.sada_economy_settings WHERE id = 'global'),
+    10
+  )
+  INTO v_commission_pct;
+  v_payout := floor(v_round.prize_pool * (100 - v_commission_pct) / 100)::BIGINT;
   UPDATE public.sada_users SET coins = coins + v_payout WHERE id = v_winner_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'تعذّر إضافة الجائزة إلى رصيد الفائز.';
@@ -1620,7 +1664,8 @@ BEGIN
     'round', to_jsonb(v_round),
     'winner_id', v_winner_id,
     'winner_name', v_winner_name,
-    'payout', v_payout
+    'payout', v_payout,
+    'commission_pct', v_commission_pct
   );
 END;
 $$;
@@ -1781,7 +1826,6 @@ AS $$
 DECLARE
   caller_email TEXT := lower(coalesce(auth.jwt() ->> 'email', ''));
   admin_id TEXT;
-  app_user_ids TEXT[];
 BEGIN
   IF caller_email <> 'bahaa.f36@gmail.com' THEN
     RAISE EXCEPTION 'هذه العملية مخصصة لحساب الإدارة العليا فقط.';
@@ -1794,27 +1838,25 @@ BEGIN
     RAISE EXCEPTION 'تعذّر العثور على حساب الإدارة المطلوب الإبقاء عليه.';
   END IF;
 
-  SELECT coalesce(array_agg(id), ARRAY[]::TEXT[])
-  INTO app_user_ids
-  FROM public.sada_users
-  WHERE id <> admin_id;
-
-  DELETE FROM public.sada_private_messages;
-  DELETE FROM public.sada_room_messages;
-  DELETE FROM public.sada_sessions WHERE user_id <> admin_id;
-  DELETE FROM public.sada_device_locks WHERE bound_user_id <> admin_id;
-  DELETE FROM public.sada_security_logs;
-  DELETE FROM public.sada_transactions;
-  DELETE FROM public.sada_rooms;
-  DELETE FROM public.sada_agencies;
-  DELETE FROM public.sada_agency_requests;
-  DELETE FROM public.sada_competitions;
-  DELETE FROM public.sada_cultural_questions;
-  DELETE FROM public.sada_usdt_deposits;
-  DELETE FROM public.sada_usdt_withdrawals;
-  DELETE FROM public.sada_female_voice_requests;
-  DELETE FROM public.sada_grand_competition_entries;
-  DELETE FROM public.sada_platform_state;
+  DELETE FROM public.sada_private_messages WHERE id IS NOT NULL;
+  DELETE FROM public.sada_room_messages WHERE id IS NOT NULL;
+  DELETE FROM public.sada_sessions WHERE token IS NOT NULL;
+  DELETE FROM public.sada_device_locks WHERE device_uuid IS NOT NULL;
+  DELETE FROM public.sada_security_logs WHERE id IS NOT NULL;
+  DELETE FROM public.sada_transactions WHERE id IS NOT NULL;
+  DELETE FROM public.sada_room_game_bets WHERE id IS NOT NULL;
+  DELETE FROM public.sada_room_game_rounds WHERE id IS NOT NULL;
+  DELETE FROM public.sada_room_lucky_wheel_rounds WHERE id IS NOT NULL;
+  DELETE FROM public.sada_rooms WHERE id IS NOT NULL;
+  DELETE FROM public.sada_agencies WHERE id IS NOT NULL;
+  DELETE FROM public.sada_agency_requests WHERE id IS NOT NULL;
+  DELETE FROM public.sada_competitions WHERE id IS NOT NULL;
+  DELETE FROM public.sada_cultural_questions WHERE id IS NOT NULL;
+  DELETE FROM public.sada_usdt_deposits WHERE id IS NOT NULL;
+  DELETE FROM public.sada_usdt_withdrawals WHERE id IS NOT NULL;
+  DELETE FROM public.sada_female_voice_requests WHERE id IS NOT NULL;
+  DELETE FROM public.sada_grand_competition_entries WHERE user_id IS NOT NULL;
+  DELETE FROM public.sada_platform_state WHERE id IS NOT NULL;
   INSERT INTO public.sada_platform_state (
     id,
     app_prize_pool_coins,
@@ -1825,13 +1867,26 @@ BEGIN
     updated_at
   )
   VALUES ('global', 0, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, NOW());
-  DELETE FROM public.sada_gifts
-  WHERE id NOT SIMILAR TO 'gift_[0-9][0-9]'
-    AND id NOT SIMILAR TO 'lucky_[0-9][0-9]';
-  DELETE FROM public.sada_users WHERE id <> admin_id;
+  DELETE FROM public.sada_gifts WHERE id IS NOT NULL;
+  DELETE FROM public.sada_users WHERE id IS NOT NULL AND id <> admin_id;
   DELETE FROM auth.users
-  WHERE id::TEXT = ANY(app_user_ids)
-    AND lower(email) IS DISTINCT FROM 'bahaa.f36@gmail.com';
+  WHERE id IS NOT NULL
+    AND lower(coalesce(email, '')) IS DISTINCT FROM 'bahaa.f36@gmail.com';
+
+  UPDATE public.sada_users
+  SET coins = 0,
+      diamonds = 0,
+      is_host = FALSE,
+      is_agent = FALSE,
+      agency_id = NULL,
+      host_badge = NULL,
+      host_agency_name = NULL,
+      host_diamonds_earned = 0,
+      female_verified = FALSE,
+      female_verified_badge = NULL,
+      active_entry_id = NULL,
+      active_entry_name = NULL
+  WHERE id IS NOT NULL AND id = admin_id;
 
   RETURN jsonb_build_object('status', 'reset', 'admin_id', admin_id);
 END;

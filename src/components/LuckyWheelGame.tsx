@@ -16,6 +16,8 @@ import {
 } from '../lib/sadaRoomLuckyWheelService';
 import { refreshGameUserFromSupabase } from '../lib/sadaGamesService';
 import { supabase } from '../lib/supabase';
+import { isSuperAdminUser } from '../lib/sadaCatalog';
+import { playWheelPegTick } from '../lib/sadaAudio';
 
 interface RoomMember {
   userId: string;
@@ -34,6 +36,16 @@ interface LuckyWheelGameProps {
 
 const ENTRY_FEES = [100, 500, 1000, 5000];
 const SPIN_DURATION_MS = 2500;
+const SECTOR_COLORS = [
+  '#7C2D12',
+  '#14532D',
+  '#1E3A8A',
+  '#581C87',
+  '#9F1239',
+  '#115E59',
+  '#713F12',
+  '#1E293B',
+];
 
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
@@ -71,6 +83,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [eliminatedPlayerId, setEliminatedPlayerId] = useState<string | null>(null);
   const rotationRef = useRef(0);
   const creatorRunningRef = useRef(false);
   const remoteSpinPlayerRef = useRef<string | null>(null);
@@ -102,7 +115,10 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
                 const eliminated = activeRound.players.find(
                   (player) => player.userId === activeRound.spinningPlayerId
                 );
-                if (eliminated) setNotice(`تم إقصاء ${eliminated.displayName}!`);
+                if (eliminated) {
+                  setEliminatedPlayerId(eliminated.userId);
+                  setNotice(`⚠️ سيتم إقصاء ${eliminated.displayName} بعد ثلاث ثوانٍ`);
+                }
               }, SPIN_DURATION_MS);
             }
           }
@@ -146,7 +162,8 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
                 remoteSpinTimeoutRef.current = window.setTimeout(() => {
                   remoteSpinTimeoutRef.current = null;
                   setSpinning(false);
-                  setNotice(`تم إقصاء ${eliminated.displayName}!`);
+                  setEliminatedPlayerId(eliminated.userId);
+                  setNotice(`⚠️ سيتم إقصاء ${eliminated.displayName} بعد ثلاث ثوانٍ`);
                 }, SPIN_DURATION_MS);
               }
             } else if (!nextRound.spinningPlayerId) {
@@ -195,6 +212,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
     : [];
   const hasJoined = Boolean(round?.players.some((player) => player.userId === user?.id));
   const practiceRound = Boolean(round?.players.some((player) => player.test));
+  const isSuperAdmin = isSuperAdminUser(user);
 
   const handleCreateRound = async () => {
     if (!user || busy) return;
@@ -268,6 +286,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
       );
       let currentSpinRound = started;
       while (alive.length > 1) {
+        setEliminatedPlayerId(null);
         const spinningRound = currentSpinRound.spinningPlayerId
           ? currentSpinRound
           : await spinRoomLuckyWheelPlayer(started.id, user.id);
@@ -285,9 +304,23 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
         rotationRef.current += 1800 + winningSectorAngle;
         setRotation(rotationRef.current);
         setSpinning(true);
+        const tickTimer = window.setInterval(() => playWheelPegTick(0.35), 150);
         await wait(SPIN_DURATION_MS);
+        window.clearInterval(tickTimer);
         setSpinning(false);
 
+        setEliminatedPlayerId(eliminated.userId);
+        setNotice(`⚠️ سيتم إقصاء ${eliminated.displayName} بعد ثلاث ثوانٍ`);
+        try {
+          await onSendChat(`⚠️ سيتم إقصاء ${eliminated.displayName} من دولاب الإقصاء خلال 3 ثوانٍ.`);
+        } catch (chatError) {
+          setError(
+            chatError instanceof Error
+              ? `تعذّر إعلان الإقصاء في الشات: ${chatError.message}`
+              : 'تعذّر إعلان الإقصاء في الشات.'
+          );
+        }
+        await wait(3000);
         const next = await eliminateRoomLuckyWheelPlayer(
           started.id,
           user.id,
@@ -295,6 +328,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
         );
         setRound(next);
         currentSpinRound = next;
+        setEliminatedPlayerId(null);
         setNotice(`تم إقصاء ${eliminated.displayName}!`);
         try {
           await onSendChat(`🎡 تم إقصاء ${eliminated.displayName} من دولاب الإقصاء!`);
@@ -319,7 +353,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
       );
       try {
         await onSendChat(
-          `🏆 تهانينا ${result.winnerName}! فاز بدولاب الإقصاء وربح ${result.payout.toLocaleString('en-US')} كوينز بعد خصم عمولة المنصة 20%.`
+          `🏆 تهانينا ${result.winnerName}! فاز بدولاب الإقصاء وربح ${result.payout.toLocaleString('en-US')} كوينز بعد خصم عمولة المنصة.`
         );
       } catch (chatError) {
         setError(
@@ -370,7 +404,8 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
         .map((_, index) => {
           const angle = (index * 360) / alivePlayers.length;
           const nextAngle = ((index + 1) * 360) / alivePlayers.length;
-          return `${index % 2 ? '#18213A' : '#9A7021'} ${angle}deg ${nextAngle}deg`;
+          const color = SECTOR_COLORS[index % SECTOR_COLORS.length];
+          return `${color} ${angle}deg ${nextAngle}deg`;
         })
         .join(', ')})`
     : 'conic-gradient(#9A7021 0deg 180deg, #18213A 180deg 360deg)';
@@ -454,7 +489,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
                 الدخول: <b className="text-[#FCE9A6]">{round.entryFee.toLocaleString('en-US')}</b>
               </span>
               <span className="text-slate-300">
-                مجموع الجائزة: <b className="text-emerald-300">{round.prizePool.toLocaleString('en-US')}</b>
+                مجموع الجائزة الصافية: <b className="text-emerald-300">{round.prizePool.toLocaleString('en-US')}</b>
               </span>
             </div>
 
@@ -477,15 +512,31 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
                   return (
                     <div
                       key={player.userId}
-                      className="absolute flex w-16 -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center"
+                      className={`absolute flex w-16 -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center transition ${
+                        eliminatedPlayerId === player.userId
+                          ? 'z-10 animate-pulse scale-110'
+                          : ''
+                      }`}
                       style={{ left: `${left}%`, top: `${top}%` }}
                     >
                       <img
                         src={player.avatarUrl}
                         alt=""
-                        className="h-9 w-9 rounded-full border-2 border-[#FCE9A6] bg-slate-800 object-cover"
+                        className={`h-9 w-9 rounded-full border-2 bg-slate-800 object-cover ${
+                          eliminatedPlayerId === player.userId
+                            ? 'border-red-400 shadow-[0_0_18px_rgba(248,113,113,0.95)]'
+                            : 'border-[#FCE9A6]'
+                        }`}
                       />
-                      <span className="mt-0.5 max-w-full truncate rounded bg-black/70 px-1 text-[9px] font-bold text-white">
+                      <span
+                        className="mt-0.5 max-w-full truncate rounded px-1 text-[9px] font-bold text-white"
+                        style={{
+                          backgroundColor:
+                            eliminatedPlayerId === player.userId
+                              ? '#991B1B'
+                              : SECTOR_COLORS[index % SECTOR_COLORS.length],
+                        }}
+                      >
                         {player.displayName}
                       </span>
                     </div>
@@ -521,16 +572,18 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
               <div className="space-y-2">
                 {round.status === 'registering' && round.prizePool === 0 && (
                   <>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setAddingCompetitor((value) => !value)}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/40 bg-white/5 py-2 text-xs font-bold text-[#FCE9A6]"
-                    >
-                      <Plus className="h-4 w-4" />
-                      إضافة منافس
-                    </button>
-                    {addingCompetitor && (
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setAddingCompetitor((value) => !value)}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/40 bg-white/5 py-2 text-xs font-bold text-[#FCE9A6]"
+                      >
+                        <Plus className="h-4 w-4" />
+                        + إضافة منافس للتجربة
+                      </button>
+                    )}
+                    {isSuperAdmin && addingCompetitor && (
                       <div className="max-h-28 space-y-1 overflow-y-auto rounded-xl bg-black/30 p-2">
                         {members
                           .filter(

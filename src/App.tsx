@@ -219,6 +219,7 @@ const AuthenticatedAppShell: React.FC = () => {
   currentPathRef.current = location.pathname;
   const isPrivateChatOpen =
     location.pathname === '/messages' && Boolean(new URLSearchParams(location.search).get('to'));
+  const isAgencyPage = location.pathname === '/agency';
   const isFullScreenRoom = Boolean((activeRoomId || roomLoading) && !isRoomMinimized);
   const isDirectHomeReturnPage =
     location.pathname === '/grand-competition' || location.pathname === '/agency';
@@ -376,6 +377,8 @@ const AuthenticatedAppShell: React.FC = () => {
             ? 'flex-1 min-h-0 w-full overflow-hidden focus:outline-none'
             : isPrivateChatOpen
             ? 'flex-1 min-h-0 w-full overflow-hidden focus:outline-none'
+            : isAgencyPage
+            ? 'flex-1 min-h-0 w-full overflow-hidden focus:outline-none'
             : 'flex-1 min-h-0 w-full overflow-hidden pb-[76px] focus:outline-none'
         }
       >
@@ -407,7 +410,9 @@ const AuthenticatedAppShell: React.FC = () => {
           </Routes>
         </div>
       </main>
-      {!isFullScreenRoom && !isFullScreenSvip && !isPrivateChatOpen && <BottomNav />}
+      {!isFullScreenRoom && !isFullScreenSvip && !isPrivateChatOpen && !isAgencyPage && (
+        <BottomNav />
+      )}
       {shouldKeepRoomMounted && (
         <div style={{ display: isRoomMinimized ? 'none' : 'contents' }}>
           <RoomPage />

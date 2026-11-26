@@ -407,7 +407,7 @@ export const WalletPage: React.FC = () => {
         <div>
           <h1 className="flex items-center gap-2 text-2xl sm:text-3xl font-extrabold gold-gradient-text">
             <WalletIcon className="h-7 w-7" />
-            محفظة الشحن والسحب
+            الشحن VIP
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 mt-1">
             اختر وسيلة الدفع المناسبة: USDT أو شام كاش

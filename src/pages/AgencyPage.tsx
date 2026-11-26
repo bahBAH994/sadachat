@@ -7,8 +7,6 @@ import {
   BadgeCheck,
   Calendar,
   Check,
-  ChevronDown,
-  ChevronUp,
   Clock,
   Copy,
   History,
@@ -17,12 +15,12 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react';
-import { AgencyIcon, CrownIcon, DiamondIcon, MicIcon } from '../components/AppIcons';
+import { AgencyIcon, DiamondIcon, MicIcon } from '../components/AppIcons';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { formatShortNumericId, getUserVipTierInfo } from '../lib/sadaCatalog';
+import { getEconomySettingsFromSupabase } from '../lib/sadaEconomyService';
 import {
-  applyAsAgencyInSupabase,
   getAgencyOverviewFromSupabase,
   leaveAgencyInSupabase,
   lookupAgencyByIdOrCodeInSupabase,
@@ -68,12 +66,13 @@ export const AgencyPage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
   const { openMiniProfile } = useMiniProfile();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   const [data, setData] = useState<AgencyOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [weeklyAgencyTarget, setWeeklyAgencyTarget] = useState(10000);
 
   // Host Center ("مركز المضيف") join application state
   const [agencyInput, setAgencyInput] = useState('');
@@ -82,19 +81,19 @@ export const AgencyPage: React.FC = () => {
   const [hostBio, setHostBio] = useState('');
   const [submittingApp, setSubmittingApp] = useState(false);
 
-  // Create Agency state (collapsible secondary option)
-  const [showCreateAgency, setShowCreateAgency] = useState(false);
-  const [agencyName, setAgencyName] = useState('');
-  const [agencyDesc, setAgencyDesc] = useState('');
-  const [applying, setApplying] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
   const loadOverview = useCallback(async () => {
     if (!user) return;
     try {
-      const res = await getAgencyOverviewFromSupabase(user);
+      const [res, economySettings] = await Promise.all([
+        getAgencyOverviewFromSupabase(user),
+        getEconomySettingsFromSupabase(),
+      ]);
       setData(res);
+      setWeeklyAgencyTarget(economySettings.weeklyAgencyTarget);
       updateLocalUser(res.user);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'تعذّر تحميل بيانات الوكالات.');
     } finally {
@@ -183,31 +182,6 @@ export const AgencyPage: React.FC = () => {
     }
   };
 
-  const handleApplyAgent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    setApplying(true);
-    setError(null);
-    setFeedback(null);
-    try {
-      const res = await applyAsAgencyInSupabase(user, {
-        name: agencyName,
-        description: agencyDesc,
-      });
-      setAgencyName('');
-      setAgencyDesc('');
-      setShowCreateAgency(false);
-      await loadOverview();
-      setFeedback(
-        `تم استلام طلب تأسيس وكالة "${res.agency.name}"، وهو قيد المراجعة لدى الإدارة العليا.`
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'تعذّر تقديم طلب الوكالة.');
-    } finally {
-      setApplying(false);
-    }
-  };
-
   const handleLeaveAgency = async () => {
     if (!user) return;
     setError(null);
@@ -234,23 +208,28 @@ export const AgencyPage: React.FC = () => {
         <div className="max-w-5xl mx-auto space-y-3">
           <button
             type="button"
-            onClick={() => navigate('/', { replace: true })}
+            onClick={() => navigate('/profile', { replace: true })}
             className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700"
           >
             <ArrowRight className="h-4 w-4" />
             رجوع
           </button>
-          <p className="pt-6">جارٍ تحميل منظومة الوكالات والمضيفين...</p>
+          {error ? (
+            <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">
+              {error}
+            </p>
+          ) : (
+            <p className="pt-6">جارٍ تحميل منظومة الوكالات والمضيفين...</p>
+          )}
         </div>
       </div>
     );
   }
 
   const { myAgency, pendingAgency, joinedAgency, myApplications } = data;
-  const canAccessMyAgency = Boolean(myAgency || user?.isAgent || user?.is_admin);
   const requestedTab = searchParams.get('tab');
   const activeTab: 'my-agency' | 'host-center' =
-    requestedTab === 'my-agency' && canAccessMyAgency
+    requestedTab === 'my-agency'
       ? 'my-agency'
       : requestedTab === 'host-center'
       ? 'host-center'
@@ -258,16 +237,12 @@ export const AgencyPage: React.FC = () => {
       ? 'my-agency'
       : 'host-center';
 
-  const setActiveTab = (next: 'my-agency' | 'host-center') => {
-    setSearchParams({ tab: next });
-  };
-
   return (
     <div className="min-h-full bg-[#F5F6FA]">
       <div className="max-w-5xl mx-auto p-4 space-y-3">
         <button
           type="button"
-          onClick={() => navigate('/', { replace: true })}
+          onClick={() => navigate('/profile', { replace: true })}
           className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700"
         >
           <ArrowRight className="h-4 w-4" />
@@ -299,33 +274,6 @@ export const AgencyPage: React.FC = () => {
             </div>
           )}
         </section>
-
-        {/* Tab Switcher (Only shows وكالتي if user is Agent/Admin) */}
-        {canAccessMyAgency && (
-          <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setActiveTab('my-agency')}
-              className={`min-h-[44px] rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
-                activeTab === 'my-agency' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <AgencyIcon className="w-4 h-4" />
-              <span>وكالتي</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('host-center')}
-              className={`min-h-[44px] rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
-                activeTab === 'host-center' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <MicIcon className="w-4 h-4" />
-              <span>مركز المضيف</span>
-            </button>
-          </div>
-        )}
 
         <AnimatePresence>
           {feedback && (
@@ -425,6 +373,22 @@ export const AgencyPage: React.FC = () => {
                       <DiamondIcon className="w-5 h-5" />
                     </span>
                   </p>
+                  <p className="mt-1 text-[10px] font-bold text-sky-700">
+                    من هدف أسبوعي {weeklyAgencyTarget.toLocaleString('en-US')} ألماس
+                  </p>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-sky-100">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            (myAgency.weeklyAgencyTotalDiamonds / weeklyAgencyTarget) * 100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
                 </div>
 
                 <div className="rounded-2xl bg-indigo-50 border border-indigo-200 p-4">
@@ -632,10 +596,10 @@ export const AgencyPage: React.FC = () => {
             </p>
             <button
               type="button"
-              onClick={() => setActiveTab('host-center')}
-              className="emerald-btn min-h-[44px] rounded-2xl px-5 py-2.5 text-xs font-extrabold cursor-pointer"
+              onClick={() => navigate('/profile')}
+              className="gold-btn min-h-[44px] rounded-2xl px-5 py-2.5 text-xs font-extrabold cursor-pointer"
             >
-              الانتقال إلى مركز المضيف
+              الرجوع إلى شخصي
             </button>
           </div>
         )}
@@ -690,7 +654,7 @@ export const AgencyPage: React.FC = () => {
             )}
 
             {/* Host Join Application Form */}
-            {!myAgency && (
+            {!myAgency && !joinedAgency && (
               <form
                 onSubmit={handleSubmitJoinApplication}
                 className="light-card rounded-3xl p-5 sm:p-6 space-y-4"
@@ -788,6 +752,38 @@ export const AgencyPage: React.FC = () => {
               </form>
             )}
 
+            {!myAgency && !joinedAgency && data.publicAgencies.length > 0 && (
+              <section className="light-card rounded-3xl p-5 space-y-3">
+                <h3 className="text-base font-black text-slate-900">
+                  الوكالات المعتمدة للانضمام
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {data.publicAgencies.map((agency) => (
+                    <button
+                      key={agency.id}
+                      type="button"
+                      onClick={() => {
+                        setAgencyInput(agency.code);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="rounded-2xl border border-amber-200 bg-gradient-to-br from-slate-950 to-slate-800 p-4 text-right text-white hover:border-amber-400"
+                    >
+                      <span className="block font-extrabold">{agency.name}</span>
+                      <span className="mt-1 block text-xs text-slate-300">
+                        {agency.description}
+                      </span>
+                      <span
+                        dir="ltr"
+                        className="mt-2 inline-block font-mono-num text-xs font-bold text-amber-300"
+                      >
+                        {agency.code} · {agency.hostCount} مضيف
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* User's Submitted Applications History */}
             {myApplications.length > 0 && (
               <section className="light-card rounded-3xl p-5 space-y-3">
@@ -832,75 +828,6 @@ export const AgencyPage: React.FC = () => {
               </section>
             )}
 
-            {/* Secondary Collapsible Section: Apply to Open a New Agency */}
-            {!myAgency && !pendingAgency && (
-              <section className="light-card rounded-3xl overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateAgency((prev) => !prev)}
-                  className="w-full min-h-[44px] p-4 flex items-center justify-between text-right cursor-pointer hover:bg-slate-50 transition"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700">
-                      <CrownIcon className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm sm:text-base font-black text-slate-900">
-                        طلب تأسيس وكالة جديدة
-                      </h3>
-                      <p className="text-[11px] text-slate-500">
-                        قدّم طلبك لمراجعته من الإدارة العليا قبل تفعيل الوكالة.
-                      </p>
-                    </div>
-                  </div>
-                  {showCreateAgency ? (
-                    <ChevronUp className="w-5 h-5 text-slate-400" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-slate-400" />
-                  )}
-                </button>
-
-                {showCreateAgency && (
-                  <form onSubmit={handleApplyAgent} className="px-5 pb-5 pt-2 border-t border-slate-100 space-y-3.5">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        اسم الوكالة الملكية
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        minLength={3}
-                        value={agencyName}
-                        onChange={(e) => setAgencyName(e.target.value)}
-                        placeholder="مثال: وكالة نجوم الخليج"
-                        className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        نبذة الوكالة
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={agencyDesc}
-                        onChange={(e) => setAgencyDesc(e.target.value)}
-                        placeholder="وصف مختصر لأهداف وكالتك ورعاية المضيفين..."
-                        className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={applying}
-                      className="gold-btn w-full min-h-[44px] rounded-2xl text-xs sm:text-sm font-extrabold cursor-pointer disabled:opacity-60"
-                    >
-                      {applying ? 'جارٍ إرسال الطلب...' : 'إرسال طلب تأسيس الوكالة'}
-                    </button>
-                  </form>
-                )}
-              </section>
-            )}
           </div>
         )}
       </div>

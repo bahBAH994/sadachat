@@ -23,19 +23,22 @@ export const TopBar: React.FC = () => {
     location.pathname.startsWith('/room/');
 
   if (isCustomHeaderRoute) return null;
+  const showBackButton = location.pathname !== '/meet';
 
   return (
     <header className="relative z-30 shrink-0 border-b border-slate-200/80 bg-white/95 pt-[max(env(safe-area-inset-top),32px)] backdrop-blur-xl">
       <div className="max-w-5xl mx-auto px-3 sm:px-5 h-14 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer transition"
-            aria-label="رجوع"
-          >
-            <ArrowRight className="w-4 h-4" />
-          </button>
+          {showBackButton && (
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 cursor-pointer transition"
+              aria-label="رجوع"
+            >
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
 
           <Link to="/" className="flex items-center gap-2 shrink-0 whitespace-nowrap">
             <img

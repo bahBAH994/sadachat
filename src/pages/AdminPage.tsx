@@ -37,7 +37,6 @@ import {
   ADMIN_USDT_TRC20_ADDRESS,
   isSuperAdminUser,
   LUCKY_GIFT_MULTIPLIERS,
-  PM_MESSAGE_COST,
 } from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
 import {
@@ -74,6 +73,10 @@ import {
   updatePrizePoolInSupabase,
 } from '../lib/sadaAdminService';
 import { reviewAgencyRequestInSupabase } from '../lib/sadaAgencyRequestService';
+import {
+  updateEconomySettingsInSupabase,
+  type EconomySettings,
+} from '../lib/sadaEconomyService';
 import {
   resetGrandCompetitionCycle,
   saveGrandCompetitionContent,
@@ -115,6 +118,7 @@ interface AdminOverview {
   competitions: Competition[];
   agencies: Agency[];
   agencyRequests: AgencyRequest[];
+  economySettings: EconomySettings;
   culturalQuestions: CulturalQuestionAdminItem[];
   settings: PlatformSettings;
   usdtDeposits: UsdtDepositRequest[];
@@ -138,6 +142,31 @@ interface AdminOverview {
     appPrizePoolCoins?: number;
     pendingUsdtCount?: number;
     pendingFemaleVoiceCount?: number;
+  };
+
+  const handleSaveEconomySettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!economyDraft || savingEconomy) return;
+    setSavingEconomy(true);
+    try {
+      const saved = await updateEconomySettingsInSupabase(economyDraft);
+      setEconomyDraft(saved);
+      setData((current) =>
+        current ? { ...current, economySettings: saved } : current
+      );
+      showOk('تم حفظ أسعار وإعدادات الاقتصاد وتطبيقها.');
+    } catch (err) {
+      showErr(err, 'تعذّر حفظ إعدادات الاقتصاد.');
+    } finally {
+      setSavingEconomy(false);
+    }
+  };
+
+  const updateEconomyDraft = (
+    key: keyof EconomySettings,
+    value: number
+  ) => {
+    setEconomyDraft((current) => (current ? { ...current, [key]: value } : current));
   };
 }
 
@@ -194,6 +223,7 @@ type AdminTab =
   | 'female_voice'
   | 'rooms_agencies'
   | 'agency_requests'
+  | 'economy'
   | 'gifts_announcements'
   | 'usdt'
   | 'competitions'
@@ -245,6 +275,8 @@ export const AdminPage: React.FC = () => {
   // Economy Settings Draft
   const [settingsDraft, setSettingsDraft] = useState<PlatformSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [economyDraft, setEconomyDraft] = useState<EconomySettings | null>(null);
+  const [savingEconomy, setSavingEconomy] = useState(false);
   const [adminShamCashAddress, setAdminShamCashAddress] = useState('');
   const [adminShamCashBarcode, setAdminShamCashBarcode] = useState('');
   const [shamCashCoinDrafts, setShamCashCoinDrafts] = useState<Record<string, string>>({});
@@ -277,6 +309,7 @@ export const AdminPage: React.FC = () => {
         const res = await getAdminOverviewFromSupabase();
         setData(res);
         setSettingsDraft(res.settings);
+        setEconomyDraft(res.economySettings);
         setAdminShamCashAddress(getShamCashSetting(res.settings, 'adminShamCashAddress'));
         setAdminShamCashBarcode(getShamCashSetting(res.settings, 'adminShamCashBarcode'));
         setGrandCompetitionDraft({
@@ -401,7 +434,7 @@ export const AdminPage: React.FC = () => {
     }
     if (
       !window.confirm(
-        'تأكيد نهائي: سيتم حذف الرسائل والهدايا وسجلات الشحن والسحب، وتصفير أرصدة ومستويات المستخدمين باستثناء حساب الإدارة الأساسي. لا يمكن التراجع عن ذلك.'
+        'تأكيد نهائي: سيتم حذف حسابات المستخدمين وبيانات التطبيق وسجلات الشحن والسحب، مع الإبقاء على حساب الإدارة الأساسي وكتالوجات المنصة الثابتة. لا يمكن التراجع عن ذلك.'
       )
     ) {
       return;
@@ -1066,7 +1099,6 @@ export const AdminPage: React.FC = () => {
         adminShamCashAddress: adminShamCashAddress.trim(),
         adminShamCashBarcode: adminShamCashBarcode.trim(),
         shamCashRequests: getShamCashRequests(settingsDraft),
-        pmMessageCost: PM_MESSAGE_COST,
       };
       const saved = await savePlatformSettingsInSupabase(settingsWithShamCash);
       setSettingsDraft(saved);
@@ -1217,6 +1249,7 @@ export const AdminPage: React.FC = () => {
       label: 'طلبات الوكالات',
       badge: pendingAgencyRequestCount,
     },
+    { id: 'economy', label: 'الأسعار والاقتصاد' },
     { id: 'gifts_announcements', label: 'الهدايا والإعلانات' },
     { id: 'usdt', label: 'طلبات الشحن والسحب', badge: pendingPaymentCount },
     { id: 'competitions', label: 'المسابقات' },
@@ -3168,7 +3201,59 @@ export const AdminPage: React.FC = () => {
               </div>
             )}
 
-            {/* TAB 9: GLOBAL PLATFORM ECONOMY SETTINGS */}
+            {tab === 'economy' && economyDraft && (
+              <form
+                onSubmit={handleSaveEconomySettings}
+                className="royal-glass rounded-3xl p-5 sm:p-6 space-y-5"
+              >
+                <div>
+                  <h2 className="text-base sm:text-lg font-extrabold text-[#FCE9A6]">
+                    الأسعار والاقتصاد
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    تُقرأ هذه القيم مباشرةً من إعدادات الاقتصاد وتُستخدم في واجهات التطبيق.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {(
+                    [
+                      ['weeklyAgencyTarget', 'التارجت الأسبوعي للوكالة (ألماس)', 1, 0],
+                      ['agencyBackgroundPrice', 'سعر خلفية الوكالة (كوينز)', 1, 0],
+                      ['roomBackgroundPrice', 'سعر خلفية الغرفة (كوينز)', 1, 0],
+                      ['agencyCommissionPct', 'عمولة الوكيل (%)', 0, 0.1],
+                      ['wheelCommissionPct', 'عمولة دولاب الإقصاء (%)', 0, 0.1],
+                      ['wheelEntryFee', 'رسوم دخول الدولاب (كوينز)', 1, 0],
+                      ['diamondConversionRate', 'تحويل الألماس إلى كوينز', 0.01, 0.01],
+                    ] as const
+                  ).map(([key, label, min, step]) => (
+                    <label key={key} className="space-y-1.5 text-xs">
+                      <span className="block text-slate-300">{label}</span>
+                      <input
+                        type="number"
+                        min={min}
+                        step={step || 1}
+                        value={economyDraft[key]}
+                        onChange={(event) =>
+                          updateEconomyDraft(key, Number(event.target.value))
+                        }
+                        dir="ltr"
+                        className="w-full min-h-[42px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingEconomy}
+                  className="gold-btn min-h-[44px] rounded-2xl px-6 text-sm font-extrabold inline-flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  {savingEconomy ? 'جارٍ الحفظ...' : 'حفظ أسعار وإعدادات الاقتصاد'}
+                </button>
+              </form>
+            )}
+
+            {/* TAB 10: GLOBAL PLATFORM ECONOMY SETTINGS */}
             {tab === 'settings' && settingsDraft && (
               <form onSubmit={handleSaveSettings} className="space-y-5">
                 <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
@@ -3357,6 +3442,25 @@ export const AdminPage: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-slate-300 mb-1">
+                          تكلفة الرسالة الخاصة المدفوعة (كوينز)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={settingsDraft.pmMessageCost}
+                          onChange={(e) =>
+                            setSettingsDraft({
+                              ...settingsDraft,
+                              pmMessageCost: Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                            })
+                          }
+                          dir="ltr"
+                          className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-white font-mono-num text-left"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 mb-1">
                           كوينز مطلوبة لسحب 1 USDT
                         </label>
                         <input
@@ -3515,7 +3619,7 @@ export const AdminPage: React.FC = () => {
                           تكلفة الرسالة من الذكر إلى الأنثى دون متابعة متبادلة
                         </label>
                         <div className="rounded-xl border border-[#D4AF37]/25 bg-[#070913]/85 px-3 py-2 text-sm font-mono-num font-extrabold text-[#FCE9A6]">
-                          150 كوينز — الحالات الأخرى مجانية
+                          {settingsDraft.pmMessageCost.toLocaleString('en-US')} كوينز — الحالات الأخرى مجانية
                         </div>
                       </div>
                       <div>

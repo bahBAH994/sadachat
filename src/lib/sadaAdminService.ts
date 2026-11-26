@@ -56,6 +56,7 @@ import {
 import { fetchUsersVipTotalsBatch, invalidateUserVipCache } from './sadaVipService';
 import { createRoomInSupabase } from './sadaRoomsService';
 import { getAgencyRequestsInSupabase } from './sadaAgencyRequestService';
+import { getEconomySettingsFromSupabase, type EconomySettings } from './sadaEconomyService';
 import { supabase } from './supabase';
 
 export interface AdminOverviewPayload {
@@ -66,6 +67,7 @@ export interface AdminOverviewPayload {
   competitions: Competition[];
   agencies: Agency[];
   agencyRequests: AgencyRequest[];
+  economySettings: EconomySettings;
   culturalQuestions: CulturalQuestionAdminItem[];
   settings: PlatformSettings;
   usdtDeposits: UsdtDepositRequest[];
@@ -105,6 +107,14 @@ export async function resetApplicationDataInSupabase(): Promise<void> {
   if ((data as Record<string, unknown>).status !== 'reset') {
     throw new Error('لم تؤكد قاعدة البيانات اكتمال عملية التصفير.');
   }
+
+  const resetState = await getPlatformState({ forceRefresh: true });
+  await savePlatformState({
+    settings: {
+      ...resetState.settings,
+      globalZeroResetV1Applied: true,
+    },
+  });
 }
 
 export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPayload> {
@@ -126,6 +136,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
     monthlyTransactionsRes,
     state,
     agencyRequests,
+    economySettings,
   ] = await Promise.all([
     supabase.from('sada_users').select(USER_COLUMNS).order('created_at', { ascending: false }),
     supabase.from('sada_device_locks').select(DEVICE_LOCK_COLUMNS).order('last_attempt_at', { ascending: false }),
@@ -148,6 +159,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
       .in('type', ['host_earning', 'host_payroll', 'agency_payroll', 'usdt_deposit', 'topup', 'sham_cash_deposit']),
     getPlatformState({ forceRefresh: true }),
     getAgencyRequestsInSupabase(),
+    getEconomySettingsFromSupabase(),
   ]);
 
   const failedQuery = [
@@ -213,6 +225,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
     competitions,
     agencies,
     agencyRequests,
+    economySettings,
     culturalQuestions,
     settings: state.settings,
     usdtDeposits,

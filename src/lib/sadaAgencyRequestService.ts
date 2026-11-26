@@ -1,6 +1,7 @@
 import type { Agency, AgencyRequest, User } from '../types';
 import { genId } from './sadaCatalog';
-import { getPlatformState, rowToUser, USER_COLUMNS } from './sadaMappers';
+import { rowToUser, USER_COLUMNS } from './sadaMappers';
+import { getEconomySettingsFromSupabase } from './sadaEconomyService';
 import { createRoomInSupabase } from './sadaRoomsService';
 import { supabase } from './supabase';
 
@@ -165,7 +166,7 @@ export async function reviewAgencyRequestInSupabase(
     code = `SADA-${Math.floor(1000 + Math.random() * 9000)}`;
   } while (existingCodes.has(code));
 
-  const platformState = await getPlatformState({ forceRefresh: true });
+  const economySettings = await getEconomySettingsFromSupabase();
   const now = new Date().toISOString();
   const agency: Agency = {
     id: genId('agency'),
@@ -175,10 +176,7 @@ export async function reviewAgencyRequestInSupabase(
     ownerId: owner.id,
     ownerName: owner.displayName,
     ownerAvatar: owner.avatarUrl,
-    commissionRate:
-      platformState.settings.defaultAgencyCommissionRate ??
-      platformState.settings.agencyPayrollCommissionRate ??
-      0.1,
+    commissionRate: economySettings.agencyCommissionPct / 100,
     totalCommissionDiamonds: 0,
     totalHostDiamonds: 0,
     hostIds: [],

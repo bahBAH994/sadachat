@@ -19,69 +19,6 @@ import type { Store3DItem, StoreBackgroundItem } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
 import { CoinIcon, CrownIcon, GiftIcon, PartyIcon } from '../components/AppIcons';
 
-const RoyalBackdropPreview: React.FC<{ backgroundId: string }> = ({ backgroundId }) => {
-  const isEmerald = backgroundId === 'bg_emerald_palace';
-  const isRuby = backgroundId === 'bg_ruby_throne';
-  const isSapphire = backgroundId === 'bg_sapphire_crystal';
-  const accent = isEmerald ? '#FDE047' : isRuby ? '#FDBA74' : '#BAE6FD';
-
-  return (
-    <div
-      aria-hidden="true"
-      className={`royal-store-preview pointer-events-none absolute inset-0 overflow-hidden ${
-        isEmerald
-          ? 'royal-store-preview-emerald'
-          : isRuby
-          ? 'royal-store-preview-ruby'
-          : isSapphire
-          ? 'royal-store-preview-sapphire'
-          : ''
-      }`}
-    >
-      <svg viewBox="0 0 360 128" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full opacity-75">
-        {isEmerald ? (
-          <>
-            <path d="M22 130V72C22 24 68 8 95 8s73 16 73 64v58M192 130V72c0-48 38-64 73-64s73 16 73 64v58" fill="none" stroke={accent} strokeOpacity=".5" strokeWidth="2" />
-            <path d="M36 129V76c0-37 27-54 59-54s59 17 59 54v53M207 129V76c0-37 26-54 58-54s58 17 58 54v53" fill="none" stroke="#A7F3D0" strokeOpacity=".45" />
-            <path d="M180 11l10 17 20 3-15 14 4 20-19-10-19 10 4-20-15-14 20-3z" fill="#FDE047" fillOpacity=".42" />
-            <path d="M145 0v34m70-34v34m-82 0h94" stroke={accent} strokeOpacity=".55" />
-          </>
-        ) : isRuby ? (
-          <>
-            <path d="M0 0h74c-31 34-16 80 0 128H0zM360 0h-74c31 34 16 80 0 128h74z" fill="#881337" fillOpacity=".5" />
-            <path d="M180 16l28 30-28 43-28-43z" fill="#FB7185" fillOpacity=".25" stroke={accent} strokeOpacity=".7" />
-            <path d="M80 21l45 2m109 84 54 2M42 70l35-6" stroke={accent} strokeWidth="1.5" strokeOpacity=".75" className="royal-scene-meteor" />
-            <circle cx="180" cy="50" r="44" fill="none" stroke={accent} strokeOpacity=".3" />
-          </>
-        ) : (
-          <>
-            <polygon points="180,8 256,54 220,126 140,126 104,54" fill="#38BDF8" fillOpacity=".18" stroke="#BAE6FD" strokeOpacity=".65" />
-            <polygon points="180,8 180,126 104,54" fill="#E0F2FE" fillOpacity=".15" />
-            <polygon points="180,8 256,54 180,126" fill="#2563EB" fillOpacity=".2" />
-            <path d="M34 32l18 25-18 25-18-25zM320 16l15 21-15 21-15-21z" fill="none" stroke="#E0F2FE" strokeOpacity=".8" className="royal-scene-glint" />
-            <path d="M62 112c42-34 75-34 118 0s76 34 118 0" fill="none" stroke="#7DD3FC" strokeOpacity=".6" strokeWidth="2" />
-          </>
-        )}
-      </svg>
-      <div className="royal-gold-particles absolute inset-0">
-        {Array.from({ length: 10 }, (_, index) => (
-          <span
-            key={index}
-            className="royal-gold-particle"
-            style={{
-              left: `${8 + ((index * 17) % 88)}%`,
-              animationDelay: `${(index % 5) * -0.7}s`,
-              backgroundColor: accent,
-              color: accent,
-            }}
-          />
-        ))}
-      </div>
-      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/10" />
-    </div>
-  );
-};
-
 export const StorePage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
   const navigate = useNavigate();
@@ -92,6 +29,7 @@ export const StorePage: React.FC = () => {
   const [luxuryBackgrounds, setLuxuryBackgrounds] = useState<StoreBackgroundItem[]>([]);
   const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
   const [totalRechargedCoins, setTotalRechargedCoins] = useState(0);
+  const [agencyBackgroundPrice, setAgencyBackgroundPrice] = useState(50000);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
@@ -108,6 +46,7 @@ export const StorePage: React.FC = () => {
       setLuxuryBackgrounds(data.luxuryBackgrounds);
       setOwnedBackgrounds(data.ownedBackgrounds);
       setTotalRechargedCoins(data.totalRechargedCoins);
+      setAgencyBackgroundPrice(data.agencyBackgroundPrice);
     } catch (error) {
       setFeedback({
         type: 'err',
@@ -219,10 +158,10 @@ export const StorePage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-full bg-[#F5F6FA] pb-28">
+    <div className="min-h-full bg-[#080B14] text-white pb-28">
       <div className="max-w-4xl mx-auto px-4 pt-4 space-y-5">
         {/* Hero Store Header with Real Coins Balance */}
-        <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#1B2542] to-[#0E3A2F] p-5 sm:p-6 text-white shadow-xl space-y-4">
+        <section className="rounded-3xl bg-gradient-to-br from-[#171522] via-[#111522] to-[#241b0e] border border-amber-300/20 p-5 sm:p-6 text-white shadow-xl space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/20 border border-amber-300/40 px-3 py-1 text-[11px] font-bold text-[#FCE9A6]">
@@ -238,7 +177,7 @@ export const StorePage: React.FC = () => {
             </div>
 
             <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0">
-              <div className="rounded-2xl bg-white/10 border border-white/15 px-4 py-2 text-center">
+              <div className="rounded-2xl bg-black/20 border border-white/15 px-4 py-2 text-center">
                 <span className="block text-[10px] text-amber-200 font-bold">رصيد الكوينز المتاح</span>
                 <span className="text-lg font-black text-[#FCE9A6] font-mono-num">
                   <CoinIcon className="inline h-5 w-5 align-[-3px]" /> {user.coins.toLocaleString('en-US')}
@@ -258,7 +197,7 @@ export const StorePage: React.FC = () => {
 
               <div className="h-3 rounded-full bg-slate-900 overflow-hidden border border-white/10">
                 <div
-                  className="h-full bg-gradient-to-r from-emerald-400 via-amber-300 to-rose-400 transition-all duration-500"
+                  className="h-full bg-gradient-to-r from-[#9A6D18] via-[#D4AF37] to-[#FCE9A6] transition-all duration-500"
                   style={{ width: `${overallProgress}%` }}
                 />
               </div>
@@ -271,7 +210,7 @@ export const StorePage: React.FC = () => {
               </div>
 
               {nextLocked ? (
-                <p className="text-xs text-emerald-200 font-semibold">
+                <p className="text-xs text-slate-200 font-semibold">
                   المتبقي لفتح «{nextLocked.name}»: {(nextLocked.minRechargeCoins - totalRechargedCoins).toLocaleString('en-US')} كوينز شحن إضافي
                 </p>
               ) : (
@@ -287,8 +226,8 @@ export const StorePage: React.FC = () => {
           <div
             className={`rounded-2xl px-4 py-3 text-xs font-bold border ${
               feedback.type === 'ok'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                : 'bg-rose-50 border-rose-200 text-rose-700'
+                ? 'bg-amber-400/10 border-amber-300/20 text-[#FCE9A6]'
+                : 'bg-rose-400/10 border-rose-300/20 text-rose-200'
             }`}
           >
             {feedback.text}
@@ -296,12 +235,12 @@ export const StorePage: React.FC = () => {
         )}
 
         {/* Two Store Frame Tabs */}
-        <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+        <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-[#141927] border border-white/10 shadow-sm">
           <button
             type="button"
             onClick={() => setFrameTab('coins')}
             className={`min-h-[44px] rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
-              frameTab === 'coins' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
+              frameTab === 'coins' ? 'gold-btn' : 'text-slate-300 hover:bg-white/5'
             }`}
           >
             <CoinIcon className="w-4 h-4" />
@@ -312,7 +251,7 @@ export const StorePage: React.FC = () => {
             type="button"
             onClick={() => setFrameTab('gift')}
             className={`min-h-[44px] rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
-              frameTab === 'gift' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
+              frameTab === 'gift' ? 'gold-btn' : 'text-slate-300 hover:bg-white/5'
             }`}
           >
             <GiftIcon className="w-4 h-4" />
@@ -324,12 +263,12 @@ export const StorePage: React.FC = () => {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="light-card rounded-3xl h-56 animate-pulse" />
+              <div key={i} className="rounded-3xl bg-[#141927] border border-white/10 h-56 animate-pulse" />
             ))}
           </div>
         ) : frameTab === 'coins' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {coinItems.map((item) => {
+            {coinItems.length > 0 ? coinItems.map((item) => {
               const owned = user.unlockedFrames.includes(item.id);
               const isActive = user.frameId === item.id;
               const price = item.priceCoins ?? 0;
@@ -337,7 +276,7 @@ export const StorePage: React.FC = () => {
               return (
                 <article
                   key={item.id}
-                  className="light-card rounded-3xl flex flex-col justify-between border border-slate-200"
+                  className="rounded-3xl overflow-hidden bg-[#141927] flex flex-col justify-between border border-white/10"
                 >
                   <div
                     className={`bg-gradient-to-br ${item.previewGradient} p-5 text-white flex items-center gap-4 relative`}
@@ -363,11 +302,11 @@ export const StorePage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="p-4 space-y-3 bg-white">
-                    <p className="text-xs text-slate-600 leading-relaxed">{item.subtitle}</p>
-                    <div className="flex items-center justify-between text-xs font-mono-num bg-amber-50/70 border border-amber-200/80 rounded-xl px-3 py-2">
-                      <span className="font-bold text-amber-900">السعر المباشر</span>
-                      <span className="font-black text-amber-700">
+                  <div className="p-4 space-y-3 bg-[#141927]">
+                    <p className="text-xs text-slate-300 leading-relaxed">{item.subtitle}</p>
+                    <div className="flex items-center justify-between text-xs font-mono-num bg-amber-400/5 border border-amber-300/20 rounded-xl px-3 py-2">
+                      <span className="font-bold text-[#FCE9A6]">السعر المباشر</span>
+                      <span className="font-black text-[#FCE9A6]">
                         {price.toLocaleString('en-US')} كوينز <CoinIcon className="inline h-3.5 w-3.5 align-[-2px]" />
                       </span>
                     </div>
@@ -378,8 +317,8 @@ export const StorePage: React.FC = () => {
                       onClick={() => handleBuyCoinItem(item)}
                       className={`w-full min-h-[44px] rounded-2xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
                         isActive
-                          ? 'bg-emerald-50 border border-emerald-300 text-emerald-700'
-                          : 'emerald-btn'
+                          ? 'bg-amber-400/10 border border-amber-300/25 text-[#FCE9A6]'
+                          : 'gold-btn'
                       }`}
                     >
                       {isActive ? (
@@ -406,11 +345,16 @@ export const StorePage: React.FC = () => {
                   </div>
                 </article>
               );
-            })}
+            }) : (
+              <div className="sm:col-span-2 rounded-3xl bg-[#141927] border border-amber-300/20 p-8 text-center">
+                <Sparkles className="w-8 h-8 text-[#D4AF37] mx-auto mb-3" />
+                <p className="text-sm font-extrabold text-[#FCE9A6]">قريباً.. تشكيلة ملكية فاخرة قيد التجهيز ✨</p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {giftItems.map((item) => {
+            {giftItems.length > 0 ? giftItems.map((item) => {
               const isTaskGift = item.purchaseMode === 'gift';
               const unlocked = isTaskGift
                 ? user.unlockedFrames.includes(item.id)
@@ -431,7 +375,7 @@ export const StorePage: React.FC = () => {
               return (
                 <article
                   key={item.id}
-                  className="light-card rounded-3xl flex flex-col justify-between border border-slate-200"
+                  className="rounded-3xl overflow-hidden bg-[#141927] flex flex-col justify-between border border-white/10"
                 >
                   <div
                     className={`bg-gradient-to-br ${item.previewGradient} p-5 text-white flex items-center gap-4 relative`}
@@ -455,21 +399,21 @@ export const StorePage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="p-4 space-y-3 bg-white">
-                    <p className="text-xs text-slate-600 leading-relaxed">{item.subtitle}</p>
+                  <div className="p-4 space-y-3 bg-[#141927]">
+                    <p className="text-xs text-slate-300 leading-relaxed">{item.subtitle}</p>
 
                     {!isTaskGift && (
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-[11px] font-mono-num">
-                          <span className="text-slate-500 font-bold">شرط الفتح التراكمي</span>
-                          <span className="font-extrabold text-slate-900">
+                          <span className="text-slate-400 font-bold">شرط الفتح التراكمي</span>
+                          <span className="font-extrabold text-white">
                             {item.minRechargeCoins.toLocaleString('en-US')} كوينز
                           </span>
                         </div>
-                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                           <div
                             className={`h-full transition-all duration-500 ${
-                              unlocked ? 'bg-emerald-500' : 'bg-amber-400'
+                              unlocked ? 'bg-[#D4AF37]' : 'bg-amber-400/70'
                             }`}
                             style={{ width: `${tierPct}%` }}
                           />
@@ -484,8 +428,8 @@ export const StorePage: React.FC = () => {
                         onClick={() => handleEquipGiftItem(item)}
                         className={`w-full min-h-[44px] rounded-2xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition ${
                           isActive
-                            ? 'bg-emerald-50 border border-emerald-300 text-emerald-700'
-                            : 'emerald-btn'
+                            ? 'bg-amber-400/10 border border-amber-300/25 text-[#FCE9A6]'
+                            : 'gold-btn'
                         }`}
                       >
                         {isActive ? (
@@ -515,7 +459,7 @@ export const StorePage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => navigate('/wallet')}
-                        className="w-full min-h-[44px] rounded-2xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition"
+                        className="w-full min-h-[44px] rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition"
                       >
                         <Lock className="w-3.5 h-3.5 text-amber-600" />
                         <span>
@@ -526,22 +470,27 @@ export const StorePage: React.FC = () => {
                   </div>
                 </article>
               );
-            })}
+            }) : (
+              <div className="sm:col-span-2 rounded-3xl bg-[#141927] border border-amber-300/20 p-8 text-center">
+                <GiftIcon className="w-8 h-8 text-[#D4AF37] mx-auto mb-3" />
+                <p className="text-sm font-extrabold text-[#FCE9A6]">قريباً.. تشكيلة ملكية فاخرة قيد التجهيز ✨</p>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Luxury Agency Room Backgrounds Section (5,000 Coins each) */}
+        {/* Royal agency backgrounds */}
         <section className="space-y-3 pt-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700">
+              <div className="w-9 h-9 rounded-2xl bg-amber-400/10 border border-amber-300/25 flex items-center justify-center text-[#FCE9A6]">
                 <ImageIcon className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base sm:text-lg font-black text-slate-900">
-                  خلفيات الوكالات الفخمة (5,000 كوينز)
+                <h2 className="text-base sm:text-lg font-black text-white">
+                  خلفيات الوكالات الفخمة ({agencyBackgroundPrice.toLocaleString('en-US')} كوينز)
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-400">
                   اقتنِ خلفيات القصور الفاخرة للغرفة الصوتية وطبّقها مباشرة على غرفتك من هنا أو من الحقيبة.
                 </p>
               </div>
@@ -549,39 +498,40 @@ export const StorePage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {luxuryBackgrounds.map((bg) => {
+            {loading ? (
+              <div className="sm:col-span-2 lg:col-span-3 h-44 rounded-3xl bg-[#141927] border border-white/10 animate-pulse" />
+            ) : luxuryBackgrounds.length > 0 ? luxuryBackgrounds.map((bg) => {
               const isOwned = ownedBackgrounds.includes(bg.id);
               return (
                 <article
                   key={bg.id}
-                  className="light-card rounded-3xl overflow-hidden flex flex-col justify-between border border-slate-200"
+                  className="rounded-3xl overflow-hidden bg-[#141927] flex flex-col justify-between border border-white/10"
                 >
                   <div className={`${bg.previewClass} h-32 p-4 text-white flex flex-col justify-between relative overflow-hidden`}>
-                    <RoyalBackdropPreview backgroundId={bg.id} />
                     <div className="flex items-center justify-between relative z-10">
                       <span className="text-2xl">{bg.badgeGlyph}</span>
                       <span className="rounded-full bg-black/50 border border-amber-300/50 px-2.5 py-0.5 text-[11px] font-extrabold text-[#FCE9A6] font-mono-num">
-                        {bg.priceCoins.toLocaleString('en-US')} <CoinIcon className="inline h-3.5 w-3.5 align-[-2px]" />
+                        {agencyBackgroundPrice.toLocaleString('en-US')} <CoinIcon className="inline h-3.5 w-3.5 align-[-2px]" />
                       </span>
                     </div>
                     <h3 className="text-sm font-black text-white relative z-10">{bg.name}</h3>
                   </div>
 
-                  <div className="p-4 space-y-3 bg-white">
-                    <p className="text-xs text-slate-600 leading-relaxed min-h-[34px]">
+                  <div className="p-4 space-y-3 bg-[#141927]">
+                    <p className="text-xs text-slate-300 leading-relaxed min-h-[34px]">
                       {bg.subtitle}
                     </p>
 
                     {isOwned ? (
                       <div className="space-y-2">
-                        <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700 text-center">
+                        <div className="rounded-xl bg-amber-400/10 border border-amber-300/20 px-3 py-1.5 text-[11px] font-extrabold text-[#FCE9A6] text-center">
                           مملوكة في الحقيبة ✓
                         </div>
                         <button
                           type="button"
                           disabled={busyId === `apply_${bg.id}`}
                           onClick={() => handleApplyBackground(bg)}
-                          className="emerald-btn w-full min-h-[40px] rounded-2xl text-xs font-extrabold cursor-pointer flex items-center justify-center gap-1.5"
+                          className="gold-btn w-full min-h-[40px] rounded-2xl text-xs font-extrabold cursor-pointer flex items-center justify-center gap-1.5"
                         >
                           <Sparkles className="w-3.5 h-3.5" />
                           <span>
@@ -600,14 +550,19 @@ export const StorePage: React.FC = () => {
                         <span>
                           {busyId === bg.id
                             ? 'جارٍ الشراء...'
-                            : `شراء بـ ${bg.priceCoins.toLocaleString('en-US')} كوينز`}
+                            : `شراء بـ ${agencyBackgroundPrice.toLocaleString('en-US')} كوينز`}
                         </span>
                       </button>
                     )}
                   </div>
                 </article>
               );
-            })}
+            }) : (
+              <div className="sm:col-span-2 lg:col-span-3 rounded-3xl bg-[#141927] border border-amber-300/20 p-8 text-center">
+                <ImageIcon className="w-8 h-8 text-[#D4AF37] mx-auto mb-3" />
+                <p className="text-sm font-extrabold text-[#FCE9A6]">قريباً.. تشكيلة ملكية فاخرة قيد التجهيز ✨</p>
+              </div>
+            )}
           </div>
         </section>
 
@@ -615,7 +570,7 @@ export const StorePage: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/bag')}
-            className="rounded-2xl bg-white border border-slate-200 px-5 py-2.5 text-xs font-extrabold text-slate-700 hover:border-emerald-400 cursor-pointer flex items-center gap-2 shadow-sm"
+            className="rounded-2xl bg-[#141927] border border-white/10 px-5 py-2.5 text-xs font-extrabold text-[#FCE9A6] hover:border-amber-300/40 cursor-pointer flex items-center gap-2 shadow-sm"
           >
             <CrownIcon className="w-4 h-4" />
             <span>الانتقال إلى الحقيبة وممتلكاتي</span>

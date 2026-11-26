@@ -1217,6 +1217,7 @@ export const LobbyPage: React.FC = () => {
                 </h2>
                 <button
                   type="button"
+                  aria-label="+ إنشاء غرفة"
                   onClick={() => {
                     setNewTitle(`${user?.displayName || 'غرفتي'} الخاصة`);
                     setCreateError(null);

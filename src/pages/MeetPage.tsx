@@ -360,7 +360,7 @@ export const MeetPage: React.FC = () => {
               <p className="text-xs sm:text-sm font-bold text-slate-700">
                 {isSearching
                   ? 'لا توجد نتائج تطابق البحث.'
-                  : `لا يوجد حسابات ${targetGender === 'female' ? 'بنات' : 'شباب'} متصلة الآن في هذه اللحظة.`}
+                  : 'لا يوجد أصدقاء متصلون حالياً'}
               </p>
             </div>
           ) : (

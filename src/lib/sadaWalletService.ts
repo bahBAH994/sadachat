@@ -40,6 +40,7 @@ import {
 } from './sadaMappers';
 import { syncUserOnActiveRoomSeats } from './sadaAuth';
 import { fetchUserVipTotals } from './sadaVipService';
+import { getEconomySettingsFromSupabase } from './sadaEconomyService';
 import { supabase } from './supabase';
 
 export async function checkWithdrawalEligibility(user: User): Promise<{
@@ -78,6 +79,7 @@ export async function getWalletOverviewFromSupabase(userId: string) {
     { data: depRows },
     { data: wdRows },
     state,
+    economySettings,
   ] = await Promise.all([
     supabase.from('sada_users').select(USER_COLUMNS).eq('id', userId).maybeSingle(),
     supabase
@@ -99,6 +101,7 @@ export async function getWalletOverviewFromSupabase(userId: string) {
       .order('created_at', { ascending: false })
       .limit(20),
     getPlatformState(),
+    getEconomySettingsFromSupabase(),
   ]);
 
   if (!userRow) throw new Error('المستخدم غير موجود.');
@@ -115,7 +118,9 @@ export async function getWalletOverviewFromSupabase(userId: string) {
     ) as FrameItem[],
     adminTrc20Address: ADMIN_USDT_TRC20_ADDRESS,
     usdtToCoinsRate: state.settings.usdtToCoinsRate,
-    diamondToCoinsRate: state.settings.diamondToCoinsRate,
+    diamondToCoinsRate: economySettings.diamondConversionRate,
+    roomBackgroundPrice: economySettings.roomBackgroundPrice,
+    agencyBackgroundPrice: economySettings.agencyBackgroundPrice,
     rewardTiers: state.settings.rechargeRewardTiers,
     usdtDeposits: (depRows || []).map(rowToDeposit) as UsdtDepositRequest[],
     usdtWithdrawals: (wdRows || []).map(rowToWithdrawal) as UsdtWithdrawalRequest[],
@@ -343,8 +348,8 @@ export async function convertDiamondsToCoinsInSupabase(
     throw new Error('رصيد الألماس غير كافٍ.');
   }
 
-  const state = await getPlatformState();
-  const gainedCoins = Math.round(amount * (state.settings.diamondToCoinsRate || 2));
+  const economySettings = await getEconomySettingsFromSupabase();
+  const gainedCoins = Math.round(amount * economySettings.diamondConversionRate);
   const now = new Date().toISOString();
 
   freshUser.diamonds -= amount;
@@ -561,9 +566,9 @@ export async function getStoreAndBagOverviewFromSupabase(userId: string) {
     ...walletData,
     user,
     totalRechargedCoins,
-    storeItems: STORE_3D_ITEMS,
-    coinStoreItems: STORE_COIN_ITEMS,
-    luxuryBackgrounds: STORE_LUXURY_BACKGROUNDS,
+    storeItems: [],
+    coinStoreItems: [],
+    luxuryBackgrounds: [],
     ownedBackgrounds,
     hostTasks: rawTask,
   };
@@ -663,9 +668,10 @@ export async function purchaseRoomBackgroundInSupabase(
   const bg = STORE_LUXURY_BACKGROUNDS.find((b) => b.id === bgId);
   if (!bg) throw new Error('خلفية الوكالة غير موجودة.');
 
-  const [{ data: userRow }, state] = await Promise.all([
+  const [{ data: userRow }, state, economySettings] = await Promise.all([
     supabase.from('sada_users').select(USER_COLUMNS).eq('id', user.id).maybeSingle(),
     getPlatformState(),
+    getEconomySettingsFromSupabase(),
   ]);
   const freshUser = userRow ? rowToUser(userRow) : { ...user };
   const map = { ...(state.settings.userOwnedBackgrounds || {}) };
@@ -675,13 +681,14 @@ export async function purchaseRoomBackgroundInSupabase(
     throw new Error('أنت تمتلك هذه الخلفية الفخمة بالفعل في حقيبتك.');
   }
 
-  if (freshUser.coins < bg.priceCoins) {
+  const backgroundPrice = economySettings.agencyBackgroundPrice;
+  if (freshUser.coins < backgroundPrice) {
     throw new Error(
-      `رصيد الكوينز غير كافٍ. سعر الخلفية ${bg.priceCoins.toLocaleString('en-US')} كوينز.`
+      `رصيد الكوينز غير كافٍ. سعر الخلفية ${backgroundPrice.toLocaleString('en-US')} كوينز.`
     );
   }
 
-  freshUser.coins -= bg.priceCoins;
+  freshUser.coins -= backgroundPrice;
   owned.push(bg.id);
   map[freshUser.id] = owned;
 
@@ -696,7 +703,7 @@ export async function purchaseRoomBackgroundInSupabase(
     recordTransaction({
       userId: freshUser.id,
       type: 'store_purchase',
-      amount: -bg.priceCoins,
+      amount: -backgroundPrice,
       currency: 'coins',
       description: `شراء خلفية الوكالة الفخمة: ${bg.name}`,
       timestamp: new Date().toISOString(),

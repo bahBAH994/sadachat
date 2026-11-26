@@ -174,48 +174,7 @@ export function formatCompactMetric(value: number, upperCaseK = false): string {
   return String(Math.round(num));
 }
 
-export const STORE_LUXURY_BACKGROUNDS: StoreBackgroundItem[] = [
-  {
-    id: 'bg_royal_majlis',
-    name: 'مجلس السلاطين الذهبي',
-    subtitle: 'خلفية فخمة بتيجان وأقواس ذهبية وإضاءة قصور ملكية متوهجة',
-    priceCoins: 5000,
-    badgeGlyph: '👑',
-    previewClass: 'bg-gradient-to-b from-[#1D1407] via-[#3A2508] to-[#0B0703]',
-  },
-  {
-    id: 'bg_sapphire_crystal',
-    name: 'قاعة الياقوت الكريستالية',
-    subtitle: 'ألواح كريستال زرقاء متلألئة مع انعكاسات ألماسية ساطعة',
-    priceCoins: 5000,
-    badgeGlyph: '💠',
-    previewClass: 'bg-gradient-to-b from-[#07142B] via-[#0F2A54] to-[#040814]',
-  },
-  {
-    id: 'bg_emerald_palace',
-    name: 'بلاط الزمرد الإمبراطوري',
-    subtitle: 'ثريات زمردية فاخرة محفورة بالذهب الخالص للسهرات الراقية',
-    priceCoins: 5000,
-    badgeGlyph: '💚',
-    previewClass: 'bg-gradient-to-b from-[#052319] via-[#0B3C2B] to-[#030D09]',
-  },
-  {
-    id: 'bg_ruby_throne',
-    name: 'عرش الياقوت الأحمر',
-    subtitle: 'ستائر مخملية عنابية مرصعة بشهب ذهبية فارهة',
-    priceCoins: 5000,
-    badgeGlyph: '♦️',
-    previewClass: 'bg-gradient-to-b from-[#2E0713] via-[#4C0D20] to-[#0C0307]',
-  },
-  {
-    id: 'bg_celestial_gold',
-    name: 'سماء المجرة الذهبية',
-    subtitle: 'سديم كوني ملكي تتطاير فيه نجوم الذهب والألماس',
-    priceCoins: 5000,
-    badgeGlyph: '🌌',
-    previewClass: 'bg-gradient-to-b from-[#140B2D] via-[#27144D] to-[#070412]',
-  },
-];
+export const STORE_LUXURY_BACKGROUNDS: StoreBackgroundItem[] = [];
 
 export const ROOM_BACKGROUNDS: Array<{
   id: string;

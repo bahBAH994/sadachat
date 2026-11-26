@@ -43,6 +43,7 @@ import { resolveAsset } from '../lib/assets';
 import {
   ROOM_REACTION_EMOJIS,
   formatCompactMetric,
+  isSuperAdminUser,
   getUserVipTierInfo,
   parseVipTierKey,
 } from '../lib/sadaCatalog';
@@ -76,10 +77,14 @@ import { Royal3DDieFaceBadge } from '../components/Royal3DDice';
 import { TieredGiftEffectsOverlay } from '../components/TieredGiftEffectsOverlay';
 import { safeGetItem } from '../lib/safeStorage';
 import { supabase } from '../lib/supabase';
+import { playWheelPegTick } from '../lib/sadaAudio';
+import {
+  getEconomySettingsFromSupabase,
+  type EconomySettings,
+} from '../lib/sadaEconomyService';
 
 const FIXED_CHAT_EMOJIS = ['😀', '😂', '😍', '🥰', '😎', '😭', '😡', '👍', '👏', '🙏', '❤️', '🔥'];
 const AGENCY_ID = '954546';
-const ROOM_WHEEL_ENTRY_FEES = [1000, 5000, 10000, 50000];
 const ROOM_WHEEL_SPIN_DURATION_MS = 3500;
 const ROOM_WHEEL_MAX_PLAYERS = 8;
 const ROOM_WHEEL_COLORS = [
@@ -168,13 +173,37 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
 }) => {
   const { user, updateLocalUser } = useAuth();
   const [round, setRound] = useState<RoomWheelRound | null>(null);
-  const [entryFee, setEntryFee] = useState(100);
+  const [entryFee, setEntryFee] = useState(1000);
+  const [economySettings, setEconomySettings] = useState<EconomySettings | null>(null);
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pendingEliminationId, setPendingEliminationId] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const roundRef = useRef<RoomWheelRound | null>(round);
+
+  useEffect(() => {
+    let active = true;
+    getEconomySettingsFromSupabase()
+      .then((settings) => {
+        if (!active) return;
+        setEconomySettings(settings);
+        setEntryFee(settings.wheelEntryFee);
+      })
+      .catch((loadError: unknown) => {
+        if (active) {
+          setNotice(
+            loadError instanceof Error
+              ? loadError.message
+              : 'تعذّر تحميل إعدادات دولاب الإقصاء.'
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const userRef = useRef(user);
   roundRef.current = round;
   userRef.current = user;
@@ -330,20 +359,32 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
     rotationRef.current += 1800 + spinAngle;
     setRotation(rotationRef.current);
     setSpinning(true);
-    const timer = window.setTimeout(
-      () => setSpinning(false),
-      ROOM_WHEEL_SPIN_DURATION_MS
-    );
-    return () => window.clearTimeout(timer);
+    const tickTimer = window.setInterval(() => playWheelPegTick(0.35), 150);
+    const timer = window.setTimeout(() => {
+      window.clearInterval(tickTimer);
+      setSpinning(false);
+      const selectedPlayer = round.players.find(
+        (player) => player.userId === round.spinningPlayerId
+      );
+      if (selectedPlayer) {
+        setPendingEliminationId(selectedPlayer.userId);
+        setNotice(`⚠️ سيتم إقصاء ${selectedPlayer.displayName} بعد ثلاث ثوانٍ`);
+      }
+    }, ROOM_WHEEL_SPIN_DURATION_MS);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearInterval(tickTimer);
+    };
   }, [round]);
 
   const alivePlayers = round
     ? round.players.filter((player) => !round.eliminated.includes(player.userId))
     : [];
   const isCreator = Boolean(round && user && round.creatorId === user.id);
+  const isSuperAdmin = isSuperAdminUser(user);
   const hasJoined = Boolean(round?.players.some((player) => player.userId === user?.id));
   const handleCreateRound = async () => {
-    if (!user || busy) return;
+    if (!user || busy || !economySettings) return;
     setBusy(true);
     setNotice(null);
     try {
@@ -374,6 +415,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
     if (
       !user ||
       !round ||
+      !economySettings ||
       busy ||
       joiningRef.current ||
       hasJoined ||
@@ -433,6 +475,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
       !round ||
       busy ||
       !isCreator ||
+      !isSuperAdmin ||
       round.status !== 'registering' ||
       round.players.length >= ROOM_WHEEL_MAX_PLAYERS
     ) return;
@@ -465,6 +508,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
     if (
       !user ||
       !round ||
+      !economySettings ||
       !isCreator ||
       round.status !== 'registering' ||
       round.players.length < 2 ||
@@ -504,6 +548,18 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
         await new Promise<void>((resolve) =>
           window.setTimeout(resolve, ROOM_WHEEL_SPIN_DURATION_MS)
         );
+        setPendingEliminationId(eliminated.userId);
+        setNotice(`⚠️ سيتم إقصاء ${eliminated.displayName} بعد ثلاث ثوانٍ`);
+        try {
+          await onSendChat(`⚠️ سيتم إقصاء ${eliminated.displayName} من دولاب الإقصاء خلال 3 ثوانٍ.`);
+        } catch (chatError) {
+          setNotice(
+            chatError instanceof Error
+              ? `تعذّر إعلان الإقصاء في الشات: ${chatError.message}`
+              : 'تعذّر إعلان الإقصاء في الشات.'
+          );
+        }
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 3000));
         currentRound = {
           ...spinningRound,
           eliminated: [...spinningRound.eliminated, eliminated.userId],
@@ -511,6 +567,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
           lastEliminatedId: eliminated.userId,
         };
         await publishRound(currentRound);
+        setPendingEliminationId(null);
         setNotice(`تم إقصاء ${eliminated.displayName}!`);
         try {
           await onSendChat(`🎡 تم إقصاء ${eliminated.displayName} من دولاب الإقصاء!`);
@@ -529,7 +586,11 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
 
       const winner = alive[0];
       let winnerCoins: number | undefined;
-      const payout = winner && !winner.test ? Math.floor(currentRound.prizePool * 0.8) : 0;
+      const commissionPct = economySettings.wheelCommissionPct;
+      const payout =
+        winner && !winner.test
+          ? Math.floor(currentRound.prizePool * (100 - commissionPct) / 100)
+          : 0;
       if (winner && payout > 0 && settledRoundRef.current !== currentRound.id) {
         settledRoundRef.current = currentRound.id;
         winnerCoins = await changeProfileCoins(winner.userId, payout);
@@ -551,7 +612,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
       );
       try {
         await onSendChat(
-          `🏆 تهانينا ${winner?.displayName || ''}! فاز بدولاب الإقصاء وربح ${payout.toLocaleString('en-US')} كوينز بعد خصم عمولة المنصة 20%.`
+          `🏆 تهانينا ${winner?.displayName || ''}! فاز بدولاب الإقصاء وربح ${payout.toLocaleString('en-US')} كوينز بعد خصم عمولة المنصة ${commissionPct}%.`
         );
       } catch (chatError) {
         setNotice(
@@ -631,30 +692,20 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
         {!round ? (
           <div className="space-y-3 rounded-2xl bg-black/25 p-3">
             <p className="text-sm font-bold text-white">أنشئ جولة واختر قيمة الدخول</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {ROOM_WHEEL_ENTRY_FEES.map((fee) => (
-                <button
-                  key={fee}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setEntryFee(fee)}
-                  className={`rounded-xl border px-2 py-2 text-sm font-extrabold ${
-                    entryFee === fee
-                      ? 'border-[#FCE9A6] bg-[#D4AF37] text-[#070913]'
-                      : 'border-white/15 bg-white/5 text-white'
-                  }`}
-                >
-                  {fee.toLocaleString('en-US')}
-                </button>
-              ))}
+            <div className="rounded-xl border border-[#FCE9A6]/30 bg-black/30 px-3 py-2 text-sm font-extrabold text-[#FCE9A6]">
+              رسوم الدخول: {entryFee.toLocaleString('en-US')} كوينز
             </div>
             <button
               type="button"
-              disabled={busy || !user}
+              disabled={busy || !user || !economySettings}
               onClick={() => void handleCreateRound()}
               className="gold-btn w-full rounded-xl py-2.5 text-sm font-extrabold disabled:opacity-50"
             >
-              {busy ? 'جارٍ إنشاء الجولة...' : 'إنشاء جولة'}
+              {busy
+                ? 'جارٍ إنشاء الجولة...'
+                : economySettings
+                  ? 'إنشاء جولة'
+                  : 'جارٍ تحميل إعدادات الدولاب...'}
             </button>
           </div>
         ) : (
@@ -664,7 +715,14 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
                 الدخول: <b className="text-[#FCE9A6]">{round.entryFee.toLocaleString('en-US')}</b>
               </span>
               <span className="text-slate-300">
-                مجموع الجائزة: <b className="text-emerald-300">{round.prizePool.toLocaleString('en-US')}</b>
+                مجموع الجائزة الصافية:{' '}
+                <b className="text-emerald-300">
+                  {economySettings
+                    ? Math.floor(
+                        round.prizePool * (100 - economySettings.wheelCommissionPct) / 100
+                      ).toLocaleString('en-US')
+                    : '—'}
+                </b>
               </span>
             </div>
 
@@ -716,10 +774,15 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
                       <g key={player.userId}>
                         <path
                           d={sectorPath}
-                          fill={ROOM_WHEEL_COLORS[index % ROOM_WHEEL_COLORS.length]}
-                          stroke="#FCE9A6"
+                          fill={
+                            pendingEliminationId === player.userId
+                              ? '#DC2626'
+                              : ROOM_WHEEL_COLORS[index % ROOM_WHEEL_COLORS.length]
+                          }
+                          stroke={pendingEliminationId === player.userId ? '#FCA5A5' : '#FCE9A6'}
                           strokeOpacity="0.8"
-                          strokeWidth="2"
+                          strokeWidth={pendingEliminationId === player.userId ? '5' : '2'}
+                          className={pendingEliminationId === player.userId ? 'animate-pulse' : ''}
                         />
                         <defs>
                           <clipPath id={avatarClipId}>
@@ -732,8 +795,8 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
                             cy="-11"
                             r="17"
                             fill="#070913"
-                            stroke="#FCE9A6"
-                            strokeWidth="2"
+                            stroke={pendingEliminationId === player.userId ? '#F87171' : '#FCE9A6'}
+                            strokeWidth={pendingEliminationId === player.userId ? '4' : '2'}
                           />
                           {player.avatarUrl && (
                             <image
@@ -752,7 +815,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
                             width="78"
                             height="16"
                             rx="7"
-                            fill="#070913"
+                            fill={pendingEliminationId === player.userId ? '#991B1B' : '#070913'}
                             fillOpacity="0.88"
                             stroke="#FCE9A6"
                             strokeOpacity="0.7"
@@ -812,19 +875,20 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
 
             {isCreator && round.status === 'registering' && (
               <div className="space-y-2">
-                <button
+                {isSuperAdmin && <button
                   type="button"
                   disabled={busy || round.players.length >= ROOM_WHEEL_MAX_PLAYERS}
                   onClick={() => void handleAddCompetitor()}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/40 bg-white/5 py-2 text-xs font-bold text-[#FCE9A6] disabled:opacity-45"
                 >
                   <Plus className="h-4 w-4" />
-                  إضافة منافس للتجربة
-                </button>
+                  + إضافة منافس للتجربة
+                </button>}
                 <button
                   type="button"
                   disabled={
                     busy ||
+                    !economySettings ||
                     round.players.length < 2
                   }
                   onClick={() => void handleStartRound()}
