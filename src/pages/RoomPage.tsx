@@ -853,6 +853,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
                 انتهت الجولة — الفائز: {round.players.find((player) => player.userId === round.winnerId)?.displayName}
               </p>
             )}
+          </>
         </div>
       </section>
     </div>
