@@ -859,7 +859,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
   
   
 
-interface RoomChatInputProps {
+interface RoomChatInputProps 
   inputRef: React.RefObject<HTMLInputElement | null>;
   roomContainerRef: React.RefObject<HTMLDivElement | null>;
   insertEmojiRef: React.MutableRefObject<(emoji: string) => void>;
