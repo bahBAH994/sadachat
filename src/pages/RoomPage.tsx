@@ -2213,7 +2213,7 @@ export const RoomPage: React.FC = () => {
       if (seat.userId === user.id || canManageSeatActions) {
         setSeatActionTarget(seat);
         return;
-      }
+      } 
 
       openMiniProfile(seat.userId, {
         displayName: seat.displayName || undefined,
