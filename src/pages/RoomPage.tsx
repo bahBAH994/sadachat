@@ -858,7 +858,6 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
       
   
   
-};
 
 interface RoomChatInputProps {
   inputRef: React.RefObject<HTMLInputElement | null>;
