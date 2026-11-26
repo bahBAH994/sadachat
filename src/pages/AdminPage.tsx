@@ -144,30 +144,6 @@ interface AdminOverview {
     pendingFemaleVoiceCount?: number;
   };
 
-  const handleSaveEconomySettings = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!economyDraft || savingEconomy) return;
-    setSavingEconomy(true);
-    try {
-      const saved = await updateEconomySettingsInSupabase(economyDraft);
-      setEconomyDraft(saved);
-      setData((current) =>
-        current ? { ...current, economySettings: saved } : current
-      );
-      showOk('تم حفظ أسعار وإعدادات الاقتصاد وتطبيقها.');
-    } catch (err) {
-      showErr(err, 'تعذّر حفظ إعدادات الاقتصاد.');
-    } finally {
-      setSavingEconomy(false);
-    }
-  };
-
-  const updateEconomyDraft = (
-    key: keyof EconomySettings,
-    value: number
-  ) => {
-    setEconomyDraft((current) => (current ? { ...current, [key]: value } : current));
-  };
 }
 
 function isShamCashRequest(value: unknown): value is ShamCashRequest {
@@ -420,6 +396,28 @@ export const AdminPage: React.FC = () => {
     } finally {
       setReviewingAgencyRequestId(null);
     }
+  };
+
+  const handleSaveEconomySettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!economyDraft || savingEconomy) return;
+    setSavingEconomy(true);
+    try {
+      const saved = await updateEconomySettingsInSupabase(economyDraft);
+      setEconomyDraft(saved);
+      setData((current) =>
+        current ? { ...current, economySettings: saved } : current
+      );
+      showOk('تم حفظ أسعار وإعدادات الاقتصاد وتطبيقها.');
+    } catch (err) {
+      showErr(err, 'تعذّر حفظ إعدادات الاقتصاد.');
+    } finally {
+      setSavingEconomy(false);
+    }
+  };
+
+  const updateEconomyDraft = (key: keyof EconomySettings, value: number) => {
+    setEconomyDraft((current) => (current ? { ...current, [key]: value } : current));
   };
 
   const handleApplicationReset = async () => {
