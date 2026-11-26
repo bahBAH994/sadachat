@@ -863,8 +863,8 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
   
 
 interface RoomChatInputProps 
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  roomContainerRef: React.RefObject<HTMLDivElement | null>;
+  inputRef: React.RefObject<HTMLInputElement | any>;
+  roomContainerRef: React.RefObject<HTMLDivElement | any>;
   insertEmojiRef: React.MutableRefObject<(emoji: string) => void>;
   onInputFocus: () => void;
   sendChat: (text: string) => Promise<void>;
