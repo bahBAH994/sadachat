@@ -81,6 +81,7 @@ interface ShamCashRequest {
   userEmail: string;
   userDisplayName: string;
   amount: number;
+  currency: 'USD' | 'SYP';
   accountAddress: string;
   transferReference: string;
   status: 'pending' | 'approved' | 'rejected';
@@ -96,7 +97,7 @@ interface ShamCashSettings {
 
 type ShamCashRequestInput = Pick<
   ShamCashRequest,
-  'type' | 'amount' | 'accountAddress' | 'transferReference'
+  'type' | 'amount' | 'currency' | 'accountAddress' | 'transferReference'
 >;
 
 export const WalletPage: React.FC = () => {
@@ -129,6 +130,7 @@ export const WalletPage: React.FC = () => {
   const [withdrawAmount, setWithdrawAmount] = useState('500');
   const [withdrawAddress, setWithdrawAddress] = useState('');
   const [shamCashDepositAmount, setShamCashDepositAmount] = useState('');
+  const [shamCashCurrency, setShamCashCurrency] = useState<'USD' | 'SYP'>('SYP');
   const [shamCashTransferReference, setShamCashTransferReference] = useState('');
   const [shamCashWithdrawalAmount, setShamCashWithdrawalAmount] = useState('');
   const [shamCashWithdrawalAddress, setShamCashWithdrawalAddress] = useState('');
@@ -254,6 +256,7 @@ export const WalletPage: React.FC = () => {
       await submitShamCashRequest({
         type: 'deposit',
         amount: Number(shamCashDepositAmount),
+        currency: shamCashCurrency,
         accountAddress: adminShamCashAddress,
         transferReference: shamCashTransferReference.trim(),
       });
@@ -282,6 +285,7 @@ export const WalletPage: React.FC = () => {
       await submitShamCashRequest({
         type: 'withdrawal',
         amount: Number(shamCashWithdrawalAmount),
+        currency: shamCashCurrency,
         accountAddress: shamCashWithdrawalAddress.trim(),
         transferReference: '',
       });
@@ -950,6 +954,14 @@ export const WalletPage: React.FC = () => {
                 dir="ltr"
                 className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
               />
+              <select
+                value={shamCashCurrency}
+                onChange={(e) => setShamCashCurrency(e.target.value as 'USD' | 'SYP')}
+                className="mt-2 w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-[#D4AF37]"
+              >
+                <option value="SYP">ليرة سورية (SYP)</option>
+                <option value="USD">دولار (USD)</option>
+              </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -997,6 +1009,14 @@ export const WalletPage: React.FC = () => {
                 dir="ltr"
                 className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
               />
+              <select
+                value={shamCashCurrency}
+                onChange={(e) => setShamCashCurrency(e.target.value as 'USD' | 'SYP')}
+                className="mt-2 w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-[#D4AF37]"
+              >
+                <option value="SYP">ليرة سورية (SYP)</option>
+                <option value="USD">دولار (USD)</option>
+              </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">

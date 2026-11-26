@@ -31,7 +31,7 @@ export const USER_COLUMNS =
   'id, email, display_name, bio, avatar_url, gender, female_voice_status, female_verified, female_verified_badge, female_voice_note, is_host, is_agent, agency_id, host_badge, host_agency_name, host_diamonds_earned, referral_code, referred_by, referral_count, referral_spins, frame_id, unlocked_frames, previous_permanent_frame_id, temp_frame_id, temp_frame_expires_at, active_entry_id, active_entry_name, temp_entry_expires_at, svip_level, svip_expires_at, coins, diamonds, level, xp, is_admin, is_banned, device_uuid, created_at, last_seen';
 
 export const ROOM_COLUMNS =
-  'id, title, category, description, host_id, host_name, host_avatar, cover_url, avatar_url, background_url, cover_image, is_private, password, max_seats, seats, listeners_count, is_active, total_gifts_coins, created_at';
+  'id, title, category, description, host_id, host_name, host_avatar, cover_url, avatar_url, background_url, cover_image, is_private, is_agency, password, max_seats, seats, listeners_count, is_active, total_gifts_coins, created_at';
 
 export const ROOM_MESSAGE_COLUMNS =
   'id, room_id, user_id, display_name, level, is_admin, vip_tier, host_badge, female_verified_badge, text, type, timestamp';
@@ -219,6 +219,7 @@ export function rowToRoom(
   return {
     id: String(r.id),
     isAgency,
+    is_agency: isAgency,
     title: String(r.title),
     category: (r.category as Room['category']) || 'حوار',
     description: String(r.description || ''),
@@ -737,34 +738,52 @@ export async function recordTransaction(tx: Omit<Transaction, 'id' | 'timestamp'
 export async function applyHostEarningsAndAgencyCommission(
   hostUser: User,
   diamondsEarned: number,
-  _now: string
+  now: string
 ): Promise<number> {
   if (diamondsEarned <= 0) return 0;
   const nextHostDiamonds = (hostUser.hostDiamondsEarned || 0) + diamondsEarned;
-  hostUser.hostDiamondsEarned = nextHostDiamonds;
-  await supabase
+  const { error: hostUpdateError } = await supabase
     .from('sada_users')
     .update({ host_diamonds_earned: nextHostDiamonds })
     .eq('id', hostUser.id);
+  if (hostUpdateError) {
+    throw new Error(`تعذّر تحديث رصيد ألماس المضيف: ${hostUpdateError.message}`);
+  }
+  hostUser.hostDiamondsEarned = nextHostDiamonds;
+
+  await recordTransaction({
+    userId: hostUser.id,
+    type: 'host_earning',
+    amount: diamondsEarned,
+    currency: 'diamonds',
+    description: 'ألماس مكتسب من هدايا ورسائل صَدَى',
+    timestamp: now,
+  });
 
   if (!hostUser.agencyId) return 0;
 
-  const { data: agencyRow } = await supabase
+  const { data: agencyRow, error: agencyLoadError } = await supabase
     .from('sada_agencies')
     .select('id, owner_id, status, total_host_diamonds')
     .eq('id', hostUser.agencyId)
     .maybeSingle();
 
+  if (agencyLoadError) {
+    throw new Error(`تعذّر تحميل وكالة المضيف: ${agencyLoadError.message}`);
+  }
   if (!agencyRow || agencyRow.status === 'suspended') return 0;
   const ownerId = String(agencyRow.owner_id);
   if (ownerId === hostUser.id) return 0;
 
-  await supabase
+  const { error: agencyUpdateError } = await supabase
     .from('sada_agencies')
     .update({
       total_host_diamonds: Number(agencyRow.total_host_diamonds || 0) + diamondsEarned,
     })
     .eq('id', agencyRow.id);
+  if (agencyUpdateError) {
+    throw new Error(`تعذّر تحديث إجمالي ألماس الوكالة: ${agencyUpdateError.message}`);
+  }
 
   return 0;
 }

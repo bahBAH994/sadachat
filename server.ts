@@ -803,6 +803,7 @@ async function startServer() {
       hostName: auth.user.displayName,
       hostAvatar: auth.user.avatarUrl,
       coverImage: category === 'مسابقات' ? 'competition_crest' : 'royal_stage',
+      backgroundImage: 'dragon_dark',
       isPrivate: Boolean(isPrivate),
       password: isPrivate && password ? password.trim() : undefined,
       maxSeats: seatCount,
@@ -3028,6 +3029,7 @@ async function startServer() {
         diamondsPotential: giftDiamondsAwarded,
         diamondsClaimed: true,
         diamondsAwarded: giftDiamondsAwarded,
+        isRead: false,
         giftId: selectedGift.id,
         giftName: selectedGift.name,
         giftGlyph: selectedGift.glyph,
@@ -3094,6 +3096,7 @@ async function startServer() {
       diamondsPotential: shouldChargeCoins ? pmReplyDiamonds : 0,
       diamondsClaimed: !shouldChargeCoins,
       diamondsAwarded: 0,
+      isRead: false,
       createdAt: now,
       repliedAt: null,
     };

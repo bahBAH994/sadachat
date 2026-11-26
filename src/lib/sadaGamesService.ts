@@ -1157,7 +1157,10 @@ export async function playLadderActionInSupabase(
   action: 'roll' | 'cashout',
   betInput: number
 ): Promise<LadderActionResponse> {
-  const freshUser = await fetchFreshUser(userId);
+  const [freshUser, state] = await Promise.all([
+    fetchFreshUser(userId),
+    getPlatformState(),
+  ]);
   const ladderSessions = { ...(state.ladderSessions || {}) };
   let session = ladderSessions[userId] || null;
 

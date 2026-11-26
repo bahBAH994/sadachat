@@ -635,6 +635,7 @@ export async function loadDatabaseFromSupabase(
       diamondsPotential: Number(pm.diamonds_potential || 0),
       diamondsClaimed: Boolean(pm.diamonds_claimed),
       diamondsAwarded: Number(pm.diamonds_awarded || 0),
+      isRead: Boolean(pm.is_read),
       giftId: (pm.gift_id as string | undefined) || undefined,
       giftName: (pm.gift_name as string | undefined) || undefined,
       giftGlyph: (pm.gift_glyph as string | undefined) || undefined,

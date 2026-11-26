@@ -801,6 +801,24 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         setTimeout(() => setCelebration(null), 4200);
       }
     } catch (err) {
+      if (optimisticMessageId) {
+        setConversations((current) =>
+          current.map((conversation) =>
+            conversation.peer.id === selectedPeerId
+              ? {
+                  ...conversation,
+                  messages: conversation.messages.filter(
+                    (message) => message.id !== optimisticMessageId
+                  ),
+                  lastMessage:
+                    conversation.messages
+                      .filter((message) => message.id !== optimisticMessageId)
+                      .slice(-1)[0] || null,
+                }
+              : conversation
+          )
+        );
+      }
       setError(err instanceof Error ? err.message : 'تعذّر إرسال الرسالة الخاصة.');
       setComboSession(null);
     } finally {

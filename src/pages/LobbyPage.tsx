@@ -153,7 +153,6 @@ const LobbyRoomCard = memo<LobbyRoomCardProps>(
                 <Lock
                   className="w-3.5 h-3.5 text-amber-600 shrink-0"
                   aria-label="الوكالة مقفلة برمز سري"
-                  title="الوكالة مقفلة برمز سري"
                 />
               )}
             </div>
@@ -530,15 +529,15 @@ export const LobbyPage: React.FC = () => {
 
   const myOwnedRooms = useMemo(() => {
     if (!user) return [];
-    return rooms.filter((r) => r.hostId === user.id && r.is_agency !== true);
+    return rooms.filter((r) => r.hostId === user.id && !r.isAgency);
   }, [rooms, user]);
 
   const myAgencyRoom = useMemo(() => {
     if (!user?.agencyId) return undefined;
     const ownerId = agencyOwnerMap[user.agencyId];
     return (
-      rooms.find((r) => r.is_agency === true && ownerId && r.hostId === ownerId) ||
-      rooms.find((r) => r.is_agency === true && r.hostId === user.id)
+      rooms.find((r) => r.isAgency && ownerId && r.hostId === ownerId) ||
+      rooms.find((r) => r.isAgency && r.hostId === user.id)
     );
   }, [rooms, user, agencyOwnerMap]);
 
@@ -550,8 +549,8 @@ export const LobbyPage: React.FC = () => {
   const filteredRooms = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = rooms.filter((r) => {
-      if (activeChip === 'الوكالات' && r.is_agency !== true) return false;
-      if (activeChip === 'الغرف الخاصة' && r.is_agency === true) return false;
+      if (activeChip === 'الوكالات' && !r.isAgency) return false;
+      if (activeChip === 'الغرف الخاصة' && r.isAgency) return false;
       if (selectedCountry.code !== 'ALL') {
         const hostCountry = userMeta[r.hostId]?.country?.trim();
         if (
@@ -1101,16 +1100,15 @@ export const LobbyPage: React.FC = () => {
                   <Mic2 className="w-4 h-4 text-emerald-600" />
                   <span>غرفتي الصوتية</span>
                 </h2>
-                {myOwnedRooms.length === 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowCreate(true)}
-                    className="emerald-btn rounded-xl px-3 py-1.5 text-xs font-extrabold flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>إنشاء غرفتي</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  disabled={openingMyRoom}
+                  onClick={() => void handleGoToAgencyChat()}
+                  className="emerald-btn rounded-xl px-3 py-1.5 text-xs font-extrabold flex items-center gap-1 cursor-pointer disabled:opacity-60"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{openingMyRoom ? 'جارٍ الفتح...' : 'غرفتي / وكالتي'}</span>
+                </button>
               </div>
 
               {myOwnedRooms.length === 0 ? (
@@ -1118,13 +1116,6 @@ export const LobbyPage: React.FC = () => {
                   <p className="text-xs sm:text-sm font-bold text-slate-600">
                     لا توجد غرفة صوتية خاصة بك مفتوحة حالياً
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowCreate(true)}
-                    className="emerald-btn rounded-2xl px-5 py-2.5 text-xs font-extrabold cursor-pointer"
-                  >
-                    افتتاح غرفتي الآن
-                  </button>
                 </div>
               ) : (
                 myOwnedRooms.map((room) => {
@@ -1155,7 +1146,6 @@ export const LobbyPage: React.FC = () => {
                               <Lock
                                 className="w-3.5 h-3.5 text-amber-600 shrink-0"
                                 aria-label="الوكالة مقفلة برمز سري"
-                                title="الوكالة مقفلة برمز سري"
                               />
                             )}
                           </span>
@@ -1214,7 +1204,6 @@ export const LobbyPage: React.FC = () => {
                               <Lock
                                 className="w-3.5 h-3.5 text-amber-600 shrink-0"
                                 aria-label="الوكالة مقفلة برمز سري"
-                                title="الوكالة مقفلة برمز سري"
                               />
                             )}
                           </span>

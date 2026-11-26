@@ -1123,8 +1123,9 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
     const settledRound = roomGameRound;
     const ownBet = settledRound.bets.find((roundBet) => roundBet.userId === user.id) ?? null;
     handledRoomRoundRef.current = settledRound.roundId;
-    if ('number' in settledRound.result) {
-      const outcome = settledRound.result;
+    const outcome = settledRound.result;
+    if (!outcome) return;
+    if ('number' in outcome) {
       setRouletteResult(null);
       setIsRouletteSpinning(true);
       const sliceAngle = 360 / 37;
@@ -1184,7 +1185,7 @@ export const GamesCenterPage: React.FC<GamesCenterPageProps> = ({
 
     const diceCount =
       diceGame === 'double_dice' ? 2 : diceGame === 'prediction_dice' ? 1 : 3;
-    const finalDice = settledRound.result.dice.slice(0, diceCount);
+    const finalDice = outcome.dice.slice(0, diceCount);
     setDiceResult(null);
     setIsDiceRolling(true);
     playDiceTumbleSound();

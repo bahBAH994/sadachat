@@ -317,9 +317,14 @@ export interface Transaction {
     | 'slot_spin'
     | 'slot_win'
     | 'game_bet'
-    | 'game_win';
+    | 'game_win'
+    | 'host_payroll'
+    | 'agency_payroll'
+    | 'host_earning'
+    | 'sham_cash_deposit'
+    | 'sham_cash_withdrawal';
   amount: number;
-  currency: 'coins' | 'diamonds';
+  currency: 'coins' | 'diamonds' | 'usdt';
   description: string;
   timestamp: string;
 }
@@ -501,9 +506,35 @@ export interface PlatformSettings {
   customGifts?: GiftItem[];
   userVipOverrides?: Record<string, VipTierKey>;
   customVipIds?: Record<string, string>;
+  hostMonthlyTargetDiamonds?: number;
+  hostDiamondsPerUsdt?: number;
+  hostRechargePayoutCapRate?: number;
+  agencyPayrollCommissionRate?: number;
+  shamCashUsdCoinsRate?: number;
+  shamCashSypCoinsPerThousand?: number;
+  shamCashRequests?: ShamCashRequest[];
+  adminShamCashAddress?: string;
+  adminShamCashBarcode?: string;
   latestAdminAnnouncement?: GlobalAdminAnnouncement | null;
   globalZeroResetV1Applied?: boolean;
   grandCompetition?: GrandCompetitionSettings;
+}
+
+export interface ShamCashRequest {
+  id: string;
+  type: 'deposit' | 'withdrawal';
+  userId: string;
+  userEmail: string;
+  userDisplayName: string;
+  amount: number;
+  currency?: 'USD' | 'SYP';
+  accountAddress: string;
+  transferReference: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt: string | null;
+  coinsCredited?: number;
+  coinsDebited?: number;
 }
 
 export interface GrandCompetitionSettings {

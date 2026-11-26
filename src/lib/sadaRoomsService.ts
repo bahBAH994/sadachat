@@ -336,11 +336,15 @@ export async function getUserActiveRoomsInSupabase(
     return room;
   });
   const agencyRoom = agencyOwnerId
-    ? activeRooms.find((room) => room.hostId === agencyOwnerId) || null
+    ? activeRooms.find((room) => room.hostId === agencyOwnerId && room.isAgency) ||
+      activeRooms.find((room) => room.hostId === agencyOwnerId) ||
+      null
     : null;
   const personalRoom =
-    activeRooms.find((room) => room.hostId === user.id && room.hostId !== agencyOwnerId) ||
-    (agencyOwnerId ? null : activeRooms.find((room) => room.hostId === user.id)) ||
+    activeRooms.find(
+      (room) => room.hostId === user.id && room.hostId !== agencyOwnerId && !room.isAgency
+    ) ||
+    (agencyOwnerId ? null : activeRooms.find((room) => room.hostId === user.id && !room.isAgency)) ||
     null;
 
   return { personalRoom, agencyRoom };
@@ -355,6 +359,7 @@ export async function createRoomInSupabase(
     maxSeats?: number;
     isPrivate?: boolean;
     password?: string;
+    isAgency?: boolean;
   }
 ): Promise<Room> {
   const cleanTitle = (payload.title || '').trim();
@@ -388,6 +393,7 @@ export async function createRoomInSupabase(
     background_url: 'dragon_dark',
     cover_image: 'dragon_dark',
     is_private: Boolean(payload.isPrivate),
+    is_agency: Boolean(payload.isAgency),
     password: cleanPin || null,
     max_seats: seatsCount,
     seats,
@@ -413,10 +419,10 @@ export async function createRoomInSupabase(
 
   const { error } = await supabase.from('sada_rooms').insert(row);
   if (error) {
-    throw new Error('تعذّر إنشاء الغرفة الصوتية في Supabase.');
+    throw new Error(`تعذّر إنشاء الغرفة الصوتية في Supabase: ${error.message}`);
   }
 
-  await supabase.from('sada_room_messages').insert({
+  const { error: welcomeError } = await supabase.from('sada_room_messages').insert({
     id: welcomeMsg.id,
     room_id: roomId,
     user_id: welcomeMsg.userId,
@@ -430,6 +436,15 @@ export async function createRoomInSupabase(
     type: welcomeMsg.type,
     timestamp: welcomeMsg.timestamp,
   });
+  if (welcomeError) {
+    const { error: rollbackError } = await supabase.from('sada_rooms').delete().eq('id', roomId);
+    if (rollbackError) {
+      throw new Error(
+        `تعذّر حفظ رسالة الترحيب (${welcomeError.message}) أو التراجع عن إنشاء الغرفة (${rollbackError.message}).`
+      );
+    }
+    throw new Error(`تعذّر حفظ رسالة ترحيب الغرفة: ${welcomeError.message}`);
+  }
 
   const { password: _pwd, ...sanitized } = rowToRoom(row, [welcomeMsg]);
   return sanitized;

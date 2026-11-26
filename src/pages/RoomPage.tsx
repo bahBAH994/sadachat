@@ -1775,11 +1775,13 @@ export const RoomPage: React.FC = () => {
     setRoomAgencyId(null);
     if (!room?.hostId) return;
 
-    void supabase
-      .from('sada_users')
-      .select('agency_id')
-      .eq('id', room.hostId)
-      .maybeSingle()
+    void Promise.resolve(
+      supabase
+        .from('sada_users')
+        .select('agency_id')
+        .eq('id', room.hostId)
+        .maybeSingle()
+    )
       .then(({ data, error: agencyError }) => {
         if (agencyError) throw new Error(agencyError.message);
         if (active) setRoomAgencyId(data?.agency_id ? String(data.agency_id) : null);
@@ -2265,9 +2267,13 @@ export const RoomPage: React.FC = () => {
     e.preventDefault();
     if (!chatText.trim()) return;
     const text = chatText.trim();
-    setChatText('');
-    setShowEmojiPicker(false);
-    await sendChat(text);
+    try {
+      await sendChat(text);
+      setChatText('');
+      setShowEmojiPicker(false);
+    } catch {
+      setChatText(text);
+    }
   };
 
   const handlePickSeatEmoji = (item: (typeof ROOM_REACTION_EMOJIS)[number]) => {
@@ -2448,7 +2454,6 @@ export const RoomPage: React.FC = () => {
                         <Lock
                           className="w-3 h-3 text-amber-300 shrink-0"
                           aria-label={`${isAgency ? 'الوكالة' : 'الغرفة'} مقفلة برمز سري`}
-                          title={`${isAgency ? 'الوكالة' : 'الغرفة'} مقفلة برمز سري`}
                         />
                       )}
                     </span>

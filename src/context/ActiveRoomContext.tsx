@@ -1365,6 +1365,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'تعذّر إرسال الرسالة.');
+        throw err;
       }
     },
     [room, user]

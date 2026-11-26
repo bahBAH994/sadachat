@@ -22,25 +22,30 @@ export type AdminUserRoleChoice = 'user' | 'vip1' | 'vip2' | 'vip3' | 'svip' | '
 
 interface AdminUsersTabProps {
   users: User[];
+  customVipIds: Record<string, string>;
   search: string;
   onSearchChange: (value: string) => void;
   onCoinsAdjust: (targetId: string, delta: number) => Promise<void>;
   onRoleChange: (target: User, roleChoice: AdminUserRoleChoice) => Promise<void>;
   onToggleBan: (target: User) => Promise<void>;
+  onVipIdChange: (targetId: string, vipId: string) => Promise<void>;
 }
 
 type UserFilter = 'all' | 'vip' | 'admins' | 'banned';
 
 export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   users,
+  customVipIds,
   search,
   onSearchChange,
   onCoinsAdjust,
   onRoleChange,
   onToggleBan,
+  onVipIdChange,
 }) => {
   const [filter, setFilter] = useState<UserFilter>('all');
   const [coinDrafts, setCoinDrafts] = useState<Record<string, string>>({});
+  const [vipIdDrafts, setVipIdDrafts] = useState<Record<string, string>>({});
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
   const filteredUsers = useMemo(() => {
@@ -167,6 +172,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
             const roleChoice = resolveCurrentRoleChoice(u, vipInfo.key);
             const isBusy = busyUserId === u.id;
             const coinInputVal = coinDrafts[u.id] ?? '1000';
+            const vipIdInputVal = vipIdDrafts[u.id] ?? customVipIds[u.id] ?? '';
 
             return (
               <article
@@ -323,6 +329,37 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                       <span>خصم</span>
                     </button>
                   </div>
+                </div>
+
+                {/* Rank & Ban Direct Controls */}
+                <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-[#070913]/75 border border-[#D4AF37]/20 p-2.5">
+                  <label className="flex-1 min-w-[165px]">
+                    <span className="mb-1 block text-[10px] font-bold text-[#FCE9A6]">
+                      رقم ID مميز يدوي
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={12}
+                      value={vipIdInputVal}
+                      onChange={(e) =>
+                        setVipIdDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
+                      }
+                      disabled={isBusy}
+                      placeholder="أدخل الرقم أو اتركه فارغاً للإلغاء"
+                      className="w-full min-h-[40px] rounded-xl bg-[#0B0F20] border border-[#D4AF37]/30 px-3 text-xs font-mono-num text-white focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() =>
+                      void runAction(u.id, () => onVipIdChange(u.id, vipIdInputVal))
+                    }
+                    className="min-h-[40px] rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/40 px-3 text-xs font-bold text-[#FCE9A6] cursor-pointer disabled:opacity-50"
+                  >
+                    حفظ / تفعيل الرقم
+                  </button>
                 </div>
 
                 {/* Rank & Ban Direct Controls */}

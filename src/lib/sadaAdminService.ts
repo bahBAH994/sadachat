@@ -10,6 +10,7 @@ import type {
   PlatformSettings,
   Room,
   SecurityLog,
+  ShamCashRequest,
   UsdtDepositRequest,
   UsdtWithdrawalRequest,
   User,
@@ -20,6 +21,7 @@ import {
   getGiftEffectTier,
   getRechargeRewardTier,
   getUserVipTierInfo,
+  setCustomVipIdsCache,
   STORE_3D_ITEMS,
   SUPER_ADMIN_EMAIL,
   TEMP_ONLY_FRAME_IDS,
@@ -65,6 +67,15 @@ export interface AdminOverviewPayload {
   usdtWithdrawals: UsdtWithdrawalRequest[];
   femaleVoiceRequests: FemaleVoiceVerificationRequest[];
   hostJoinApplications: HostJoinApplication[];
+  monthlyTransactions: Array<{
+    id: string;
+    user_id: string;
+    type: string;
+    amount: number;
+    currency: string;
+    description: string;
+    timestamp: string;
+  }>;
   stats: {
     totalUsers: number;
     activeRooms: number;
@@ -92,6 +103,9 @@ export async function resetApplicationDataInSupabase(): Promise<void> {
 }
 
 export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPayload> {
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
   const [
     usersRes,
     locksRes,
@@ -104,6 +118,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
     withdrawalsRes,
     femaleRes,
     usersCountRes,
+    monthlyTransactionsRes,
     state,
   ] = await Promise.all([
     supabase.from('sada_users').select(USER_COLUMNS).order('created_at', { ascending: false }),
@@ -120,8 +135,31 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
       .select(FEMALE_VOICE_REQ_COLUMNS)
       .order('created_at', { ascending: false }),
     supabase.from('sada_users').select('id', { count: 'exact', head: true }),
+    supabase
+      .from('sada_transactions')
+      .select('id, user_id, type, amount, currency, description, timestamp')
+      .gte('timestamp', monthStart.toISOString())
+      .in('type', ['host_earning', 'host_payroll', 'agency_payroll', 'usdt_deposit', 'topup', 'sham_cash_deposit']),
     getPlatformState({ forceRefresh: true }),
   ]);
+
+  const failedQuery = [
+    usersRes,
+    locksRes,
+    logsRes,
+    roomsRes,
+    compsRes,
+    agenciesRes,
+    questionsRes,
+    depositsRes,
+    withdrawalsRes,
+    femaleRes,
+    usersCountRes,
+    monthlyTransactionsRes,
+  ].find((result) => result.error);
+  if (failedQuery?.error) {
+    throw new Error(`تعذّر تحميل بيانات لوحة الإدارة: ${failedQuery.error.message}`);
+  }
 
   const rawUsers = (usersRes.data || []).map(rowToUser);
   const vipTotals = await fetchUsersVipTotalsBatch(rawUsers.map((u) => u.id)).catch(
@@ -173,6 +211,7 @@ export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPaylo
     usdtWithdrawals,
     femaleVoiceRequests,
     hostJoinApplications,
+    monthlyTransactions: monthlyTransactionsRes.data || [],
     stats: {
       totalUsers: Number(usersCountRes.count ?? users.length),
       activeRooms,
@@ -280,6 +319,207 @@ export async function updateAdminUserInSupabase(
   }
 
   return finalUser;
+}
+
+export async function setAdminUserVipIdInSupabase(
+  targetId: string,
+  requestedNumber: string
+): Promise<void> {
+  const cleanNumber = requestedNumber.trim();
+  if (cleanNumber && !/^\d{1,12}$/.test(cleanNumber)) {
+    throw new Error('يجب أن يتكون رقم ID المميز من أرقام فقط.');
+  }
+
+  const [{ data: target, error: targetError }, state] = await Promise.all([
+    supabase.from('sada_users').select('id').eq('id', targetId).maybeSingle(),
+    getPlatformState({ forceRefresh: true }),
+  ]);
+  if (targetError) throw new Error(`تعذّر تحميل الحساب: ${targetError.message}`);
+  if (!target) throw new Error('العضو غير موجود.');
+
+  const customVipIds = { ...(state.settings.customVipIds || {}) };
+  if (cleanNumber) {
+    const owner = Object.entries(customVipIds).find(
+      ([userId, number]) => userId !== targetId && number === cleanNumber
+    );
+    if (owner) throw new Error('رقم ID هذا مفعّل لمستخدم آخر بالفعل.');
+  }
+
+  const { data: previousCatalogItem, error: previousLoadError } = await supabase
+    .from('sada_vip_ids_catalog')
+    .select('id')
+    .eq('owner_id', targetId)
+    .maybeSingle();
+  if (previousLoadError) throw new Error(previousLoadError.message);
+
+  let nextCatalogItemId: string | null = null;
+  if (cleanNumber) {
+    const { data: nextCatalogItem, error: catalogError } = await supabase
+      .from('sada_vip_ids_catalog')
+      .select('id, owner_id')
+      .eq('number', cleanNumber)
+      .maybeSingle();
+    if (catalogError) throw new Error(catalogError.message);
+    if (nextCatalogItem?.owner_id && nextCatalogItem.owner_id !== targetId) {
+      throw new Error('رقم ID هذا مملوك لمستخدم آخر بالفعل.');
+    }
+    nextCatalogItemId = nextCatalogItem?.id || null;
+  }
+
+  if (previousCatalogItem && previousCatalogItem.id !== nextCatalogItemId) {
+    const { error } = await supabase
+      .from('sada_vip_ids_catalog')
+      .update({ owner_id: null })
+      .eq('id', previousCatalogItem.id);
+    if (error) throw new Error(`تعذّر إلغاء الرقم السابق: ${error.message}`);
+  }
+
+  if (nextCatalogItemId) {
+    const { error } = await supabase
+      .from('sada_vip_ids_catalog')
+      .update({ owner_id: targetId })
+      .eq('id', nextCatalogItemId);
+    if (error) {
+      if (previousCatalogItem && previousCatalogItem.id !== nextCatalogItemId) {
+        await supabase
+          .from('sada_vip_ids_catalog')
+          .update({ owner_id: targetId })
+          .eq('id', previousCatalogItem.id);
+      }
+      throw new Error(`تعذّر تفعيل الرقم المميز: ${error.message}`);
+    }
+  }
+
+  if (cleanNumber) customVipIds[targetId] = cleanNumber;
+  else delete customVipIds[targetId];
+
+  try {
+    const saved = await savePlatformState({
+      settings: { ...state.settings, customVipIds },
+    });
+    setCustomVipIdsCache(saved.settings.customVipIds);
+  } catch (error) {
+    if (nextCatalogItemId) {
+      await supabase
+        .from('sada_vip_ids_catalog')
+        .update({ owner_id: null })
+        .eq('id', nextCatalogItemId);
+    }
+    if (previousCatalogItem) {
+      await supabase
+        .from('sada_vip_ids_catalog')
+        .update({ owner_id: targetId })
+        .eq('id', previousCatalogItem.id);
+    }
+    throw error;
+  }
+}
+
+export async function reviewShamCashRequestInSupabase(
+  requestId: string,
+  decision: 'approved' | 'rejected',
+  coinsAmount: number,
+  currency: 'USD' | 'SYP'
+): Promise<void> {
+  const state = await getPlatformState({ forceRefresh: true });
+  const requests = state.settings.shamCashRequests || [];
+  const index = requests.findIndex((item) => item.id === requestId);
+  if (index < 0) throw new Error('طلب شام كاش غير موجود.');
+
+  const request = requests[index] as ShamCashRequest;
+  if (request.status !== 'pending') throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
+  const amount = Math.floor(coinsAmount);
+  if (decision === 'approved' && (!Number.isFinite(amount) || amount <= 0)) {
+    throw new Error('أدخل كمية كوينز صحيحة للاعتماد.');
+  }
+
+  let nextBalance: number | null = null;
+  let previousBalance: number | null = null;
+  let transactionId: string | null = null;
+  if (decision === 'approved') {
+    const { data: userRow, error: userError } = await supabase
+      .from('sada_users')
+      .select('id, coins')
+      .eq('id', String(request.userId || ''))
+      .maybeSingle();
+    if (userError) throw new Error(`تعذّر تحميل رصيد صاحب الطلب: ${userError.message}`);
+    if (!userRow) throw new Error('صاحب طلب شام كاش غير موجود.');
+
+    previousBalance = Number(userRow.coins || 0);
+    const delta = request.type === 'deposit' ? amount : -amount;
+    nextBalance = previousBalance + delta;
+    if (nextBalance < 0) throw new Error('رصيد المستخدم لا يكفي لاعتماد طلب السحب.');
+
+    const { data: updated, error: balanceError } = await supabase
+      .from('sada_users')
+      .update({ coins: nextBalance })
+      .eq('id', String(request.userId))
+      .eq('coins', previousBalance)
+      .select('id')
+      .maybeSingle();
+    if (balanceError) throw new Error(`تعذّر تحديث رصيد المستخدم: ${balanceError.message}`);
+    if (!updated) throw new Error('تغيّر رصيد المستخدم أثناء المراجعة. أعد المحاولة.');
+
+    transactionId = genId('shamtx');
+    try {
+      await recordTransaction({
+        id: transactionId,
+        userId: String(request.userId),
+        type: request.type === 'deposit' ? 'sham_cash_deposit' : 'sham_cash_withdrawal',
+        amount: delta,
+        currency: 'coins',
+        description: `اعتماد شام كاش ${Number(request.amount || 0)} ${currency}`,
+      });
+    } catch (error) {
+      const { error: rollbackError } = await supabase
+        .from('sada_users')
+        .update({ coins: previousBalance })
+        .eq('id', String(request.userId))
+        .eq('coins', nextBalance);
+      if (rollbackError) {
+        throw new Error(
+          `تعذّر تسجيل الحركة (${error instanceof Error ? error.message : 'خطأ غير معروف'}) أو التراجع عن تحديث الرصيد (${rollbackError.message}).`
+        );
+      }
+      throw error;
+    }
+  }
+
+  const nextRequests = [...requests];
+  nextRequests[index] = {
+    ...request,
+    status: decision,
+    reviewedAt: new Date().toISOString(),
+    ...(decision === 'approved'
+      ? {
+          coinsCredited: request.type === 'deposit' ? amount : 0,
+          coinsDebited: request.type === 'withdrawal' ? amount : 0,
+        }
+      : {}),
+  };
+  try {
+    await savePlatformState({
+      settings: { ...state.settings, shamCashRequests: nextRequests },
+    });
+  } catch (error) {
+    if (transactionId && previousBalance !== null && nextBalance !== null) {
+      const [{ error: balanceRollbackError }, { error: transactionRollbackError }] =
+        await Promise.all([
+          supabase
+            .from('sada_users')
+            .update({ coins: previousBalance })
+            .eq('id', String(request.userId))
+            .eq('coins', nextBalance),
+          supabase.from('sada_transactions').delete().eq('id', transactionId),
+        ]);
+      if (balanceRollbackError || transactionRollbackError) {
+        throw new Error(
+          `تعذّر حفظ نتيجة المراجعة (${error instanceof Error ? error.message : 'خطأ غير معروف'}) أو إلغاء آثار العملية (${balanceRollbackError?.message || transactionRollbackError?.message}).`
+        );
+      }
+    }
+    throw error;
+  }
 }
 
 export async function unlockDeviceInSupabase(uuid: string): Promise<void> {
@@ -561,28 +801,42 @@ export async function updatePrizePoolInSupabase(
 }
 
 export async function approveUsdtDepositInSupabase(depositId: string): Promise<void> {
-  const [{ data: depRow }, state] = await Promise.all([
+  const [{ data: depRow, error: depositError }, state] = await Promise.all([
     supabase.from('sada_usdt_deposits').select(DEPOSIT_COLUMNS).eq('id', depositId).maybeSingle(),
     getPlatformState(),
   ]);
+  if (depositError) throw new Error(`تعذّر تحميل طلب الإيداع: ${depositError.message}`);
   if (!depRow) throw new Error('طلب الإيداع غير موجود.');
   if (depRow.status !== 'pending') throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
 
   const dep = rowToDeposit(depRow);
-  const { data: userRow } = await supabase
+  const { data: userRow, error: userError } = await supabase
     .from('sada_users')
     .select(USER_COLUMNS)
     .eq('id', dep.userId)
     .maybeSingle();
+  if (userError) throw new Error(`تعذّر تحميل صاحب الطلب: ${userError.message}`);
   if (!userRow) throw new Error('صاحب الطلب غير موجود.');
 
   const u = rowToUser(userRow);
   const now = new Date().toISOString();
-
-  await supabase
+  const restorePendingStatus = async () => {
+    const { error } = await supabase
+      .from('sada_usdt_deposits')
+      .update({ status: 'pending', reviewed_at: null })
+      .eq('id', depositId)
+      .eq('status', 'approved');
+    if (error) throw new Error(`تعذّر إعادة الطلب إلى الانتظار: ${error.message}`);
+  };
+  const { data: approvedDeposit, error: approvalError } = await supabase
     .from('sada_usdt_deposits')
     .update({ status: 'approved', reviewed_at: now })
-    .eq('id', depositId);
+    .eq('id', depositId)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+  if (approvalError) throw new Error(`تعذّر اعتماد طلب الإيداع: ${approvalError.message}`);
+  if (!approvedDeposit) throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
 
   const tier = getRechargeRewardTier(dep.amountUsdt, state.settings.rechargeRewardTiers);
   const nextUnlocked = [...u.unlockedFrames];
@@ -613,7 +867,10 @@ export async function approveUsdtDepositInSupabase(depositId: string): Promise<v
   }
 
   // Unlock 3D Store items reached by cumulative recharge
-  const [{ data: approvedDeps }, { data: rechargeTxs }] = await Promise.all([
+  const [
+    { data: approvedDeps, error: approvedDepsError },
+    { data: rechargeTxs, error: rechargeTxsError },
+  ] = await Promise.all([
     supabase
       .from('sada_usdt_deposits')
       .select('coins_credited')
@@ -625,6 +882,12 @@ export async function approveUsdtDepositInSupabase(depositId: string): Promise<v
       .eq('user_id', u.id)
       .in('type', ['topup', 'admin_grant']),
   ]);
+  if (approvedDepsError || rechargeTxsError) {
+    await restorePendingStatus();
+    throw new Error(
+      `تعذّر حساب إجمالي الشحن: ${approvedDepsError?.message || rechargeTxsError?.message}`
+    );
+  }
   const totalFromDeps = (approvedDeps || []).reduce(
     (sum, d) => sum + Math.max(0, Number(d.coins_credited || 0)),
     0
@@ -643,7 +906,7 @@ export async function approveUsdtDepositInSupabase(depositId: string): Promise<v
   }
 
   const nextCoins = u.coins + dep.coinsCredited;
-  await supabase
+  const { data: updatedUser, error: updateUserError } = await supabase
     .from('sada_users')
     .update({
       coins: nextCoins,
@@ -656,18 +919,56 @@ export async function approveUsdtDepositInSupabase(depositId: string): Promise<v
       active_entry_name: nextEntryName,
       temp_entry_expires_at: nextTempEntryExpiresAt,
     })
-    .eq('id', u.id);
+    .eq('id', u.id)
+    .eq('coins', u.coins)
+    .select('id')
+    .maybeSingle();
+  if (updateUserError || !updatedUser) {
+    await restorePendingStatus();
+    throw new Error(
+      updateUserError
+        ? `تعذّر تحديث رصيد صاحب الطلب: ${updateUserError.message}`
+        : 'تغيّر رصيد صاحب الطلب أثناء المراجعة. أعد المحاولة.'
+    );
+  }
 
-  await recordTransaction({
-    userId: u.id,
-    type: 'usdt_deposit',
-    amount: dep.coinsCredited,
-    currency: 'coins',
-    description: tier
-      ? `تأكيد شحن ${dep.amountUsdt} USDT TRC20 + ${tier.label}`
-      : `تأكيد شحن ${dep.amountUsdt} USDT TRC20`,
-    timestamp: now,
-  });
+  try {
+    await recordTransaction({
+      userId: u.id,
+      type: 'usdt_deposit',
+      amount: dep.coinsCredited,
+      currency: 'coins',
+      description: tier
+        ? `تأكيد شحن ${dep.amountUsdt} USDT TRC20 + ${tier.label}`
+        : `تأكيد شحن ${dep.amountUsdt} USDT TRC20`,
+      timestamp: now,
+    });
+  } catch (transactionError) {
+    const { data: rolledBackUser, error: balanceRollbackError } = await supabase
+      .from('sada_users')
+      .update({
+        coins: u.coins,
+        unlocked_frames: u.unlockedFrames,
+        frame_id: u.frameId,
+        previous_permanent_frame_id: u.previousPermanentFrameId,
+        temp_frame_id: u.tempFrameId,
+        temp_frame_expires_at: u.tempFrameExpiresAt,
+        active_entry_id: u.activeEntryId,
+        active_entry_name: u.activeEntryName,
+        temp_entry_expires_at: u.tempEntryExpiresAt,
+      })
+      .eq('id', u.id)
+      .eq('coins', nextCoins)
+      .select('id')
+      .maybeSingle();
+    if (balanceRollbackError || !rolledBackUser) {
+      throw new Error(
+        `تعذّر تسجيل حركة الشحن (${transactionError instanceof Error ? transactionError.message : 'خطأ غير معروف'}) أو التراجع عن الرصيد (${balanceRollbackError?.message || 'تغيّر الرصيد قبل التراجع'}). بقي الطلب معتمداً لمنع تكرار الإضافة.`
+      );
+    }
+    await restorePendingStatus();
+    throw transactionError;
+  }
 
   // Sync updated frame onto active room seats
   if (nextFrameId !== u.frameId) {
@@ -696,78 +997,117 @@ export async function rejectUsdtDepositInSupabase(
   depositId: string,
   reason = 'لم يتم التحقق من الحوالة على شبكة TRC20'
 ): Promise<void> {
-  const { data: depRow } = await supabase
+  const { data: depRow, error: loadError } = await supabase
     .from('sada_usdt_deposits')
     .select('status')
     .eq('id', depositId)
     .maybeSingle();
+  if (loadError) throw new Error(`تعذّر تحميل طلب الإيداع: ${loadError.message}`);
   if (!depRow) throw new Error('طلب الإيداع غير موجود.');
   if (depRow.status !== 'pending') throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
 
-  await supabase
+  const { data: updated, error } = await supabase
     .from('sada_usdt_deposits')
     .update({
       status: 'rejected',
       admin_note: reason,
       reviewed_at: new Date().toISOString(),
     })
-    .eq('id', depositId);
+    .eq('id', depositId)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(`تعذّر رفض طلب الإيداع: ${error.message}`);
+  if (!updated) throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
 }
 
 export async function approveUsdtWithdrawalInSupabase(wdId: string): Promise<void> {
-  const { data: wdRow } = await supabase
+  const { data: wdRow, error: loadError } = await supabase
     .from('sada_usdt_withdrawals')
     .select('status')
     .eq('id', wdId)
     .maybeSingle();
+  if (loadError) throw new Error(`تعذّر تحميل طلب السحب: ${loadError.message}`);
   if (!wdRow) throw new Error('طلب السحب غير موجود.');
   if (wdRow.status !== 'pending') throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
 
-  await supabase
+  const { data: updated, error } = await supabase
     .from('sada_usdt_withdrawals')
     .update({
       status: 'approved',
       admin_note: 'تم تحويل USDT عبر شبكة TRC20 بنجاح',
       reviewed_at: new Date().toISOString(),
     })
-    .eq('id', wdId);
+    .eq('id', wdId)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(`تعذّر تأكيد طلب السحب: ${error.message}`);
+  if (!updated) throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
 }
 
 export async function rejectUsdtWithdrawalInSupabase(
   wdId: string,
   reason = 'بيانات محفظة TRC20 غير مكتملة'
 ): Promise<void> {
-  const { data: wdRow } = await supabase
+  const { data: wdRow, error: loadError } = await supabase
     .from('sada_usdt_withdrawals')
     .select(WITHDRAWAL_COLUMNS)
     .eq('id', wdId)
     .maybeSingle();
+  if (loadError) throw new Error(`تعذّر تحميل طلب السحب: ${loadError.message}`);
   if (!wdRow) throw new Error('طلب السحب غير موجود.');
   if (wdRow.status !== 'pending') throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
 
   const wd = rowToWithdrawal(wdRow);
   const now = new Date().toISOString();
-
-  await supabase
-    .from('sada_usdt_withdrawals')
-    .update({
-      status: 'rejected',
-      admin_note: reason,
-      reviewed_at: now,
-    })
-    .eq('id', wdId);
-
-  const { data: uRow } = await supabase
+  const { data: uRow, error: userError } = await supabase
     .from('sada_users')
     .select('coins, diamonds')
     .eq('id', wd.userId)
     .maybeSingle();
-  if (uRow) {
-    const patch =
-      wd.sourceCurrency === 'diamonds'
-        ? { diamonds: Number(uRow.diamonds || 0) + wd.sourceAmount }
-        : { coins: Number(uRow.coins || 0) + wd.sourceAmount };
-    await supabase.from('sada_users').update(patch).eq('id', wd.userId);
+  if (userError) throw new Error(`تعذّر تحميل رصيد صاحب الطلب: ${userError.message}`);
+  if (!uRow) throw new Error('صاحب طلب السحب غير موجود.');
+
+  const isDiamonds = wd.sourceCurrency === 'diamonds';
+  const previousBalance = Number(isDiamonds ? uRow.diamonds || 0 : uRow.coins || 0);
+  const nextBalance = previousBalance + wd.sourceAmount;
+  const balanceColumn = isDiamonds ? 'diamonds' : 'coins';
+  const { data: updatedUser, error: balanceError } = await supabase
+    .from('sada_users')
+    .update({ [balanceColumn]: nextBalance })
+    .eq('id', wd.userId)
+    .eq(balanceColumn, previousBalance)
+    .select('id')
+    .maybeSingle();
+  if (balanceError) throw new Error(`تعذّر إرجاع الرصيد: ${balanceError.message}`);
+  if (!updatedUser) throw new Error('تغيّر رصيد صاحب الطلب أثناء المراجعة. أعد المحاولة.');
+
+  const { data: updatedWithdrawal, error: statusError } = await supabase
+    .from('sada_usdt_withdrawals')
+    .update({ status: 'rejected', admin_note: reason, reviewed_at: now })
+    .eq('id', wdId)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+  if (statusError || !updatedWithdrawal) {
+    const { data: rolledBackUser, error: rollbackError } = await supabase
+      .from('sada_users')
+      .update({ [balanceColumn]: previousBalance })
+      .eq('id', wd.userId)
+      .eq(balanceColumn, nextBalance)
+      .select('id')
+      .maybeSingle();
+    if (rollbackError || !rolledBackUser) {
+      throw new Error(
+        `تعذّر تحديث حالة الطلب (${statusError?.message || 'تمت مراجعته مسبقاً'}) أو التراجع عن الرصيد (${rollbackError?.message || 'تغيّر الرصيد قبل التراجع'}).`
+      );
+    }
+    if (statusError) throw new Error(`تعذّر رفض طلب السحب: ${statusError.message}`);
+    throw new Error('تمت مراجعة هذا الطلب مسبقاً.');
+  }
+
+  try {
     await recordTransaction({
       userId: wd.userId,
       type: 'usdt_withdrawal_refund',
@@ -776,6 +1116,30 @@ export async function rejectUsdtWithdrawalInSupabase(
       description: `استرداد رصيد بعد رفض طلب سحب ${wd.amountUsdt} USDT`,
       timestamp: now,
     });
+  } catch (transactionError) {
+    const { data: rolledBackUser, error: rollbackError } = await supabase
+      .from('sada_users')
+      .update({ [balanceColumn]: previousBalance })
+      .eq('id', wd.userId)
+      .eq(balanceColumn, nextBalance)
+      .select('id')
+      .maybeSingle();
+    if (rollbackError || !rolledBackUser) {
+      throw new Error(
+        `تعذّر تسجيل حركة الاسترداد (${transactionError instanceof Error ? transactionError.message : 'خطأ غير معروف'}) أو التراجع عن الرصيد (${rollbackError?.message || 'تغيّر الرصيد قبل التراجع'}). بقي الطلب مرفوضاً لمنع تكرار الاسترداد.`
+      );
+    }
+    const { error: pendingError } = await supabase
+      .from('sada_usdt_withdrawals')
+      .update({ status: 'pending', admin_note: null, reviewed_at: null })
+      .eq('id', wdId)
+      .eq('status', 'rejected');
+    if (pendingError) {
+      throw new Error(
+        `تعذّر تسجيل حركة الاسترداد أو إعادة الطلب إلى الانتظار: ${pendingError.message}`
+      );
+    }
+    throw transactionError;
   }
 }
 
@@ -942,6 +1306,170 @@ export async function payoutAgencyCommissionInSupabase(
   ]);
 
   return { paidDiamonds: amount, agencyName: agency.name };
+}
+
+export async function payHostMonthlyPayrollInSupabase(
+  userId: string,
+  month: string
+): Promise<{ amountUsdt: number; earnedDiamonds: number; rechargeCapUsdt: number }> {
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('شهر كشف الرواتب غير صالح.');
+  const monthStart = new Date(`${month}-01T00:00:00.000Z`);
+  if (!Number.isFinite(monthStart.getTime())) throw new Error('شهر كشف الرواتب غير صالح.');
+
+  const [state, { data: userRow, error: userError }, { data: transactions, error: txError }] =
+    await Promise.all([
+      getPlatformState({ forceRefresh: true }),
+      supabase.from('sada_users').select('id, is_host, is_agent').eq('id', userId).maybeSingle(),
+      supabase
+        .from('sada_transactions')
+        .select('id, type, amount, currency')
+        .eq('user_id', userId)
+        .gte('timestamp', monthStart.toISOString())
+        .lt('timestamp', new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1)).toISOString())
+        .in('type', ['host_earning', 'usdt_deposit', 'topup', 'sham_cash_deposit']),
+    ]);
+  if (userError) throw new Error(`تعذّر تحميل المضيف: ${userError.message}`);
+  if (txError) throw new Error(`تعذّر تحميل كشف معاملات الشهر: ${txError.message}`);
+  if (!userRow || (!userRow.is_host && !userRow.is_agent)) {
+    throw new Error('هذا المستخدم ليس مضيفاً أو وكيلاً معتمداً.');
+  }
+
+  const monthTransactions = transactions || [];
+  const earnedDiamonds = monthTransactions
+    .filter((tx) => tx.type === 'host_earning' && tx.currency === 'diamonds')
+    .reduce((sum, tx) => sum + Math.max(0, Number(tx.amount || 0)), 0);
+  const chargedCoins = monthTransactions
+    .filter((tx) => ['usdt_deposit', 'topup', 'sham_cash_deposit'].includes(tx.type))
+    .reduce((sum, tx) => sum + Math.max(0, Number(tx.amount || 0)), 0);
+  const target = Math.max(1, Number(state.settings.hostMonthlyTargetDiamonds || 100000));
+  const diamondsPerUsdt = Math.max(1, Number(state.settings.hostDiamondsPerUsdt || 1000));
+  const capRate = Math.max(0, Math.min(1, Number(state.settings.hostRechargePayoutCapRate ?? 0.5)));
+  const coinsPerUsdt = Math.max(1, Number(state.settings.usdtToCoinsRate || 1000));
+  const rechargeCapUsdt = Math.floor((chargedCoins / coinsPerUsdt) * capRate);
+  const amountUsdt =
+    earnedDiamonds >= target
+      ? Math.min(Math.floor(earnedDiamonds / diamondsPerUsdt), rechargeCapUsdt)
+      : 0;
+  if (amountUsdt <= 0) {
+    throw new Error(
+      earnedDiamonds < target
+        ? `لم يحقق المضيف التارغت الشهري (${target.toLocaleString('en-US')} ألماسة).`
+        : 'قيمة الشحن المسجلة لا تسمح بصرف راتب هذا الشهر.'
+    );
+  }
+
+  const transactionId = `host_payroll_${month}_${userId}`;
+  const { data: existing, error: existingError } = await supabase
+    .from('sada_transactions')
+    .select('id')
+    .eq('id', transactionId)
+    .maybeSingle();
+  if (existingError) throw new Error(existingError.message);
+  if (existing) throw new Error('تم تسجيل صرف راتب هذا المضيف لهذا الشهر مسبقاً.');
+
+  await recordTransaction({
+    id: transactionId,
+    userId,
+    type: 'host_payroll',
+    amount: amountUsdt,
+    currency: 'usdt',
+    description: `تأكيد صرف راتب ${month}: ${earnedDiamonds} ألماسة، ${amountUsdt} USDT`,
+  });
+  return { amountUsdt, earnedDiamonds, rechargeCapUsdt };
+}
+
+export async function payAgencyMonthlyCommissionInSupabase(
+  agencyId: string,
+  month: string
+): Promise<{ paidDiamonds: number; agencyName: string }> {
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('شهر كشف العمولات غير صالح.');
+  const monthStart = new Date(`${month}-01T00:00:00.000Z`);
+  const [{ data: agencyRow, error: agencyError }, state] = await Promise.all([
+    supabase.from('sada_agencies').select(AGENCY_COLUMNS).eq('id', agencyId).maybeSingle(),
+    getPlatformState({ forceRefresh: true }),
+  ]);
+  if (agencyError) throw new Error(agencyError.message);
+  if (!agencyRow) throw new Error('الوكالة غير موجودة.');
+  const agency = rowToAgency(agencyRow);
+  const { data: hosts, error: hostsError } = await supabase
+    .from('sada_users')
+    .select('id')
+    .eq('agency_id', agency.id)
+    .eq('is_host', true);
+  if (hostsError) throw new Error(hostsError.message);
+  const hostIds = (hosts || []).map((host) => String(host.id));
+  if (hostIds.length === 0) throw new Error('لا يوجد مضيفون معتمدون في الوكالة.');
+
+  const [{ data: earnings, error: earningsError }, { data: ownerRow, error: ownerError }] =
+    await Promise.all([
+      supabase
+        .from('sada_transactions')
+        .select('amount')
+        .in('user_id', hostIds)
+        .eq('type', 'host_earning')
+        .eq('currency', 'diamonds')
+        .gte('timestamp', monthStart.toISOString())
+        .lt('timestamp', new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1)).toISOString()),
+      supabase.from('sada_users').select('id, diamonds').eq('id', agency.ownerId).maybeSingle(),
+    ]);
+  if (earningsError) throw new Error(earningsError.message);
+  if (ownerError) throw new Error(ownerError.message);
+  if (!ownerRow) throw new Error('حساب مالك الوكالة غير موجود.');
+
+  const monthlyDiamonds = (earnings || []).reduce(
+    (sum, tx) => sum + Math.max(0, Number(tx.amount || 0)),
+    0
+  );
+  const rate = Math.max(
+    0,
+    Math.min(0.5, Number(state.settings.agencyPayrollCommissionRate ?? 0.1))
+  );
+  const paidDiamonds = Math.floor(monthlyDiamonds * rate);
+  if (paidDiamonds <= 0) throw new Error('لا توجد عمولة مستحقة للصرف لهذا الشهر.');
+
+  const transactionId = `agency_payroll_${month}_${agency.id}`;
+  const { data: existing, error: existingError } = await supabase
+    .from('sada_transactions')
+    .select('id')
+    .eq('id', transactionId)
+    .maybeSingle();
+  if (existingError) throw new Error(existingError.message);
+  if (existing) throw new Error('تم صرف عمولة هذه الوكالة لهذا الشهر مسبقاً.');
+
+  const previousBalance = Number(ownerRow.diamonds || 0);
+  const { data: updatedOwner, error: balanceError } = await supabase
+    .from('sada_users')
+    .update({ diamonds: previousBalance + paidDiamonds })
+    .eq('id', agency.ownerId)
+    .eq('diamonds', previousBalance)
+    .select('id')
+    .maybeSingle();
+  if (balanceError) throw new Error(`تعذّر إضافة العمولة إلى محفظة الوكيل: ${balanceError.message}`);
+  if (!updatedOwner) throw new Error('تغيّر رصيد الوكيل أثناء الصرف. أعد المحاولة.');
+
+  try {
+    await recordTransaction({
+      id: transactionId,
+      userId: agency.ownerId,
+      type: 'agency_payroll',
+      amount: paidDiamonds,
+      currency: 'diamonds',
+      description: `عمولة وكالة ${agency.name} عن ${month}`,
+    });
+  } catch (error) {
+    const { error: rollbackError } = await supabase
+      .from('sada_users')
+      .update({ diamonds: previousBalance })
+      .eq('id', agency.ownerId)
+      .eq('diamonds', previousBalance + paidDiamonds);
+    if (rollbackError) {
+      throw new Error(
+        `تعذّر تسجيل عمولة الوكالة (${error instanceof Error ? error.message : 'خطأ غير معروف'}) أو التراجع عن الرصيد (${rollbackError.message}).`
+      );
+    }
+    throw error;
+  }
+  return { paidDiamonds, agencyName: agency.name };
 }
 
 export async function updateHostApprovalInSupabase(

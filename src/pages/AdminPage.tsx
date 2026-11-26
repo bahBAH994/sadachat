@@ -47,8 +47,7 @@ import {
   LUCKY_GIFT_MULTIPLIERS,
   PM_MESSAGE_COST,
 } from '../lib/sadaCatalog';
-import { getPlatformState, savePlatformState } from '../lib/sadaMappers';
-import { supabase } from '../lib/supabase';
+import { getPlatformState } from '../lib/sadaMappers';
 import {
   approveFemaleVoiceInSupabase,
   approveUsdtDepositInSupabase,
@@ -63,16 +62,20 @@ import {
   finishCompetitionInSupabase,
   getAdminOverviewFromSupabase,
   importQuestionsInSupabase,
-  payoutAgencyCommissionInSupabase,
   rejectFemaleVoiceInSupabase,
   rejectUsdtDepositInSupabase,
   rejectUsdtWithdrawalInSupabase,
+  resetApplicationDataInSupabase,
+  reviewShamCashRequestInSupabase,
   reviewHostJoinApplicationInSupabase,
   savePlatformSettingsInSupabase,
   sendGlobalAdminAnnouncementInSupabase,
   togglePinRoomInSupabase,
   unlockDeviceInSupabase,
   updateAdminUserInSupabase,
+  setAdminUserVipIdInSupabase,
+  payHostMonthlyPayrollInSupabase,
+  payAgencyMonthlyCommissionInSupabase,
   updateAgencyInSupabase,
   updateHostApprovalInSupabase,
   updatePrizePoolInSupabase,
@@ -92,6 +95,7 @@ import type {
   PlatformSettings,
   Room,
   SecurityLog,
+  ShamCashRequest,
   UsdtDepositRequest,
   UsdtWithdrawalRequest,
   User,
@@ -110,6 +114,15 @@ interface AdminOverview {
   usdtWithdrawals: UsdtWithdrawalRequest[];
   femaleVoiceRequests: FemaleVoiceVerificationRequest[];
   hostJoinApplications?: HostJoinApplication[];
+  monthlyTransactions: Array<{
+    id: string;
+    user_id: string;
+    type: string;
+    amount: number;
+    currency: string;
+    description: string;
+    timestamp: string;
+  }>;
   stats: {
     totalUsers: number;
     activeRooms: number;
@@ -119,20 +132,6 @@ interface AdminOverview {
     pendingUsdtCount?: number;
     pendingFemaleVoiceCount?: number;
   };
-}
-
-interface ShamCashRequest {
-  id: string;
-  type: 'deposit' | 'withdrawal';
-  userId: string;
-  userEmail: string;
-  userDisplayName: string;
-  amount: number;
-  accountAddress: string;
-  transferReference: string;
-  status: 'pending' | 'approved' | 'rejected';
-  createdAt: string;
-  reviewedAt: string | null;
 }
 
 function isShamCashRequest(value: unknown): value is ShamCashRequest {
@@ -145,6 +144,9 @@ function isShamCashRequest(value: unknown): value is ShamCashRequest {
     typeof request.userEmail === 'string' &&
     typeof request.userDisplayName === 'string' &&
     typeof request.amount === 'number' &&
+    (request.currency === undefined ||
+      request.currency === 'USD' ||
+      request.currency === 'SYP') &&
     typeof request.accountAddress === 'string' &&
     typeof request.transferReference === 'string' &&
     (request.status === 'pending' ||
@@ -156,18 +158,27 @@ function isShamCashRequest(value: unknown): value is ShamCashRequest {
 }
 
 function getShamCashRequests(settings: PlatformSettings): ShamCashRequest[] {
-  const requests = (
-    settings as PlatformSettings & { shamCashRequests?: unknown }
-  ).shamCashRequests;
-  return Array.isArray(requests) ? requests.filter(isShamCashRequest) : [];
+  const requests: unknown = settings.shamCashRequests;
+  return Array.isArray(requests)
+    ? requests
+        .filter(isShamCashRequest)
+        .map((request) => ({ ...request, currency: request.currency || 'SYP' }))
+    : [];
+}
+
+function getShamCashCoins(request: ShamCashRequest, settings: PlatformSettings): number {
+  const rate =
+    request.currency === 'USD'
+      ? Number(settings.shamCashUsdCoinsRate || 1000)
+      : Number(settings.shamCashSypCoinsPerThousand || 100) / 1000;
+  return Math.max(0, Math.floor(request.amount * rate));
 }
 
 function getShamCashSetting(
   settings: PlatformSettings,
   key: 'adminShamCashAddress' | 'adminShamCashBarcode'
 ): string {
-  const value = (settings as PlatformSettings & Record<string, unknown>)[key];
-  return typeof value === 'string' ? value : '';
+  return settings[key] || '';
 }
 
 type AdminTab =
@@ -213,7 +224,6 @@ export const AdminPage: React.FC = () => {
 
   // Agencies & Host management
   const [agencyRateDrafts, setAgencyRateDrafts] = useState<Record<string, string>>({});
-  const [agencyPayoutDrafts, setAgencyPayoutDrafts] = useState<Record<string, string>>({});
   const [hostAgencyDrafts, setHostAgencyDrafts] = useState<Record<string, string>>({});
 
   // Questions CSV/Excel import
@@ -227,6 +237,7 @@ export const AdminPage: React.FC = () => {
   const [savingSettings, setSavingSettings] = useState(false);
   const [adminShamCashAddress, setAdminShamCashAddress] = useState('');
   const [adminShamCashBarcode, setAdminShamCashBarcode] = useState('');
+  const [shamCashCoinDrafts, setShamCashCoinDrafts] = useState<Record<string, string>>({});
   const [grandCompetitionDraft, setGrandCompetitionDraft] =
     useState<GrandCompetitionContent | null>(null);
   const [savingGrandCompetition, setSavingGrandCompetition] = useState(false);
@@ -264,18 +275,10 @@ export const AdminPage: React.FC = () => {
           schedule: res.settings.grandCompetition?.schedule || '',
         });
         const rates: Record<string, string> = {};
-        const payouts: Record<string, string> = {};
         for (const ag of res.agencies || []) {
           rates[ag.id] = String(Math.round((ag.commissionRate || 0) * 100));
-          const pending = Math.max(
-            0,
-            Math.round((ag.totalHostDiamonds || 0) * (ag.commissionRate || 0)) -
-              (ag.totalCommissionDiamonds || 0)
-          );
-          payouts[ag.id] = String(pending);
         }
         setAgencyRateDrafts(rates);
-        setAgencyPayoutDrafts(payouts);
         const userAgencies: Record<string, string> = {};
         for (const u of res.users || []) {
           if (u.agencyId) userAgencies[u.id] = u.agencyId;
@@ -345,22 +348,7 @@ export const AdminPage: React.FC = () => {
     setResettingApplication(true);
     setNotice(null);
     try {
-      const results = await Promise.all([
-        supabase.from('sada_room_messages').delete().neq('id', ''),
-        supabase.from('sada_private_messages').delete().neq('id', ''),
-        supabase.from('sada_transactions').delete().neq('id', ''),
-        supabase.from('sada_usdt_deposits').delete().neq('id', ''),
-        supabase.from('sada_usdt_withdrawals').delete().neq('id', ''),
-        supabase
-          .from('sada_users')
-          .update({ coins: 0, diamonds: 0, level: 1 })
-          .neq('id', user.id),
-      ]);
-      const failedResult = results.find((result) => result.error);
-      if (failedResult?.error) {
-        throw new Error(`تعذّر تصفير بيانات التطبيق: ${failedResult.error.message}`);
-      }
-
+      await resetApplicationDataInSupabase();
       showOk('تم تصفير بيانات التطبيق بنجاح');
       await Promise.all([refreshUser(), loadOverview(true)]);
     } catch (err) {
@@ -435,6 +423,22 @@ export const AdminPage: React.FC = () => {
       void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تغيير رتبة العضو.');
+    }
+  };
+
+  const handleSetVipId = async (targetId: string, vipId: string) => {
+    try {
+      await setAdminUserVipIdInSupabase(targetId, vipId);
+      setData((current) => {
+        if (!current) return current;
+        const customVipIds = { ...(current.settings.customVipIds || {}) };
+        if (vipId.trim()) customVipIds[targetId] = vipId.trim();
+        else delete customVipIds[targetId];
+        return { ...current, settings: { ...current.settings, customVipIds } };
+      });
+      showOk(vipId.trim() ? 'تم تفعيل رقم ID المميز وحفظه.' : 'تم إلغاء رقم ID المميز.');
+    } catch (err) {
+      showErr(err, 'تعذّر تحديث رقم ID المميز.');
     }
   };
 
@@ -692,28 +696,26 @@ export const AdminPage: React.FC = () => {
   };
 
   const handleReviewShamCashRequest = async (
-    requestId: string,
+    request: ShamCashRequest,
     status: 'approved' | 'rejected'
   ) => {
     try {
       const state = await getPlatformState({ forceRefresh: true });
-      const requests = getShamCashRequests(state.settings);
-      if (!requests.some((request) => request.id === requestId && request.status === 'pending')) {
-        throw new Error('الطلب غير موجود أو تمت مراجعته مسبقاً.');
-      }
-      const nextRequests = requests.map((request) =>
-        request.id === requestId
-          ? { ...request, status, reviewedAt: new Date().toISOString() }
-          : request
+      const coins = Number(shamCashCoinDrafts[request.id] ?? getShamCashCoins(request, state.settings));
+      await reviewShamCashRequestInSupabase(
+        request.id,
+        status,
+        coins,
+        request.currency || 'SYP'
       );
-      await savePlatformState({
-        settings: { ...state.settings, shamCashRequests: nextRequests },
-      });
       showOk(
         status === 'approved'
-          ? 'تم تأكيد استلام طلب شام كاش.'
+          ? request.type === 'deposit'
+            ? `تم اعتماد الشحن وإضافة ${coins.toLocaleString('en-US')} كوينز إلى رصيد المستخدم.`
+            : `تم اعتماد السحب وخصم ${coins.toLocaleString('en-US')} كوينز من رصيد المستخدم.`
           : 'تم رفض طلب شام كاش.'
       );
+      await refreshUser();
       void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّرت مراجعة طلب شام كاش.');
@@ -760,16 +762,35 @@ export const AdminPage: React.FC = () => {
 
   const handlePayoutAgencyCommission = async (agencyId: string) => {
     try {
-      const raw = agencyPayoutDrafts[agencyId];
-      const parsed = raw !== undefined && raw.trim() !== '' ? Number(raw) : undefined;
-      const res = await payoutAgencyCommissionInSupabase(agencyId, parsed);
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const res = await payAgencyMonthlyCommissionInSupabase(agencyId, currentMonth);
       showOk(
-        `تم صرف عمولة الوكيل بنجاح (+${res.paidDiamonds.toLocaleString('en-US')} 💎) وإضافتها إلى محفظته.`
+        `تم صرف عمولة ${res.agencyName} الشهرية (+${res.paidDiamonds.toLocaleString('en-US')} 💎) وإضافتها إلى محفظة الوكيل.`
       );
       void loadOverview('silent');
       void refreshUser();
     } catch (err) {
       showErr(err, 'تعذّر صرف عمولة الوكيل.');
+    }
+  };
+
+  const handlePayHostPayroll = async (target: User, amountUsdt: number) => {
+    const month = new Date().toISOString().slice(0, 7);
+    if (
+      !window.confirm(
+        `تأكيد تسجيل صرف راتب ${target.displayName} عن ${month} بقيمة ${amountUsdt.toLocaleString('en-US')} USDT؟ تأكد من تنفيذ التحويل خارج التطبيق قبل التأكيد.`
+      )
+    ) {
+      return;
+    }
+    try {
+      const result = await payHostMonthlyPayrollInSupabase(target.id, month);
+      showOk(
+        `تم تسجيل صرف ${result.amountUsdt} USDT للمضيف (${result.earnedDiamonds.toLocaleString('en-US')} ألماسة).`
+      );
+      void loadOverview('silent');
+    } catch (err) {
+      showErr(err, 'تعذّر تسجيل صرف راتب المضيف.');
     }
   };
 
@@ -997,11 +1018,21 @@ export const AdminPage: React.FC = () => {
     );
   }, [data?.users, hostSearch]);
 
+  const payrollMonth = new Date().toISOString().slice(0, 7);
   const payrollRoster = useMemo(
-    () =>
-      (data?.users || [])
-        .filter((member) => member.isHost || member.isAgent)
-        .map((member) => {
+    () => {
+      if (!data) return [];
+      const targetDiamonds = Math.max(
+        1,
+        Number(data.settings.hostMonthlyTargetDiamonds || 100_000)
+      );
+      const diamondsPerUsdt = Math.max(1, Number(data.settings.hostDiamondsPerUsdt || 1000));
+      const capRate = Math.max(
+        0,
+        Math.min(1, Number(data.settings.hostRechargePayoutCapRate ?? 0.5))
+      );
+      const coinsPerUsdt = Math.max(1, Number(data.settings.usdtToCoinsRate || 1000));
+      return data.users.filter((member) => member.isHost).map((member) => {
           const pendingWithdrawal = (data?.usdtWithdrawals || [])
             .filter(
               (withdrawal) =>
@@ -1013,25 +1044,43 @@ export const AdminPage: React.FC = () => {
               (first, second) =>
                 Date.parse(second.createdAt) - Date.parse(first.createdAt)
             )[0];
-          const agency = (data?.agencies || []).find(
-            (item) => item.ownerId === member.id
+          const userTransactions = data.monthlyTransactions.filter(
+            (transaction) => transaction.user_id === member.id
           );
-
+          const monthlyDiamonds = userTransactions
+            .filter(
+              (transaction) =>
+                transaction.type === 'host_earning' && transaction.currency === 'diamonds'
+            )
+            .reduce((sum, transaction) => sum + Math.max(0, Number(transaction.amount || 0)), 0);
+          const chargedCoins = userTransactions
+            .filter((transaction) =>
+              ['usdt_deposit', 'topup', 'sham_cash_deposit'].includes(transaction.type)
+            )
+            .reduce((sum, transaction) => sum + Math.max(0, Number(transaction.amount || 0)), 0);
+          const rechargeCapUsdt = Math.floor((chargedCoins / coinsPerUsdt) * capRate);
+          const salaryUsdt =
+            monthlyDiamonds >= targetDiamonds
+              ? Math.min(Math.floor(monthlyDiamonds / diamondsPerUsdt), rechargeCapUsdt)
+              : 0;
+          const payrollPaid = userTransactions.some(
+            (transaction) =>
+              transaction.type === 'host_payroll' &&
+              transaction.id === `host_payroll_${payrollMonth}_${member.id}`
+          );
           return {
             member,
-            role:
-              member.isHost && member.isAgent
-                ? 'مضيف / وكيل'
-                : member.isHost
-                  ? 'مضيف'
-                  : 'وكيل',
-            recordedDiamonds: member.isHost
-              ? member.hostDiamondsEarned
-              : agency?.totalHostDiamonds,
+            monthlyDiamonds,
+            targetDiamonds,
+            chargedCoins,
+            rechargeCapUsdt,
+            salaryUsdt,
+            payrollPaid,
             walletAddress: pendingWithdrawal?.trc20Address || '',
           };
-        }),
-    [data?.agencies, data?.users, data?.usdtWithdrawals]
+        });
+    },
+    [data, payrollMonth]
   );
 
   const voiceRequestsToDisplay = useMemo(() => {
@@ -1517,11 +1566,13 @@ export const AdminPage: React.FC = () => {
             {tab === 'users' && (
               <AdminUsersTab
                 users={data.users}
+                customVipIds={data.settings.customVipIds || {}}
                 search={search}
                 onSearchChange={setSearch}
                 onCoinsAdjust={handleCoinsAdjust}
                 onRoleChange={handleRoleChange}
                 onToggleBan={handleToggleBan}
+                onVipIdChange={handleSetVipId}
               />
             )}
 
@@ -1840,10 +1891,10 @@ export const AdminPage: React.FC = () => {
                       <Coins className="w-5 h-5" />
                       <div>
                         <h2 className="text-base font-bold">
-                          كشف رواتب المضيفين والوكلاء المستحقة ({payrollRoster.length})
+                          كشف رواتب المضيفين المستحقة ({payrollMonth}) · {payrollRoster.length}
                         </h2>
                         <p className="text-xs text-slate-400 mt-1">
-                          قائمة متابعة الحسابات المعتمدة، وليست تأكيداً بالاستحقاق الشهري.
+                          يعتمد الاستحقاق على الألماس المكتسب خلال الشهر الحالي، والتارغت، وحدّ قيمة الشحن.
                         </p>
                       </div>
                     </div>
@@ -1853,10 +1904,8 @@ export const AdminPage: React.FC = () => {
                     role="status"
                     className="rounded-2xl border border-amber-400/30 bg-amber-950/30 px-4 py-3 text-xs leading-6 text-amber-100"
                   >
-                    بيانات الشهر الحالي — بما فيها تارغت الألماس وساعات المايك الفعّالة — غير متاحة
-                    في لوحة الإدارة. مبلغ USDT ومحفظة الرواتب غير مسجلين؛ لذلك لا يمكن تحديد
-                    المستحقين أو اعتماد الصرف أو تصفير التارغت أو إرسال إشعار من هذا الجدول.
-                    عنوان TRC20، إن ظهر، مأخوذ فقط من طلب سحب معلّق.
+                    يُحتسب الراتب عند تحقيق التارغت الشهري، ويُحدّ بحد أقصى يعادل نسبة قيمة الكوينز المشحونة.
+                    زر التأكيد يسجّل إتمام التحويل الخارجي فقط ولا ينفّذ تحويل USDT تلقائياً.
                   </div>
 
                   {payrollRoster.length === 0 ? (
@@ -1869,17 +1918,17 @@ export const AdminPage: React.FC = () => {
                         <thead className="bg-[#070913]/80 text-[#FCE9A6]">
                           <tr>
                             <th className="px-3 py-3 font-bold">المستخدم / ID</th>
-                            <th className="px-3 py-3 font-bold">الدور</th>
-                            <th className="px-3 py-3 font-bold">الألماس المسجل حالياً</th>
-                            <th className="px-3 py-3 font-bold">ساعات المايك الفعّالة</th>
-                            <th className="px-3 py-3 font-bold">المستحق USDT</th>
+                            <th className="px-3 py-3 font-bold">ألماس الشهر / التارغت</th>
+                            <th className="px-3 py-3 font-bold">الكوينز المشحونة هذا الشهر</th>
+                            <th className="px-3 py-3 font-bold">حد الصرف USDT</th>
+                            <th className="px-3 py-3 font-bold">الراتب المقترح</th>
                             <th className="px-3 py-3 font-bold">عنوان TRC20</th>
                             <th className="px-3 py-3 font-bold">إجراء الصرف</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#D4AF37]/10">
                           {payrollRoster.map(
-                            ({ member, role, recordedDiamonds, walletAddress }) => (
+                            ({ member, monthlyDiamonds, targetDiamonds, chargedCoins, rechargeCapUsdt, salaryUsdt, payrollPaid, walletAddress }) => (
                               <tr key={member.id} className="text-slate-200">
                                 <td className="px-3 py-3">
                                   <div className="font-bold text-white">{member.displayName}</div>
@@ -1891,17 +1940,18 @@ export const AdminPage: React.FC = () => {
                                     {member.id}
                                   </div>
                                 </td>
-                                <td className="px-3 py-3 text-[#FCE9A6]">{role}</td>
                                 <td className="px-3 py-3 font-mono-num">
-                                  {typeof recordedDiamonds === 'number'
-                                    ? recordedDiamonds.toLocaleString('en-US')
-                                    : 'غير متاح'}
-                                  <div className="mt-1 text-[10px] text-slate-500">
-                                    لا يحدد إنجاز الشهر
-                                  </div>
+                                  {monthlyDiamonds.toLocaleString('en-US')} / {targetDiamonds.toLocaleString('en-US')}
                                 </td>
-                                <td className="px-3 py-3 text-slate-400">غير متاح</td>
-                                <td className="px-3 py-3 text-slate-400">غير قابل للاحتساب</td>
+                                <td className="px-3 py-3 font-mono-num">
+                                  {chargedCoins.toLocaleString('en-US')}
+                                </td>
+                                <td className="px-3 py-3 font-mono-num text-amber-200">
+                                  {rechargeCapUsdt.toLocaleString('en-US')} USDT
+                                </td>
+                                <td className="px-3 py-3 font-mono-num text-emerald-300">
+                                  {payrollPaid ? 'تم تسجيل الصرف ✓' : `${salaryUsdt.toLocaleString('en-US')} USDT`}
+                                </td>
                                 <td className="px-3 py-3">
                                   {walletAddress ? (
                                     <div className="flex items-center gap-2">
@@ -1929,11 +1979,12 @@ export const AdminPage: React.FC = () => {
                                 <td className="px-3 py-3">
                                   <button
                                     type="button"
-                                    disabled
-                                    title="يتطلب ربط بيانات التارغت الشهري وتسجيل الصرف والإشعارات."
-                                    className="cursor-not-allowed rounded-xl border border-slate-600/50 bg-slate-800/50 px-3 py-2 text-[11px] font-bold text-slate-500"
+                                    disabled={salaryUsdt <= 0 || payrollPaid}
+                                    onClick={() => void handlePayHostPayroll(member, salaryUsdt)}
+                                    title={payrollPaid ? 'تم تسجيل صرف راتب الشهر' : 'تأكيد التحويل الخارجي وتسجيله'}
+                                    className="rounded-xl border border-emerald-500/40 bg-emerald-700/80 px-3 py-2 text-[11px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
                                   >
-                                    تأكيد الصرف ✓
+                                    {payrollPaid ? 'تم الصرف ✓' : 'تأكيد الصرف'}
                                   </button>
                                 </td>
                               </tr>
@@ -1970,8 +2021,32 @@ export const AdminPage: React.FC = () => {
                           Math.round((ag.totalHostDiamonds || 0) * (ag.commissionRate || 0)) -
                             (ag.totalCommissionDiamonds || 0)
                         );
-                        const payoutDraft =
-                          agencyPayoutDrafts[ag.id] ?? String(suggestedPending);
+                        const agencyHostIds = new Set(
+                          data.users
+                            .filter((member) => member.agencyId === ag.id && member.isHost)
+                            .map((member) => member.id)
+                        );
+                        const monthlyAgencyDiamonds = data.monthlyTransactions
+                          .filter(
+                            (transaction) =>
+                              transaction.type === 'host_earning' &&
+                              transaction.currency === 'diamonds' &&
+                              agencyHostIds.has(transaction.user_id)
+                          )
+                          .reduce(
+                            (sum, transaction) =>
+                              sum + Math.max(0, Number(transaction.amount || 0)),
+                            0
+                          );
+                        const monthlyAgencyCommission = Math.floor(
+                          monthlyAgencyDiamonds *
+                            (data.settings.agencyPayrollCommissionRate ?? 0.1)
+                        );
+                        const monthlyCommissionPaid = data.monthlyTransactions.some(
+                          (transaction) =>
+                            transaction.type === 'agency_payroll' &&
+                            transaction.id === `agency_payroll_${payrollMonth}_${ag.id}`
+                        );
                         return (
                           <div
                             key={ag.id}
@@ -2010,6 +2085,14 @@ export const AdminPage: React.FC = () => {
                                 <span className="text-emerald-300 font-bold">
                                   {suggestedPending.toLocaleString('en-US')} 💎
                                 </span>
+                                {' '}· ألماس المضيفين هذا الشهر:{' '}
+                                <span className="text-sky-200 font-bold">
+                                  {monthlyAgencyDiamonds.toLocaleString('en-US')} 💎
+                                </span>
+                                {' '}· عمولة الشهر:{' '}
+                                <span className="text-emerald-300 font-bold">
+                                  {monthlyAgencyCommission.toLocaleString('en-US')} 💎
+                                </span>
                               </p>
                             </div>
 
@@ -2044,30 +2127,14 @@ export const AdminPage: React.FC = () => {
                                 </button>
                               </div>
 
-                              <div className="flex items-center gap-1.5 bg-[#070913]/85 border border-emerald-500/35 rounded-xl px-2.5 py-1.5">
-                                <span className="text-[11px] text-emerald-300">💎</span>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={payoutDraft}
-                                  onChange={(e) =>
-                                    setAgencyPayoutDrafts((prev) => ({
-                                      ...prev,
-                                      [ag.id]: e.target.value,
-                                    }))
-                                  }
-                                  dir="ltr"
-                                  className="w-20 bg-transparent text-xs text-emerald-200 font-mono-num text-center focus:outline-none"
-                                />
-                                <button
-                                  type="button"
-                                  disabled={Number(payoutDraft) <= 0}
-                                  onClick={() => void handlePayoutAgencyCommission(ag.id)}
-                                  className="rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 px-2.5 py-1 text-[11px] font-extrabold text-white cursor-pointer"
-                                >
-                                  صرف عمولة الوكيل
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                disabled={monthlyAgencyCommission <= 0 || monthlyCommissionPaid}
+                                onClick={() => void handlePayoutAgencyCommission(ag.id)}
+                                className="rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 px-2.5 py-2 text-[11px] font-extrabold text-white cursor-pointer"
+                              >
+                                {monthlyCommissionPaid ? 'تم صرف عمولة الشهر ✓' : 'صرف عمولة الشهر'}
+                              </button>
 
                               {status !== 'approved' ? (
                                 <button
@@ -2300,7 +2367,8 @@ export const AdminPage: React.FC = () => {
                             <p className="font-bold text-white text-sm">
                               {request.userDisplayName} ·{' '}
                               <span className="text-[#FCE9A6] font-mono-num">
-                                {request.amount.toLocaleString('en-US')} شام كاش
+                                {request.amount.toLocaleString('en-US')}{' '}
+                                {request.currency === 'USD' ? 'دولار' : 'ليرة سورية'}
                               </span>
                             </p>
                             <span className="inline-flex rounded-full border border-emerald-400/30 bg-emerald-950/40 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
@@ -2312,20 +2380,37 @@ export const AdminPage: React.FC = () => {
                           </div>
                           {request.status === 'pending' ? (
                             <div className="flex flex-wrap items-center gap-2">
+                              <label className="flex items-center gap-2 text-[11px] text-slate-300">
+                                <span>
+                                  {request.type === 'deposit' ? 'كوينز تضاف' : 'كوينز تخصم'}
+                                </span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={
+                                    shamCashCoinDrafts[request.id] ??
+                                    getShamCashCoins(request, data.settings)
+                                  }
+                                  onChange={(e) =>
+                                    setShamCashCoinDrafts((current) => ({
+                                      ...current,
+                                      [request.id]: e.target.value,
+                                    }))
+                                  }
+                                  dir="ltr"
+                                  className="w-28 min-h-[36px] rounded-lg bg-[#070913]/85 border border-[#D4AF37]/25 px-2 text-xs text-white font-mono-num"
+                                />
+                              </label>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  void handleReviewShamCashRequest(request.id, 'approved')
-                                }
+                                onClick={() => void handleReviewShamCashRequest(request, 'approved')}
                                 className="gold-btn min-h-[38px] rounded-xl px-3.5 py-1.5 text-xs font-bold cursor-pointer"
                               >
-                                تأكيد استلام المبلغ
+                                {request.type === 'deposit' ? 'اعتماد الشحن وإضافة الرصيد' : 'تأكيد السحب وخصم الرصيد'}
                               </button>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  void handleReviewShamCashRequest(request.id, 'rejected')
-                                }
+                                onClick={() => void handleReviewShamCashRequest(request, 'rejected')}
                                 className="min-h-[38px] rounded-xl px-3.5 py-1.5 text-xs font-bold bg-rose-950/60 border border-rose-500/40 text-rose-200 cursor-pointer"
                               >
                                 رفض
@@ -2430,18 +2515,14 @@ export const AdminPage: React.FC = () => {
                             <div className="flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  void handleReviewShamCashRequest(request.id, 'approved')
-                                }
+                                onClick={() => void handleReviewShamCashRequest(request, 'approved')}
                                 className="gold-btn min-h-[38px] rounded-xl px-3.5 py-1.5 text-xs font-bold cursor-pointer"
                               >
                                 تأكيد التحويل
                               </button>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  void handleReviewShamCashRequest(request.id, 'rejected')
-                                }
+                                onClick={() => void handleReviewShamCashRequest(request, 'rejected')}
                                 className="min-h-[38px] rounded-xl px-3.5 py-1.5 text-xs font-bold bg-rose-950/60 border border-rose-500/40 text-rose-200 cursor-pointer"
                               >
                                 رفض الطلب
@@ -2856,6 +2937,117 @@ export const AdminPage: React.FC = () => {
                         />
                       </div>
                     </div>
+                  </div>
+                </section>
+                <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
+                  <div className="flex items-center gap-2 text-[#FCE9A6]">
+                    <Coins className="w-5 h-5 text-[#D4AF37]" />
+                    <h2 className="text-sm font-extrabold">تارغت ورواتب المضيفين والوكلاء</h2>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                    <label className="space-y-1.5">
+                      <span className="block text-slate-300">التارغت الشهري لكل مضيف (ألماس)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={settingsDraft.hostMonthlyTargetDiamonds ?? 100000}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            hostMonthlyTargetDiamonds: Math.max(1, Number(e.target.value) || 100000),
+                          })
+                        }
+                        dir="ltr"
+                        className="w-full min-h-[40px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
+                      />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="block text-slate-300">ألماس لكل 1 USDT</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={settingsDraft.hostDiamondsPerUsdt ?? 1000}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            hostDiamondsPerUsdt: Math.max(1, Number(e.target.value) || 1000),
+                          })
+                        }
+                        dir="ltr"
+                        className="w-full min-h-[40px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
+                      />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="block text-slate-300">الحد الأعلى للصرف من قيمة الشحن (%)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={Math.round((settingsDraft.hostRechargePayoutCapRate ?? 0.5) * 100)}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            hostRechargePayoutCapRate:
+                              Math.max(0, Math.min(100, Number(e.target.value) || 0)) / 100,
+                          })
+                        }
+                        dir="ltr"
+                        className="w-full min-h-[40px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
+                      />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="block text-slate-300">عمولة الوكيل الشهرية (%)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={Math.round((settingsDraft.agencyPayrollCommissionRate ?? 0.1) * 100)}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            agencyPayrollCommissionRate:
+                              Math.max(0, Math.min(50, Number(e.target.value) || 0)) / 100,
+                          })
+                        }
+                        dir="ltr"
+                        className="w-full min-h-[40px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <label className="space-y-1.5">
+                      <span className="block text-slate-300">كوينز لكل 1 دولار شام كاش</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={settingsDraft.shamCashUsdCoinsRate ?? 1000}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            shamCashUsdCoinsRate: Math.max(1, Number(e.target.value) || 1000),
+                          })
+                        }
+                        dir="ltr"
+                        className="w-full min-h-[40px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
+                      />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="block text-slate-300">كوينز لكل 1,000 ليرة سورية</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={settingsDraft.shamCashSypCoinsPerThousand ?? 100}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            shamCashSypCoinsPerThousand:
+                              Math.max(1, Number(e.target.value) || 100),
+                          })
+                        }
+                        dir="ltr"
+                        className="w-full min-h-[40px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
+                      />
+                    </label>
                   </div>
                 </section>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

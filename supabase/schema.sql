@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS public.sada_rooms (
   background_url TEXT,
   cover_image TEXT NOT NULL DEFAULT 'royal_stage',
   is_private BOOLEAN NOT NULL DEFAULT FALSE,
+  is_agency BOOLEAN NOT NULL DEFAULT FALSE,
   password TEXT,
   max_seats INTEGER NOT NULL DEFAULT 8,
   seats JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -109,7 +110,8 @@ CREATE TABLE IF NOT EXISTS public.sada_rooms (
 ALTER TABLE public.sada_rooms
   ADD COLUMN IF NOT EXISTS avatar_url TEXT,
   ADD COLUMN IF NOT EXISTS cover_url TEXT,
-  ADD COLUMN IF NOT EXISTS background_url TEXT;
+  ADD COLUMN IF NOT EXISTS background_url TEXT,
+  ADD COLUMN IF NOT EXISTS is_agency BOOLEAN NOT NULL DEFAULT FALSE;
 
 UPDATE public.sada_rooms
 SET avatar_url = COALESCE(avatar_url, host_avatar),
@@ -261,6 +263,13 @@ CREATE TABLE IF NOT EXISTS public.sada_agencies (
   status TEXT NOT NULL DEFAULT 'approved',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+UPDATE public.sada_rooms AS rooms
+SET is_agency = TRUE
+FROM public.sada_agencies AS agencies
+WHERE rooms.host_id = agencies.owner_id
+  AND rooms.is_agency = FALSE
+  AND rooms.title = 'وكالة ' || agencies.name;
 
 -- 11. جدول المسابقات والبطولات الصوتية
 CREATE TABLE IF NOT EXISTS public.sada_competitions (
@@ -451,9 +460,25 @@ ALTER TABLE public.sada_vip_ids_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sada_svip_tiers ENABLE ROW LEVEL SECURITY;
 GRANT SELECT ON public.sada_vip_ids_catalog, public.sada_svip_tiers TO anon, authenticated, service_role;
 REVOKE INSERT, UPDATE, DELETE ON public.sada_vip_ids_catalog, public.sada_svip_tiers FROM anon, authenticated;
+GRANT UPDATE ON public.sada_vip_ids_catalog TO authenticated;
 DROP POLICY IF EXISTS "sada_vip_ids_catalog_read" ON public.sada_vip_ids_catalog;
 CREATE POLICY "sada_vip_ids_catalog_read" ON public.sada_vip_ids_catalog
   FOR SELECT TO anon, authenticated, service_role USING (TRUE);
+DROP POLICY IF EXISTS "sada_vip_ids_catalog_admin_update" ON public.sada_vip_ids_catalog;
+CREATE POLICY "sada_vip_ids_catalog_admin_update" ON public.sada_vip_ids_catalog
+  FOR UPDATE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.sada_users AS app_user
+      WHERE app_user.id = auth.uid()::TEXT AND app_user.is_admin = TRUE
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.sada_users AS app_user
+      WHERE app_user.id = auth.uid()::TEXT AND app_user.is_admin = TRUE
+    )
+  );
 DROP POLICY IF EXISTS "sada_svip_tiers_read" ON public.sada_svip_tiers;
 CREATE POLICY "sada_svip_tiers_read" ON public.sada_svip_tiers
   FOR SELECT TO anon, authenticated, service_role USING (TRUE);

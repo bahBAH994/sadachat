@@ -44,6 +44,7 @@ import {
   TRANSACTION_COLUMNS,
   USER_COLUMNS,
 } from './sadaMappers';
+import { createRoomInSupabase } from './sadaRoomsService';
 import { fetchUsersVipTotalsBatch } from './sadaVipService';
 import { supabase } from './supabase';
 
@@ -691,7 +692,7 @@ function isUserFemaleOrHost(u: User, hostedUserIds: Set<string>): boolean {
 }
 
 export async function getPmOverviewFromSupabase(user: User) {
-  const [{ data: allUsers }, { data: myMsgs }, { data: rooms }, state] =
+  const [{ data: allUsers, error: usersError }, { data: myMsgs, error: messagesError }, { data: rooms, error: roomsError }, state] =
     await Promise.all([
       supabase
         .from('sada_users')
@@ -707,6 +708,11 @@ export async function getPmOverviewFromSupabase(user: User) {
       supabase.from('sada_rooms').select('host_id'),
       getPlatformState(),
     ]);
+  if (usersError || messagesError || roomsError) {
+    throw new Error(
+      `تعذّر تحميل صندوق الرسائل: ${usersError?.message || messagesError?.message || roomsError?.message}`
+    );
+  }
 
   const hostedUserIds = new Set((rooms || []).map((r) => String(r.host_id)));
   const userMeta = state.settings.userMeta || {};
@@ -860,13 +866,18 @@ export async function sendPrivateMessageInSupabase(
   luckyMultiplier: number | null;
   luckyBonusCoins: number;
 }> {
-  const [{ data: senderRow }, { data: recRow }, { data: rooms }, state] =
+  const [{ data: senderRow, error: senderError }, { data: recRow, error: recipientError }, { data: rooms, error: roomsError }, state] =
     await Promise.all([
       supabase.from('sada_users').select(USER_COLUMNS).eq('id', sender.id).maybeSingle(),
       supabase.from('sada_users').select(USER_COLUMNS).eq('id', payload.recipientId).maybeSingle(),
       supabase.from('sada_rooms').select('host_id'),
       getPlatformState(),
     ]);
+  if (senderError || recipientError || roomsError) {
+    throw new Error(
+      `تعذّر تحميل بيانات المراسلة: ${senderError?.message || recipientError?.message || roomsError?.message}`
+    );
+  }
 
   const freshSender = senderRow ? rowToUser(senderRow) : { ...sender };
   if (!recRow || payload.recipientId === freshSender.id) {
@@ -999,7 +1010,7 @@ export async function sendPrivateMessageInSupabase(
       repliedAt: now,
     };
 
-    await Promise.all([
+    const [senderBalanceResult, recipientBalanceResult, savedMessageResult] = await Promise.all([
       supabase
         .from('sada_users')
         .update({
@@ -1047,6 +1058,18 @@ export async function sendPrivateMessageInSupabase(
         timestamp: now,
       }),
     ]);
+    const writeErrors = [
+      senderBalanceResult.error,
+      recipientBalanceResult.error,
+      savedMessageResult.error,
+    ].filter(Boolean);
+    if (writeErrors.length) {
+      throw new Error(
+        `تعذّر حفظ الرسالة أو تحديث الأرصدة: ${writeErrors
+          .map((writeError) => writeError?.message)
+          .join('؛ ')}`
+      );
+    }
 
     if (luckyBonusCoins > 0 && luckyMultiplier) {
       await recordTransaction({
@@ -1160,7 +1183,7 @@ export async function sendPrivateMessageInSupabase(
     repliedAt: shouldChargeCoins ? now : null,
   };
 
-  await Promise.all([
+  const [senderBalanceResult, savedMessageResult] = await Promise.all([
     supabase
       .from('sada_users')
       .update({
@@ -1185,6 +1208,13 @@ export async function sendPrivateMessageInSupabase(
       replied_at: pm.repliedAt,
     }),
   ]);
+  if (senderBalanceResult.error || savedMessageResult.error) {
+    throw new Error(
+      `تعذّر حفظ الرسالة الخاصة: ${
+        senderBalanceResult.error?.message || savedMessageResult.error?.message
+      }`
+    );
+  }
 
   return {
     user: freshSender,
@@ -1431,6 +1461,19 @@ export async function applyAsAgencyInSupabase(
     code = `SADA-${Math.floor(1000 + Math.random() * 9000)}`;
   } while (existingCodes.has(code));
 
+  const platformState = await getPlatformState({ forceRefresh: true });
+  const commissionRate = Math.max(
+    0,
+    Math.min(
+      0.5,
+      Number(
+        payload.commissionRate ??
+          platformState.settings.agencyPayrollCommissionRate ??
+          platformState.settings.defaultAgencyCommissionRate ??
+          0.1
+      )
+    )
+  );
   const now = new Date().toISOString();
   const agency: Agency = {
     id: genId('agency'),
@@ -1442,25 +1485,13 @@ export async function applyAsAgencyInSupabase(
     ownerId: user.id,
     ownerName: user.displayName,
     ownerAvatar: user.avatarUrl,
-    commissionRate: 0,
+    commissionRate,
     totalCommissionDiamonds: 0,
     totalHostDiamonds: 0,
     hostIds: [],
     status: 'approved',
     createdAt: now,
   };
-
-  if (user.agencyId) {
-    const prev = (allAgencies || []).find((a) => String(a.id) === user.agencyId);
-    if (prev && Array.isArray(prev.host_ids)) {
-      await supabase
-        .from('sada_agencies')
-        .update({
-          host_ids: (prev.host_ids as string[]).filter((id) => id !== user.id),
-        })
-        .eq('id', prev.id);
-    }
-  }
 
   const nextUser: User = {
     ...user,
@@ -1471,8 +1502,7 @@ export async function applyAsAgencyInSupabase(
     hostAgencyName: agency.name,
   };
 
-  await Promise.all([
-    supabase.from('sada_agencies').insert({
+  const { error: agencyInsertError } = await supabase.from('sada_agencies').insert({
       id: agency.id,
       name: agency.name,
       description: agency.description,
@@ -1486,18 +1516,77 @@ export async function applyAsAgencyInSupabase(
       host_ids: [],
       status: 'approved',
       created_at: now,
-    }),
-    supabase
-      .from('sada_users')
-      .update({
-        is_agent: true,
-        is_host: true,
-        agency_id: agency.id,
-        host_badge: nextUser.hostBadge,
-        host_agency_name: agency.name,
-      })
-      .eq('id', user.id),
-  ]);
+    });
+  if (agencyInsertError) {
+    throw new Error(`تعذّر إنشاء سجل الوكالة: ${agencyInsertError.message}`);
+  }
+
+  const { error: userUpdateError } = await supabase
+    .from('sada_users')
+    .update({
+      is_agent: true,
+      is_host: true,
+      agency_id: agency.id,
+      host_badge: nextUser.hostBadge,
+      host_agency_name: agency.name,
+    })
+    .eq('id', user.id);
+  if (userUpdateError) {
+    const { error: cleanupError } = await supabase
+      .from('sada_agencies')
+      .delete()
+      .eq('id', agency.id);
+    if (cleanupError) {
+      throw new Error(
+        `تعذّر ربط حساب مالك الوكالة (${userUpdateError.message}) أو إزالة سجل الوكالة الجزئي (${cleanupError.message}).`
+      );
+    }
+    throw new Error(`تعذّر ربط حساب مالك الوكالة: ${userUpdateError.message}`);
+  }
+
+  try {
+    await createRoomInSupabase(nextUser, {
+      title: `وكالة ${agency.name}`,
+      description: agency.description,
+      maxSeats: 12,
+      isAgency: true,
+    });
+  } catch (roomError) {
+    const [{ error: agencyCleanupError }, { error: userRestoreError }] = await Promise.all([
+      supabase.from('sada_agencies').delete().eq('id', agency.id),
+      supabase
+        .from('sada_users')
+        .update({
+          is_agent: Boolean(user.isAgent),
+          is_host: Boolean(user.isHost),
+          agency_id: user.agencyId || null,
+          host_badge: user.hostBadge || null,
+          host_agency_name: user.hostAgencyName || null,
+        })
+        .eq('id', user.id),
+    ]);
+    if (agencyCleanupError || userRestoreError) {
+      throw new Error(
+        `تعذّر إنشاء غرفة الوكالة (${roomError instanceof Error ? roomError.message : 'خطأ غير معروف'}) أو التراجع عن الوكالة (${agencyCleanupError?.message || userRestoreError?.message}).`
+      );
+    }
+    throw roomError;
+  }
+
+  if (user.agencyId) {
+    const previousAgency = (allAgencies || []).find((item) => String(item.id) === user.agencyId);
+    if (previousAgency && Array.isArray(previousAgency.host_ids)) {
+      const { error: previousAgencyError } = await supabase
+        .from('sada_agencies')
+        .update({
+          host_ids: (previousAgency.host_ids as string[]).filter((id) => id !== user.id),
+        })
+        .eq('id', previousAgency.id);
+      if (previousAgencyError) {
+        throw new Error(`تعذّر تحديث الوكالة السابقة: ${previousAgencyError.message}`);
+      }
+    }
+  }
 
   return { user: nextUser, agency };
 }
