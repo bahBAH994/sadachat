@@ -249,6 +249,7 @@ export interface Room {
   id: string;
   isAgency?: boolean;
   is_agency?: boolean;
+  agencyId?: string | null;
   title: string;
   category: 'مسابقات' | 'شعر وأدب' | 'طرب' | 'حوار';
   description: string;
@@ -441,7 +442,7 @@ export interface Agency {
   totalCommissionDiamonds: number;
   totalHostDiamonds: number;
   hostIds: string[];
-  status?: 'approved' | 'pending' | 'suspended';
+  status?: 'approved' | 'pending' | 'rejected' | 'suspended';
   createdAt: string;
 }
 

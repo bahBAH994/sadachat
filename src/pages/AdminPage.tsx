@@ -2,34 +2,25 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom';
 import {
   Ban,
-  Building2,
   CheckCircle2,
-  Coins,
   Copy,
   Download,
   FileSpreadsheet,
   Gamepad2,
-  Gem,
-  Gift,
-  Mic,
   Percent,
   Pin,
   PinOff,
   Plus,
-  Radio,
   RefreshCw,
   Save,
-  Settings,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
-  Trophy,
   Unlock,
   Upload,
   UserCheck,
   Users,
-  Wallet,
 } from 'lucide-react';
 import { useActiveRoom } from '../context/ActiveRoomContext';
 import { useAuth } from '../context/AuthContext';
@@ -41,6 +32,7 @@ import {
   type AdminUserRoleChoice,
 } from '../components/admin/AdminUsersTab';
 import { resolveAsset } from '../lib/assets';
+import { supabase } from '../lib/supabase';
 import {
   ADMIN_USDT_TRC20_ADDRESS,
   isSuperAdminUser,
@@ -65,6 +57,7 @@ import {
   rejectFemaleVoiceInSupabase,
   rejectUsdtDepositInSupabase,
   rejectUsdtWithdrawalInSupabase,
+  reviewAgencyApplicationInSupabase,
   resetApplicationDataInSupabase,
   reviewShamCashRequestInSupabase,
   reviewHostJoinApplicationInSupabase,
@@ -100,6 +93,17 @@ import type {
   UsdtWithdrawalRequest,
   User,
 } from '../types';
+import {
+  AgencyIcon,
+  CoinIcon,
+  DiamondIcon,
+  GiftIcon,
+  MicIcon,
+  PartyIcon,
+  SettingsIcon,
+  TrophyIcon,
+  WalletIcon,
+} from '../components/AppIcons';
 
 interface AdminOverview {
   users: User[];
@@ -225,6 +229,7 @@ export const AdminPage: React.FC = () => {
   // Agencies & Host management
   const [agencyRateDrafts, setAgencyRateDrafts] = useState<Record<string, string>>({});
   const [hostAgencyDrafts, setHostAgencyDrafts] = useState<Record<string, string>>({});
+  const [reviewingAgencyId, setReviewingAgencyId] = useState<string | null>(null);
 
   // Questions CSV/Excel import
   const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
@@ -307,6 +312,23 @@ export const AdminPage: React.FC = () => {
   useEffect(() => {
     void loadOverview(false);
   }, [loadOverview]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    const channel = supabase
+      .channel('sada-admin-agency-requests')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_agencies' },
+        () => {
+          void loadOverview('silent');
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [isSuperAdmin, loadOverview]);
 
   const showOk = (text: string) => setNotice({ type: 'ok', text });
   const showErr = (err: unknown, fallback: string) =>
@@ -760,6 +782,34 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const handleReviewAgencyApplication = async (
+    agencyId: string,
+    decision: 'approved' | 'rejected'
+  ) => {
+    if (!user || reviewingAgencyId) return;
+    setReviewingAgencyId(agencyId);
+    try {
+      await reviewAgencyApplicationInSupabase(agencyId, decision, user);
+      showOk(
+        decision === 'approved'
+          ? 'تم اعتماد الوكالة وترقية صاحبها وإنشاء غرفتها الرسمية.'
+          : 'تم رفض طلب الوكالة وإرسال إشعار إلى صاحبه.'
+      );
+      void loadOverview('silent');
+      void refreshUser();
+    } catch (err) {
+      showErr(
+        err,
+        decision === 'approved'
+          ? 'تعذّر اعتماد طلب الوكالة.'
+          : 'تعذّر رفض الطلب أو إرسال الإشعار.'
+      );
+      void loadOverview('silent');
+    } finally {
+      setReviewingAgencyId(null);
+    }
+  };
+
   const handlePayoutAgencyCommission = async (agencyId: string) => {
     try {
       const currentMonth = new Date().toISOString().slice(0, 7);
@@ -1097,6 +1147,8 @@ export const AdminPage: React.FC = () => {
 
   const pendingHostAppsCount =
     data?.hostJoinApplications?.filter((a) => a.status === 'pending').length || 0;
+  const pendingAgencyAppsCount =
+    data?.agencies.filter((agency) => agency.status === 'pending').length || 0;
   const pendingVoiceCount = data?.stats.pendingFemaleVoiceCount || 0;
   const pendingUsdtCount = data?.stats.pendingUsdtCount || 0;
   const shamCashRequests = data ? getShamCashRequests(data.settings) : [];
@@ -1116,7 +1168,7 @@ export const AdminPage: React.FC = () => {
     {
       id: 'rooms_agencies',
       label: 'الغرف والوكالات',
-      badge: pendingHostAppsCount,
+      badge: pendingHostAppsCount + pendingAgencyAppsCount,
     },
     { id: 'gifts_announcements', label: 'الهدايا والإعلانات' },
     { id: 'usdt', label: 'طلبات الشحن والسحب', badge: pendingPaymentCount },
@@ -1291,7 +1343,7 @@ export const AdminPage: React.FC = () => {
                   >
                     <div className="flex items-center justify-between text-xs text-slate-300">
                       <span>الغرف النشطة</span>
-                      <Radio className="w-4 h-4 text-emerald-400" />
+                      <PartyIcon className="w-4 h-4" />
                     </div>
                     <div className="text-2xl sm:text-3xl font-extrabold font-mono-num text-emerald-300">
                       {data.stats.activeRooms.toLocaleString('en-US')}
@@ -1306,7 +1358,7 @@ export const AdminPage: React.FC = () => {
                   >
                     <div className="flex items-center justify-between text-xs text-slate-300">
                       <span>إجمالي العملات</span>
-                      <Coins className="w-4 h-4 text-[#F3D37A]" />
+                      <CoinIcon className="w-4 h-4" />
                     </div>
                     <div className="text-2xl sm:text-3xl font-extrabold font-mono-num text-[#FCE9A6]">
                       {data.stats.totalCoins.toLocaleString('en-US')}
@@ -1325,7 +1377,7 @@ export const AdminPage: React.FC = () => {
                   >
                     <div className="flex items-center justify-between text-xs text-slate-300">
                       <span>طلبات التوثيق المعلقة</span>
-                      <Mic className="w-4 h-4 text-pink-300" />
+                      <MicIcon className="w-4 h-4" />
                     </div>
                     <div className="text-2xl sm:text-3xl font-extrabold font-mono-num text-pink-200">
                       {pendingVoiceCount.toLocaleString('en-US')}
@@ -1347,7 +1399,7 @@ export const AdminPage: React.FC = () => {
                         {pendingPaymentCount}
                       </span>
                     </div>
-                    <Coins className="w-5 h-5 text-[#D4AF37]" />
+                    <CoinIcon className="w-5 h-5" />
                   </button>
 
                   <button
@@ -1375,7 +1427,7 @@ export const AdminPage: React.FC = () => {
                         {data.settings.customGifts?.length || 0}
                       </span>
                     </div>
-                    <Gift className="w-5 h-5 text-amber-300" />
+                    <GiftIcon className="w-5 h-5" />
                   </button>
 
                   <button
@@ -1581,7 +1633,7 @@ export const AdminPage: React.FC = () => {
               <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-[#FCE9A6]">
-                    <Mic className="w-5 h-5 text-pink-300" />
+                    <MicIcon className="w-5 h-5" />
                     <div>
                       <h2 className="text-base sm:text-lg font-extrabold">
                         طلبات التوثيق الصوتي للحسابات النسائية ({voiceRequestsToDisplay.length})
@@ -1705,11 +1757,82 @@ export const AdminPage: React.FC = () => {
             {/* TAB 4: ROOMS & AGENCIES ("الغرف والوكالات") */}
             {tab === 'rooms_agencies' && (
               <div className="space-y-5">
+                {/* Pending Agency Applications */}
+                <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-[#FCE9A6]">
+                      <AgencyIcon className="w-5 h-5" />
+                      <h2 className="text-base sm:text-lg font-extrabold">
+                        طلبات تأسيس الوكالات ({pendingAgencyAppsCount})
+                      </h2>
+                    </div>
+                    <span className="text-xs text-slate-300">بانتظار مراجعة الإدارة العليا</span>
+                  </div>
+
+                  {pendingAgencyAppsCount === 0 ? (
+                    <p className="text-xs text-slate-400 py-4 text-center">
+                      لا توجد طلبات تأسيس وكالات معلّقة حالياً.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-[#D4AF37]/15">
+                      {data?.agencies
+                        .filter((agency) => agency.status === 'pending')
+                        .map((agency) => (
+                          <article key={agency.id} className="py-4 space-y-3">
+                            <div className="space-y-1.5">
+                              <h3 className="text-sm font-extrabold text-white">
+                                {agency.name}
+                              </h3>
+                              <p className="text-xs leading-5 text-slate-300">
+                                {agency.description || 'لا يوجد وصف.'}
+                              </p>
+                              <p className="text-xs text-slate-300">
+                                صاحب الطلب: <span className="font-bold text-white">{agency.ownerName}</span>
+                                {' · '}
+                                <span className="font-mono-num text-[#FCE9A6]" dir="ltr">
+                                  {agency.ownerId}
+                                </span>
+                                {' · الدولة: '}
+                                <span className="font-bold text-white">
+                                  {data?.settings.userMeta?.[agency.ownerId]?.country || 'غير محددة'}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <button
+                                type="button"
+                                disabled={reviewingAgencyId !== null}
+                                onClick={() =>
+                                  void handleReviewAgencyApplication(agency.id, 'approved')
+                                }
+                                className="min-h-[42px] rounded-xl bg-emerald-600 hover:bg-emerald-500 border border-emerald-400/60 px-4 text-xs font-extrabold text-white disabled:opacity-50 cursor-pointer"
+                              >
+                                {reviewingAgencyId === agency.id
+                                  ? 'جارٍ التنفيذ...'
+                                  : 'اعتماد وتفعيل الوكالة ✓'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={reviewingAgencyId !== null}
+                                onClick={() =>
+                                  void handleReviewAgencyApplication(agency.id, 'rejected')
+                                }
+                                className="min-h-[42px] rounded-xl bg-rose-700 hover:bg-rose-600 border border-rose-400/60 px-4 text-xs font-extrabold text-white disabled:opacity-50 cursor-pointer"
+                              >
+                                رفض الطلب ✕
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                    </div>
+                  )}
+                </section>
+
                 {/* Active Rooms with Pin to top of Party Tab & Close */}
                 <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-[#FCE9A6]">
-                      <Radio className="w-5 h-5 text-emerald-400" />
+                      <PartyIcon className="w-5 h-5" />
                       <div>
                         <h2 className="text-base sm:text-lg font-extrabold">
                           الغرف النشطة حالياً ({sortedActiveRooms.length})
@@ -1888,7 +2011,7 @@ export const AdminPage: React.FC = () => {
                 <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-[#F3D37A]">
-                      <Coins className="w-5 h-5" />
+                      <CoinIcon className="w-5 h-5" />
                       <div>
                         <h2 className="text-base font-bold">
                           كشف رواتب المضيفين المستحقة ({payrollMonth}) · {payrollRoster.length}
@@ -1999,7 +2122,7 @@ export const AdminPage: React.FC = () => {
                 {/* Agencies Approvals & Commission Payouts */}
                 <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                   <div className="flex items-center gap-2 text-[#F3D37A]">
-                    <Building2 className="w-5 h-5" />
+                    <AgencyIcon className="w-5 h-5" />
                     <h2 className="text-base font-bold">
                       اعتماد الوكالات وتعديل نسب العمولة ({data.agencies.length})
                     </h2>
@@ -2066,6 +2189,8 @@ export const AdminPage: React.FC = () => {
                                       ? 'text-emerald-300'
                                       : status === 'suspended'
                                       ? 'text-rose-300'
+                                      : status === 'rejected'
+                                      ? 'text-rose-300'
                                       : 'text-amber-300'
                                   }`}
                                 >
@@ -2074,24 +2199,26 @@ export const AdminPage: React.FC = () => {
                                     ? 'معتمدة ✓'
                                     : status === 'suspended'
                                     ? 'معلّقة'
+                                    : status === 'rejected'
+                                    ? 'مرفوضة'
                                     : 'قيد المراجعة'}
                                 </span>
                               </div>
                               <p className="text-xs text-slate-300 font-mono-num">
                                 الوكيل: {ag.ownerName} · المضيفون: {ag.hostIds.length} · ألماس
-                                المضيفين: {ag.totalHostDiamonds.toLocaleString('en-US')} 💎 · عمولة
-                                منصرفة: {ag.totalCommissionDiamonds.toLocaleString('en-US')} 💎 ·
+                                المضيفين: {ag.totalHostDiamonds.toLocaleString('en-US')} <DiamondIcon className="inline h-3 w-3" /> · عمولة
+                                منصرفة: {ag.totalCommissionDiamonds.toLocaleString('en-US')} <DiamondIcon className="inline h-3 w-3" /> ·
                                 مستحق مقترح:{' '}
                                 <span className="text-emerald-300 font-bold">
-                                  {suggestedPending.toLocaleString('en-US')} 💎
+                                  {suggestedPending.toLocaleString('en-US')} <DiamondIcon className="inline h-3 w-3" />
                                 </span>
                                 {' '}· ألماس المضيفين هذا الشهر:{' '}
                                 <span className="text-sky-200 font-bold">
-                                  {monthlyAgencyDiamonds.toLocaleString('en-US')} 💎
+                                  {monthlyAgencyDiamonds.toLocaleString('en-US')} <DiamondIcon className="inline h-3 w-3" />
                                 </span>
                                 {' '}· عمولة الشهر:{' '}
                                 <span className="text-emerald-300 font-bold">
-                                  {monthlyAgencyCommission.toLocaleString('en-US')} 💎
+                                  {monthlyAgencyCommission.toLocaleString('en-US')} <DiamondIcon className="inline h-3 w-3" />
                                 </span>
                               </p>
                             </div>
@@ -2136,7 +2263,7 @@ export const AdminPage: React.FC = () => {
                                 {monthlyCommissionPaid ? 'تم صرف عمولة الشهر ✓' : 'صرف عمولة الشهر'}
                               </button>
 
-                              {status !== 'approved' ? (
+                              {status === 'suspended' ? (
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -2144,9 +2271,9 @@ export const AdminPage: React.FC = () => {
                                   }
                                   className="gold-btn min-h-[38px] rounded-xl px-3.5 text-xs font-bold cursor-pointer"
                                 >
-                                  اعتماد الوكالة
+                                  إعادة تفعيل الوكالة
                                 </button>
-                              ) : (
+                              ) : status === 'approved' ? (
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -2156,6 +2283,12 @@ export const AdminPage: React.FC = () => {
                                 >
                                   تعليق الوكالة
                                 </button>
+                              ) : (
+                                <span className="text-[11px] text-slate-400">
+                                  {status === 'pending'
+                                    ? 'بانتظار مراجعة الطلب أعلاه'
+                                    : 'تم رفض الطلب'}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -2201,7 +2334,7 @@ export const AdminPage: React.FC = () => {
                           </div>
                           <p className="text-xs text-slate-400 font-mono-num" dir="ltr">
                             {u.email} · ألماس المضيف:{' '}
-                            {(u.hostDiamondsEarned || 0).toLocaleString('en-US')} 💎
+                            {(u.hostDiamondsEarned || 0).toLocaleString('en-US')} <DiamondIcon className="inline h-3 w-3" />
                           </p>
                         </div>
 
@@ -2457,7 +2590,7 @@ export const AdminPage: React.FC = () => {
                             </span>
                             <p className="text-slate-300 font-mono-num">
                               {wd.sourceAmount.toLocaleString('en-US')}{' '}
-                              {wd.sourceCurrency === 'diamonds' ? 'ألماسة 💎' : 'كوينز'}
+                              {wd.sourceCurrency === 'diamonds' ? <>ألماسة <DiamondIcon className="inline h-3 w-3" /></> : 'كوينز'}
                             </p>
                             <p
                               className="text-[11px] text-[#FCE9A6] font-mono-num break-all"
@@ -2609,7 +2742,7 @@ export const AdminPage: React.FC = () => {
 
                 <section className="lg:col-span-7 royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                   <h2 className="text-base font-bold text-[#F3D37A] flex items-center gap-2">
-                    <Trophy className="w-4 h-4" />
+                    <TrophyIcon className="w-4 h-4" />
                     <span>المسابقات الحالية</span>
                   </h2>
                   <div className="divide-y divide-[#D4AF37]/15">
@@ -2648,7 +2781,7 @@ export const AdminPage: React.FC = () => {
                   className="lg:col-span-7 royal-glass rounded-3xl p-5 sm:p-6 space-y-4"
                 >
                   <h2 className="text-base font-bold text-[#F3D37A] flex items-center gap-2">
-                    <Trophy className="w-4 h-4" />
+                    <TrophyIcon className="w-4 h-4" />
                     إعدادات مسابقة صدى الكبرى
                   </h2>
                   {(
@@ -2894,7 +3027,7 @@ export const AdminPage: React.FC = () => {
               <form onSubmit={handleSaveSettings} className="space-y-5">
                 <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                   <div className="flex items-center gap-2 text-[#FCE9A6]">
-                    <Wallet className="w-5 h-5 text-[#D4AF37]" />
+                    <WalletIcon className="w-5 h-5" />
                     <h2 className="text-sm font-extrabold">عناوين الدفع للإدارة</h2>
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
@@ -2941,7 +3074,7 @@ export const AdminPage: React.FC = () => {
                 </section>
                 <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
                   <div className="flex items-center gap-2 text-[#FCE9A6]">
-                    <Coins className="w-5 h-5 text-[#D4AF37]" />
+                    <CoinIcon className="w-5 h-5" />
                     <h2 className="text-sm font-extrabold">تارغت ورواتب المضيفين والوكلاء</h2>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
@@ -3053,7 +3186,7 @@ export const AdminPage: React.FC = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <section className="royal-glass rounded-3xl p-5 space-y-3.5">
                     <div className="flex items-center gap-2 text-[#FCE9A6]">
-                      <Coins className="w-5 h-5 text-[#D4AF37]" />
+                      <CoinIcon className="w-5 h-5" />
                       <h2 className="text-sm font-extrabold">أسعار صرف الكوينز والألماس</h2>
                     </div>
 
@@ -3206,7 +3339,7 @@ export const AdminPage: React.FC = () => {
 
                   <section className="royal-glass rounded-3xl p-5 space-y-3.5">
                     <div className="flex items-center gap-2 text-[#FCE9A6]">
-                      <Gem className="w-5 h-5 text-sky-400" />
+                      <DiamondIcon className="w-5 h-5" />
                       <h2 className="text-sm font-extrabold">إعدادات الألماس والخاص ودولاب الغرف</h2>
                     </div>
 
@@ -3306,7 +3439,7 @@ export const AdminPage: React.FC = () => {
 
                   <section className="royal-glass rounded-3xl p-5 space-y-3.5">
                     <div className="flex items-center gap-2 text-[#FCE9A6]">
-                      <Settings className="w-5 h-5 text-[#D4AF37]" />
+                      <SettingsIcon className="w-5 h-5" />
                       <h2 className="text-sm font-extrabold">فئات مكافآت الشحن المؤقتة (USDT)</h2>
                     </div>
                     <div className="space-y-3 text-xs">

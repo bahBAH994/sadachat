@@ -1,8 +1,8 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Compass, Home, MessageCircle, UserCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useActiveRoom } from '../context/ActiveRoomContext';
+import { FriendsIcon, InboxIcon, PartyIcon, ProfileIcon } from './AppIcons';
 
 export const BottomNav: React.FC = () => {
   const { user } = useAuth();
@@ -13,10 +13,10 @@ export const BottomNav: React.FC = () => {
   if (location.pathname.startsWith('/room/') && !isMinimized) return null;
 
   const items = [
-    { to: '/', label: 'حفلة', icon: Home },
-    { to: '/meet', label: 'الأصدقاء', icon: Compass },
-    { to: '/messages', label: 'صندوق الوارد', icon: MessageCircle },
-    { to: '/profile', label: 'شخصي', icon: UserCircle2 },
+    { to: '/', label: 'حفلة', icon: PartyIcon },
+    { to: '/meet', label: 'الأصدقاء', icon: FriendsIcon },
+    { to: '/messages', label: 'صندوق الوارد', icon: InboxIcon },
+    { to: '/profile', label: 'شخصي', icon: ProfileIcon },
   ];
 
   return (
@@ -46,7 +46,7 @@ export const BottomNav: React.FC = () => {
                     : ''
                 }`}
               >
-                <Icon className="w-5 h-5" />
+                <Icon className="w-6 h-6" />
               </div>
               <span
                 className={`text-[11px] mt-0.5 leading-none ${

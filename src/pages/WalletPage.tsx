@@ -3,16 +3,14 @@ import {
   ArrowLeftRight,
   Award,
   Check,
-  Coins,
   Copy,
-  Gem,
   ImagePlus,
   QrCode,
   Send,
   ShieldCheck,
   Trash2,
-  Wallet,
 } from 'lucide-react';
+import { CoinIcon, DiamondIcon, WalletIcon } from '../components/AppIcons';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
 import { genId } from '../lib/sadaCatalog';
@@ -407,7 +405,8 @@ export const WalletPage: React.FC = () => {
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-3 space-y-4 shrink-0">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold gold-gradient-text">
+          <h1 className="flex items-center gap-2 text-2xl sm:text-3xl font-extrabold gold-gradient-text">
+            <WalletIcon className="h-7 w-7" />
             محفظة الشحن والسحب
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 mt-1">
@@ -592,7 +591,7 @@ export const WalletPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-[#FCE9A6]">
-                    <Wallet className="w-5 h-5 text-[#D4AF37]" />
+                    <WalletIcon className="w-5 h-5" />
                     <h2 className="text-base font-extrabold">توثيق حوالة الشحن (USDT TRC20)</h2>
                   </div>
                   <span className="text-xs font-mono-num text-slate-300">
@@ -803,7 +802,7 @@ export const WalletPage: React.FC = () => {
                           : 'bg-[#070913]/80 border-white/10 text-slate-300'
                       }`}
                     >
-                      <Gem className="w-4 h-4 text-sky-400" />
+                      <DiamondIcon className="w-4 h-4 text-sky-400" />
                       <span>الألماس ({user.diamonds.toLocaleString('en-US')})</span>
                     </button>
                     <button
@@ -818,7 +817,7 @@ export const WalletPage: React.FC = () => {
                           : 'bg-[#070913]/80 border-white/10 text-slate-300'
                       }`}
                     >
-                      <Coins className="w-4 h-4 text-[#D4AF37]" />
+                      <CoinIcon className="w-4 h-4 text-[#D4AF37]" />
                       <span>الكوينز ({user.coins.toLocaleString('en-US')})</span>
                     </button>
                   </div>

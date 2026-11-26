@@ -257,7 +257,7 @@ export async function listActiveRooms(): Promise<Room[]> {
       .from('sada_room_messages')
       .select(ROOM_MESSAGE_COLUMNS)
       .order('timestamp', { ascending: false })
-      .limit(50),
+      .limit(40),
   ]);
 
   if (error) {
@@ -326,7 +326,8 @@ export async function getUserActiveRoomsInSupabase(
     .select(ROOM_COLUMNS)
     .in('host_id', hostIds)
     .eq('is_active', true)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(30);
   if (roomError) {
     throw new Error(`تعذّر البحث عن الغرف النشطة: ${roomError.message}`);
   }
@@ -336,8 +337,10 @@ export async function getUserActiveRoomsInSupabase(
     return room;
   });
   const agencyRoom = agencyOwnerId
-    ? activeRooms.find((room) => room.hostId === agencyOwnerId && room.isAgency) ||
-      activeRooms.find((room) => room.hostId === agencyOwnerId) ||
+    ? activeRooms.find(
+        (room) => room.agencyId === agencyId && room.isAgency === true
+      ) ||
+      activeRooms.find((room) => room.hostId === agencyOwnerId && room.isAgency === true) ||
       null
     : null;
   const personalRoom =
@@ -360,6 +363,7 @@ export async function createRoomInSupabase(
     isPrivate?: boolean;
     password?: string;
     isAgency?: boolean;
+    agencyId?: string;
   }
 ): Promise<Room> {
   const cleanTitle = (payload.title || '').trim();
@@ -369,6 +373,11 @@ export async function createRoomInSupabase(
   const cleanPin = payload.isPrivate ? (payload.password || '').trim() : '';
   if (payload.isPrivate && cleanPin.length < 3) {
     throw new Error('يرجى إدخال رمز سري للغرفة الخاصة (3 أرقام على الأقل).');
+  }
+  const isAgency = payload.isAgency === true;
+  const agencyId = isAgency ? payload.agencyId?.trim() : undefined;
+  if (isAgency && !agencyId) {
+    throw new Error('معرّف الوكالة مطلوب لإنشاء غرفة وكالة.');
   }
 
   const allowedCounts = [6, 12, 18, 24];
@@ -393,7 +402,8 @@ export async function createRoomInSupabase(
     background_url: 'dragon_dark',
     cover_image: 'dragon_dark',
     is_private: Boolean(payload.isPrivate),
-    is_agency: Boolean(payload.isAgency),
+    is_agency: isAgency,
+    agency_id: agencyId || null,
     password: cleanPin || null,
     max_seats: seatsCount,
     seats,
@@ -481,7 +491,7 @@ export async function getRoomDetailsFromSupabase(roomId: string): Promise<{
       .select(ROOM_MESSAGE_COLUMNS)
       .eq('room_id', roomId)
       .order('timestamp', { ascending: false })
-      .limit(50),
+      .limit(40),
     getPlatformState(),
   ]);
 

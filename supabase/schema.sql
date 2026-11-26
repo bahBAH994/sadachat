@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS public.sada_rooms (
   cover_image TEXT NOT NULL DEFAULT 'royal_stage',
   is_private BOOLEAN NOT NULL DEFAULT FALSE,
   is_agency BOOLEAN NOT NULL DEFAULT FALSE,
+  agency_id TEXT,
   password TEXT,
   max_seats INTEGER NOT NULL DEFAULT 8,
   seats JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -111,7 +112,8 @@ ALTER TABLE public.sada_rooms
   ADD COLUMN IF NOT EXISTS avatar_url TEXT,
   ADD COLUMN IF NOT EXISTS cover_url TEXT,
   ADD COLUMN IF NOT EXISTS background_url TEXT,
-  ADD COLUMN IF NOT EXISTS is_agency BOOLEAN NOT NULL DEFAULT FALSE;
+  ADD COLUMN IF NOT EXISTS is_agency BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS agency_id TEXT;
 
 UPDATE public.sada_rooms
 SET avatar_url = COALESCE(avatar_url, host_avatar),
@@ -265,11 +267,12 @@ CREATE TABLE IF NOT EXISTS public.sada_agencies (
 );
 
 UPDATE public.sada_rooms AS rooms
-SET is_agency = TRUE
+SET is_agency = TRUE,
+    agency_id = agencies.id
 FROM public.sada_agencies AS agencies
 WHERE rooms.host_id = agencies.owner_id
-  AND rooms.is_agency = FALSE
-  AND rooms.title = 'وكالة ' || agencies.name;
+  AND rooms.title = 'وكالة ' || agencies.name
+  AND (rooms.is_agency IS DISTINCT FROM TRUE OR rooms.agency_id IS DISTINCT FROM agencies.id);
 
 -- 11. جدول المسابقات والبطولات الصوتية
 CREATE TABLE IF NOT EXISTS public.sada_competitions (

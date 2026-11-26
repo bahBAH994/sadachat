@@ -7,24 +7,21 @@ import {
   Heart,
   Lock,
   MessageCircle,
-  Mic,
-  Mic2,
   Plus,
-  Radio,
   Search,
   Sparkles,
-  Trophy,
   Unlock,
   UserCheck,
   UserPlus,
   X,
 } from 'lucide-react';
+import { AgencyIcon, MicIcon, PartyIcon, TrophyIcon } from '../components/AppIcons';
 import { useAuth } from '../context/AuthContext';
 import { useActiveRoom } from '../context/ActiveRoomContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { resolveAsset } from '../lib/assets';
 import { ARAB_COUNTRIES, formatShortNumericId, getUserVipTierInfo } from '../lib/sadaCatalog';
-import { getPlatformState } from '../lib/sadaMappers';
+import { getPlatformState, rowToRoom, ROOM_COLUMNS } from '../lib/sadaMappers';
 import {
   createRoomInSupabase,
   getUserActiveRoomsInSupabase,
@@ -43,6 +40,15 @@ import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/Avatar
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 
 type FilterChip = 'الوكالات' | 'الغرف الخاصة' | 'لايف';
+type LobbyMainTab = 'party' | 'mine';
+
+interface LobbyNavigationState {
+  mainTab: LobbyMainTab;
+  activeChip: FilterChip;
+  countryCode: string;
+  search: string;
+  showSearch: boolean;
+}
 
 interface PresenceUser {
   roomId: string;
@@ -74,6 +80,46 @@ const COUNTRY_FILTERS = [
   { code: 'CA', label: 'كندا', flag: '🇨🇦' },
   { code: 'SE', label: 'السويد', flag: '🇸🇪' },
 ];
+
+const LOBBY_NAVIGATION_STATE_KEY = 'sada_lobby_navigation_state';
+const DEFAULT_LOBBY_NAVIGATION_STATE: LobbyNavigationState = {
+  mainTab: 'party',
+  activeChip: 'الوكالات',
+  countryCode: 'ALL',
+  search: '',
+  showSearch: false,
+};
+
+const readLobbyNavigationState = (storageKey: string): LobbyNavigationState => {
+  try {
+    const storedState = window.sessionStorage.getItem(storageKey);
+    if (!storedState) return DEFAULT_LOBBY_NAVIGATION_STATE;
+
+    const parsedState: unknown = JSON.parse(storedState);
+    if (!parsedState || typeof parsedState !== 'object') {
+      return DEFAULT_LOBBY_NAVIGATION_STATE;
+    }
+
+    const state = parsedState as Partial<LobbyNavigationState>;
+    return {
+      mainTab: state.mainTab === 'mine' ? 'mine' : 'party',
+      activeChip:
+        state.activeChip === 'الغرف الخاصة' || state.activeChip === 'لايف'
+          ? state.activeChip
+          : 'الوكالات',
+      countryCode:
+        typeof state.countryCode === 'string' &&
+        COUNTRY_FILTERS.some((country) => country.code === state.countryCode)
+          ? state.countryCode
+          : 'ALL',
+      search: typeof state.search === 'string' ? state.search : '',
+      showSearch: state.showSearch === true,
+    };
+  } catch (error) {
+    console.error('Unable to restore lobby navigation state:', error);
+    return DEFAULT_LOBBY_NAVIGATION_STATE;
+  }
+};
 
 const getCountryFlag = (country?: string) => {
   const normalizedCountry = country?.trim();
@@ -190,7 +236,7 @@ const LobbyRoomCard = memo<LobbyRoomCardProps>(
               ))}
               {members.length === 0 && (
                 <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <Mic className="w-3 h-3 text-emerald-500" />
+                  <MicIcon className="w-3 h-3 text-emerald-500" />
                   <span>متاحة للدخول</span>
                 </span>
               )}
@@ -217,6 +263,10 @@ export const LobbyPage: React.FC = () => {
   const { openMiniProfile } = useMiniProfile();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const lobbyNavigationStorageKey = `${LOBBY_NAVIGATION_STATE_KEY}:${user?.id || 'guest'}`;
+  const [initialLobbyNavigationState] = useState(() =>
+    readLobbyNavigationState(lobbyNavigationStorageKey)
+  );
 
   const [exitToastVisible, setExitToastVisible] = useState(false);
   const lastBackPressRef = useRef<number>(0);
@@ -270,17 +320,52 @@ export const LobbyPage: React.FC = () => {
   const [pendingMyRoomEntry, setPendingMyRoomEntry] = useState(false);
   const [openingMyRoom, setOpeningMyRoom] = useState(false);
   const openingMyRoomRef = useRef(false);
-  const [mainTab, setMainTab] = useState<'party' | 'mine'>('party');
-  const [activeChip, setActiveChip] = useState<FilterChip>('الوكالات');
+  const [mainTab, setMainTab] = useState<LobbyMainTab>(
+    initialLobbyNavigationState.mainTab
+  );
+  const [activeChip, setActiveChip] = useState<FilterChip>(
+    initialLobbyNavigationState.activeChip
+  );
   const [showMyRoomChoice, setShowMyRoomChoice] = useState(false);
   const [myRoomOptions, setMyRoomOptions] = useState<{
     personalRoom: Room;
     agencyRoom: Room;
   } | null>(null);
-  const [showSearch, setShowSearch] = useState(false);
-  const [search, setSearch] = useState('');
-  const [selectedCountry, setSelectedCountry] = useState(COUNTRY_FILTERS[0]);
+  const [search, setSearch] = useState(initialLobbyNavigationState.search);
+  const [selectedCountry, setSelectedCountry] = useState(
+    COUNTRY_FILTERS.find(
+      (country) => country.code === initialLobbyNavigationState.countryCode
+    ) || COUNTRY_FILTERS[0]
+  );
+  const [showSearch, setShowSearch] = useState(
+    initialLobbyNavigationState.showSearch
+  );
   const [showCountryMenu, setShowCountryMenu] = useState(false);
+
+  useEffect(() => {
+    const navigationState: LobbyNavigationState = {
+      mainTab,
+      activeChip,
+      countryCode: selectedCountry.code,
+      search,
+      showSearch,
+    };
+    try {
+      window.sessionStorage.setItem(
+        lobbyNavigationStorageKey,
+        JSON.stringify(navigationState)
+      );
+    } catch (error) {
+      console.error('Unable to save lobby navigation state:', error);
+    }
+  }, [
+    activeChip,
+    lobbyNavigationStorageKey,
+    mainTab,
+    search,
+    selectedCountry,
+    showSearch,
+  ]);
 
   const [presenceByRoom, setPresenceByRoom] = useState<Record<string, PresenceUser[]>>({});
   const [presenceReady, setPresenceReady] = useState(false);
@@ -330,8 +415,25 @@ export const LobbyPage: React.FC = () => {
 
   const loadRooms = useCallback(async () => {
     try {
-      const data = await listActiveRooms();
-      setRooms(data);
+      const [data, agencyRoomsResult] = await Promise.all([
+        listActiveRooms(),
+        supabase
+          .from('sada_rooms')
+          .select(ROOM_COLUMNS)
+          .eq('is_active', true)
+          .eq('is_agency', true)
+          .order('created_at', { ascending: false })
+          .limit(30),
+      ]);
+      if (agencyRoomsResult.error) {
+        throw new Error(`تعذّر تحميل غرف الوكالات: ${agencyRoomsResult.error.message}`);
+      }
+      const roomsById = new Map(data.map((room) => [room.id, room]));
+      for (const roomRow of agencyRoomsResult.data || []) {
+        const { password: _password, ...room } = rowToRoom(roomRow, []);
+        roomsById.set(room.id, room);
+      }
+      setRooms(Array.from(roomsById.values()));
     } finally {
       setLoading(false);
     }
@@ -346,8 +448,15 @@ export const LobbyPage: React.FC = () => {
         const [dir, platState, agenciesRes] = await Promise.all([
           getDiscoveryDirectoryFromSupabase(user.id),
           getPlatformState({ forceRefresh }).catch(() => null),
-          supabase.from('sada_agencies').select('id, owner_id'),
+          supabase
+            .from('sada_agencies')
+            .select('id, owner_id')
+            .eq('status', 'approved')
+            .limit(30),
         ]);
+        if (agenciesRes.error) {
+          throw new Error(`تعذّر تحميل الوكالات المعتمدة: ${agenciesRes.error.message}`);
+        }
         setDirectoryUsers(dir.users);
         setUserFollows(dir.userFollows);
         setUserMeta(dir.userMeta || {});
@@ -390,6 +499,13 @@ export const LobbyPage: React.FC = () => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sada_platform_state' },
+        () => {
+          void loadDirectory(true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_agencies' },
         () => {
           void loadDirectory(true);
         }
@@ -529,15 +645,16 @@ export const LobbyPage: React.FC = () => {
 
   const myOwnedRooms = useMemo(() => {
     if (!user) return [];
-    return rooms.filter((r) => r.hostId === user.id && !r.isAgency);
+    return rooms.filter((r) => r.hostId === user.id && r.isAgency !== true);
   }, [rooms, user]);
 
   const myAgencyRoom = useMemo(() => {
     if (!user?.agencyId) return undefined;
     const ownerId = agencyOwnerMap[user.agencyId];
     return (
-      rooms.find((r) => r.isAgency && ownerId && r.hostId === ownerId) ||
-      rooms.find((r) => r.isAgency && r.hostId === user.id)
+      rooms.find((r) => r.isAgency === true && r.agencyId === user.agencyId) ||
+      rooms.find((r) => r.isAgency === true && ownerId && r.hostId === ownerId) ||
+      rooms.find((r) => r.isAgency === true && r.hostId === user.id)
     );
   }, [rooms, user, agencyOwnerMap]);
 
@@ -549,8 +666,8 @@ export const LobbyPage: React.FC = () => {
   const filteredRooms = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = rooms.filter((r) => {
-      if (activeChip === 'الوكالات' && !r.isAgency) return false;
-      if (activeChip === 'الغرف الخاصة' && r.isAgency) return false;
+      if (activeChip === 'الوكالات' && r.isAgency !== true) return false;
+      if (activeChip === 'الغرف الخاصة' && r.isAgency === true) return false;
       if (selectedCountry.code !== 'ALL') {
         const hostCountry = userMeta[r.hostId]?.country?.trim();
         if (
@@ -735,6 +852,7 @@ export const LobbyPage: React.FC = () => {
         category: newCategory,
         description: newDesc,
         maxSeats: newSeats,
+        isAgency: false,
         isPrivate: newPrivate,
         password: newPrivate ? newPassword : '',
       });
@@ -992,7 +1110,7 @@ export const LobbyPage: React.FC = () => {
               className="w-full min-h-[92px] rounded-3xl bg-gradient-to-l from-sky-50 via-white to-indigo-50 border border-sky-200/80 p-4 flex items-center justify-between gap-4 text-right cursor-pointer hover:border-sky-300 hover:shadow-md transition shadow-sm"
             >
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center text-white shadow-md shrink-0">
-                <Trophy className="w-7 h-7" />
+                <TrophyIcon className="w-7 h-7" />
               </div>
               <div className="flex-1 min-w-0">
                 <span className="block text-base sm:text-lg font-black text-slate-900">مسابقة صدى الكبرى</span>
@@ -1035,7 +1153,7 @@ export const LobbyPage: React.FC = () => {
           {activeChip === 'لايف' ? (
             <div className="light-card rounded-3xl p-10 text-center space-y-3">
               <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-rose-500/15 to-amber-500/15 border border-rose-200 flex items-center justify-center text-rose-500">
-                <Radio className="w-7 h-7" />
+                <PartyIcon className="w-7 h-7" />
               </div>
               <h3 className="text-base font-extrabold text-slate-900">
                 قريباً - خدمة البث المباشر قيد التفعيل
@@ -1097,7 +1215,7 @@ export const LobbyPage: React.FC = () => {
             <section className="space-y-2.5">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-1.5">
-                  <Mic2 className="w-4 h-4 text-emerald-600" />
+                  <MicIcon className="w-4 h-4 text-emerald-600" />
                   <span>غرفتي الصوتية</span>
                 </h2>
                 <button
@@ -1234,7 +1352,7 @@ export const LobbyPage: React.FC = () => {
           disabled={openingMyRoom}
           className="emerald-btn rounded-full px-3 py-1.5 text-xs shadow-lg font-extrabold flex items-center gap-2 cursor-pointer disabled:opacity-70"
         >
-          <Mic2 className="w-4 h-4" />
+          <MicIcon className="w-4 h-4" />
           <span>{openingMyRoom ? 'جارٍ التحقق...' : 'غرفتي / وكالتي'}</span>
         </button>
       </div>
@@ -1270,8 +1388,8 @@ export const LobbyPage: React.FC = () => {
               </button>
             </div>
             {([
-              ['personalRoom', 'غرفتي الخاصة', Mic2],
-              ['agencyRoom', 'وكالتي', Radio],
+              ['personalRoom', 'غرفتي الخاصة', MicIcon],
+              ['agencyRoom', 'وكالتي', AgencyIcon],
             ] as const).map(([roomKey, label, Icon]) => {
               const targetRoom = myRoomOptions[roomKey];
               return (

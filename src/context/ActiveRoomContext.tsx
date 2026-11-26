@@ -729,7 +729,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 if (!prev) return prev;
                 const msgs = Array.isArray(prev.messages) ? prev.messages : [];
                 if (msgs.some((m) => m.id === mapped.id)) return prev;
-                return { ...prev, messages: [...msgs, mapped].slice(-80) };
+                return { ...prev, messages: [...msgs, mapped].slice(-40) };
               });
             }
           )
@@ -1361,7 +1361,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setRoom((prev) => {
           if (!prev) return prev;
           if (prev.messages.some((m) => m.id === sent.id)) return prev;
-          return { ...prev, messages: [...prev.messages, sent].slice(-80) };
+          return { ...prev, messages: [...prev.messages, sent].slice(-40) };
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'تعذّر إرسال الرسالة.');

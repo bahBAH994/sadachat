@@ -1,11 +1,12 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, Coins, Crown, Gem, ShieldCheck } from 'lucide-react';
+import { ArrowRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { resolveAsset } from '../lib/assets';
 import { getUserVipTierInfo, isSuperAdminUser } from '../lib/sadaCatalog';
 import { AvatarWithFrame, VipTierBadge } from './AvatarWithFrame';
 import { PWAInstallButton } from './PWAInstallButton';
+import { CoinIcon, CrownIcon, DiamondIcon } from './AppIcons';
 
 export const TopBar: React.FC = () => {
   const { user } = useAuth();
@@ -57,7 +58,7 @@ export const TopBar: React.FC = () => {
             title="رصيد الكوينز"
             className="flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-extrabold text-amber-800 whitespace-nowrap shrink-0"
           >
-            <Coins className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <CoinIcon className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span className="font-mono-num">{user.coins.toLocaleString('en-US')}</span>
           </Link>
 
@@ -66,7 +67,7 @@ export const TopBar: React.FC = () => {
             title="محفظة الألماس والحقيبة"
             className="flex items-center gap-1 rounded-full bg-sky-50 border border-sky-200 px-2.5 py-1 text-xs font-extrabold text-sky-800 whitespace-nowrap shrink-0"
           >
-            <Gem className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+            <DiamondIcon className="w-3.5 h-3.5 text-sky-500 shrink-0" />
             <span className="font-mono-num">{user.diamonds.toLocaleString('en-US')}</span>
           </Link>
 
@@ -82,6 +83,7 @@ export const TopBar: React.FC = () => {
               size="xs"
             />
             <VipTierBadge vipTier={getUserVipTierInfo(user).key} compact />
+            <CrownIcon className="w-3.5 h-3.5 text-amber-500" />
             <span className="font-mono-num">Lv.{user.level}</span>
           </Link>
 

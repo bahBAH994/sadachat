@@ -5,8 +5,6 @@ import {
   Brain,
   Check,
   Copy,
-  Crown,
-  Gift,
   Lock,
   Sparkles,
   Timer,
@@ -25,6 +23,7 @@ import type {
   ReferralWheelSegment,
 } from '../types';
 import { Fluent3DAsset } from '../components/Fluent3DAsset';
+import { CrownIcon, GiftIcon } from '../components/AppIcons';
 
 type CompTab = 'cultural' | 'referral';
 
@@ -348,7 +347,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                 : 'text-slate-300 hover:text-white'
             }`}
           >
-            <Gift className="w-4 h-4" />
+            <GiftIcon className="w-4 h-4" />
             <span>دولاب حظ الدعوات ({referralSpins})</span>
           </button>
         </div>
@@ -374,7 +373,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
             <div className="flex-1 space-y-2">
               <div className="flex items-center justify-between text-xs sm:text-sm">
                 <span className="font-extrabold text-[#FCE9A6] flex items-center gap-1.5">
-                  <Crown className="w-4 h-4 text-[#D4AF37]" />
+                  <CrownIcon className="w-4 h-4" />
                   المستوى الحالي: Lv.{user?.level ?? 1}
                 </span>
                 <span className="font-mono-num text-slate-300">
@@ -574,7 +573,7 @@ export const CompetitionsPage: React.FC<CompetitionsPageProps> = ({
                     انسخ كود الدعوة وأرسله لصديقك ليلصقه عند إنشاء حسابه. كل تسجيل يمنحك لفة مجانية في دولاب الجوائز!
                   </p>
                 </div>
-                <Gift className="w-6 h-6 text-[#F3D37A] shrink-0" />
+                <GiftIcon className="w-6 h-6 shrink-0" />
               </div>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">

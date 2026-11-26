@@ -3,11 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   CalendarDays,
-  Coins,
-  Crown,
   LoaderCircle,
   ShieldCheck,
-  Trophy,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -17,6 +14,7 @@ import {
 } from '../lib/sadaGrandCompetitionService';
 import { supabase } from '../lib/supabase';
 import type { GrandCompetitionSettings } from '../types';
+import { CoinIcon, CrownIcon, TrophyIcon } from '../components/AppIcons';
 
 const CompetitionInfoCard: React.FC<{
   icon: React.ReactNode;
@@ -228,7 +226,7 @@ export const GrandCompetitionPage: React.FC = () => {
           <div className="pointer-events-none absolute -left-8 -top-10 h-40 w-40 rounded-full bg-emerald-300/15 blur-2xl" />
           <div className="relative flex items-start gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-amber-200/50 bg-amber-300/15 text-amber-200 shadow-lg">
-              <Trophy className="h-8 w-8" />
+              <TrophyIcon className="h-8 w-8" />
             </div>
             <div>
               <p className="text-[11px] font-bold text-emerald-100">التحدي الأسبوعي والختام الشهري</p>
@@ -242,7 +240,7 @@ export const GrandCompetitionPage: React.FC = () => {
         </header>
 
         <CompetitionInfoCard
-          icon={<Trophy className="h-5 w-5" />}
+          icon={<TrophyIcon className="h-5 w-5" />}
           title="نبذة عن المسابقة"
           tone="bg-emerald-50 text-emerald-700"
         >
@@ -255,7 +253,7 @@ export const GrandCompetitionPage: React.FC = () => {
 
         <section className="grid gap-3 sm:grid-cols-2">
           <CompetitionInfoCard
-            icon={<Coins className="h-5 w-5" />}
+            icon={<CoinIcon className="h-5 w-5" />}
             title="جوائز الدورة الأسبوعية"
             tone="bg-amber-50 text-amber-700"
           >
@@ -265,7 +263,7 @@ export const GrandCompetitionPage: React.FC = () => {
             </p>
           </CompetitionInfoCard>
           <CompetitionInfoCard
-            icon={<Crown className="h-5 w-5" />}
+            icon={<CrownIcon className="h-5 w-5" />}
             title="جوائز الختام الشهري"
             tone="bg-violet-50 text-violet-700"
           >
@@ -304,7 +302,7 @@ export const GrandCompetitionPage: React.FC = () => {
                 تمنح وزناً تصاعدياً أكبر في حصة المشاركين.
               </p>
             </div>
-            <Coins className="mt-1 h-5 w-5 shrink-0 text-emerald-700" />
+            <CoinIcon className="mt-1 h-5 w-5 shrink-0" />
           </div>
 
           <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-center">

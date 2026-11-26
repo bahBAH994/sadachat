@@ -6,9 +6,6 @@ import {
   ArrowRight,
   Check,
   CheckCheck,
-  Coins,
-  Crown,
-  Gem,
   Image as ImageIcon,
   Ban,
   MessageCircle,
@@ -53,6 +50,7 @@ import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/Avatar
 import { GenderBadge } from '../components/GenderBadge';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { Fluent3DAsset } from '../components/Fluent3DAsset';
+import { CoinIcon, CrownIcon, DiamondIcon, InboxIcon } from '../components/AppIcons';
 
 type InboxFilter = 'كامل' | 'غير مقروء' | 'المجموعات';
 
@@ -191,6 +189,8 @@ const PrivateChatMessageItem = memo<{
                 <img
                   src={m.text}
                   alt="صورة مرسلة في المحادثة"
+                  loading="lazy"
+                  decoding="async"
                   className="max-h-64 max-w-full rounded-xl object-contain"
                 />
               </button>
@@ -201,7 +201,7 @@ const PrivateChatMessageItem = memo<{
         )}
         {!isMine && isFemaleRecipient && m.coinsPaid > 0 && m.diamondsAwarded > 0 && (
           <span className="mb-1 inline-flex shrink-0 items-center gap-0.5 rounded-full border border-sky-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-sky-700 shadow-sm">
-            <Gem className="h-3 w-3" />
+            <DiamondIcon className="h-3 w-3" />
             {m.diamondsAwarded.toLocaleString('en-US')}
           </span>
         )}
@@ -231,6 +231,134 @@ const PrivateChatMessageItem = memo<{
     </div>
   );
 });
+
+interface PrivateConversationCardProps {
+  conversation: PrivateConversation;
+  active: boolean;
+  isBlocked: boolean;
+  menuOpen: boolean;
+  onSelectPeer: (peerId: string) => void;
+  onStartLongPress: (conversationId: string) => void;
+  onCancelLongPress: () => void;
+  onOpenMiniProfile: (userId: string, preview?: Partial<User>) => void;
+  setOpenConversationMenuId: React.Dispatch<React.SetStateAction<string | null>>;
+  onDeleteConversation: (conversation: PrivateConversation) => void;
+  onToggleBlockedPeer: (peerId: string) => void;
+}
+
+const PrivateConversationCard = memo<PrivateConversationCardProps>(
+  ({
+    conversation: conv,
+    active,
+    isBlocked,
+    menuOpen,
+    onSelectPeer,
+    onStartLongPress,
+    onCancelLongPress,
+    onOpenMiniProfile,
+    setOpenConversationMenuId,
+    onDeleteConversation,
+    onToggleBlockedPeer,
+  }) => {
+    const vipTier = getUserVipTierInfo(conv.peer).key;
+
+    return (
+      <div
+        onClick={() => onSelectPeer(conv.peer.id)}
+        onPointerDown={() => onStartLongPress(conv.id)}
+        onPointerUp={onCancelLongPress}
+        onPointerLeave={onCancelLongPress}
+        onPointerCancel={onCancelLongPress}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onCancelLongPress();
+          setOpenConversationMenuId(conv.id);
+        }}
+        className={`relative p-3.5 flex items-center gap-3 cursor-pointer transition select-none ${
+          active ? 'bg-emerald-50/70' : 'hover:bg-slate-50'
+        }`}
+      >
+        <AvatarWithFrame
+          src={conv.peer.avatarUrl}
+          alt={conv.peer.displayName}
+          frameId={conv.peer.frameId}
+          vipTier={vipTier}
+          size="md"
+          onClick={() => onOpenMiniProfile(conv.peer.id, conv.peer)}
+        />
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+              <span className="text-sm font-extrabold text-slate-900 truncate">
+                <VipUserName name={conv.peer.displayName} vipTier={vipTier} />
+              </span>
+              <GenderBadge gender={conv.peer.gender} />
+              <VipTierBadge vipTier={vipTier} compact />
+              <FemaleVerifiedBadge badge={conv.peer.femaleVerifiedBadge} />
+              <span className="rounded-full bg-violet-100 text-violet-700 px-1.5 py-0.5 text-[10px] font-bold font-mono-num">
+                Lv.{conv.peer.level}
+              </span>
+            </div>
+            {conv.pendingDiamondsForMe > 0 && (
+              <span className="rounded-full bg-rose-50 text-rose-600 border border-rose-200 px-2 py-0.5 text-[10px] font-extrabold font-mono-num shrink-0">
+                +{conv.pendingDiamondsForMe} <DiamondIcon className="inline h-3 w-3" />
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 truncate mt-0.5">
+            {conv.lastMessage?.text.startsWith('data:image/')
+              ? '📷 صورة'
+              : conv.lastMessage?.text || ''}
+          </p>
+        </div>
+        {isBlocked && (
+          <span className="shrink-0 rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">
+            محظور
+          </span>
+        )}
+        <button
+          type="button"
+          aria-label={`خيارات محادثة ${conv.peer.displayName}`}
+          aria-expanded={menuOpen}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onCancelLongPress();
+            setOpenConversationMenuId((current) => (current === conv.id ? null : conv.id));
+          }}
+          className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 cursor-pointer"
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
+        {menuOpen && (
+          <div
+            className="absolute right-3 top-full z-40 mt-1 flex w-36 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => void onDeleteConversation(conv)}
+              className="flex items-center gap-2 px-3 py-2.5 text-right text-xs font-extrabold text-red-600 hover:bg-red-50 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              حذف
+            </button>
+            <button
+              type="button"
+              onClick={() => void onToggleBlockedPeer(conv.peer.id)}
+              className="flex items-center gap-2 border-t border-slate-100 px-3 py-2.5 text-right text-xs font-extrabold text-orange-700 hover:bg-orange-50 cursor-pointer"
+            >
+              <Ban className="w-4 h-4" />
+              {isBlocked ? 'فك الحظر' : 'حظر'}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+);
 
 const PmGiftItem = memo<{
   gift: GiftItem;
@@ -263,7 +391,7 @@ const PmGiftItem = memo<{
     </div>
     <span className="text-[11px] font-bold text-white line-clamp-1">{g.name}</span>
     <span className="text-[10px] font-mono-num text-[#FCE9A6] font-extrabold inline-flex items-center gap-1">
-      <Coins className="w-3 h-3 text-[#FCE9A6]" aria-label="كوينز" />
+      <CoinIcon className="w-3 h-3" aria-label="كوينز" />
       <span>{g.coinsCost.toLocaleString('en-US')}</span>
     </span>
   </button>
@@ -298,6 +426,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const [togglingFollow, setTogglingFollow] = useState(false);
 
   const [selectedPeerId, setSelectedPeerId] = useState<string | null>(initialPeerId || null);
+  const selectedPeerIdRef = useRef(selectedPeerId);
+  selectedPeerIdRef.current = selectedPeerId;
   const privateMessageInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -615,15 +745,28 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       });
   }, [activeConversation, loadOverview, selectedPeerId, user?.id]);
 
-  const handleSelectPeer = (peerId: string) => {
-    setOpenConversationMenuId(null);
-    setSelectedPeerId(peerId);
-    setMobileChatOpen(true);
-    if (!embedded) {
-      setSearchParams({ to: peerId });
-    }
-    setError(null);
-  };
+  const handleSelectPeer = useCallback(
+    (peerId: string) => {
+      setOpenConversationMenuId(null);
+      setSelectedPeerId(peerId);
+      setMobileChatOpen(true);
+      if (!embedded) {
+        setSearchParams({ to: peerId });
+      }
+      setError(null);
+    },
+    [embedded, setSearchParams]
+  );
+  const handleConversationCardSelect = useCallback(
+    (peerId: string) => {
+      if (suppressConversationClickRef.current) {
+        suppressConversationClickRef.current = false;
+        return;
+      }
+      handleSelectPeer(peerId);
+    },
+    [handleSelectPeer]
+  );
 
   const handleRechargeAction = () => {
     setShowGiftDrawer(false);
@@ -781,12 +924,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           subtitle: `حصلت على +${res.unlockedReplyDiamonds.toLocaleString('en-US')} ألماسة فور الرد على الرسالة الخاصة.`,
         });
         setTimeout(() => setCelebration(null), 4800);
-      } else if (res.immediatePmDiamondsAwarded > 0) {
-        setCelebration({
-          title: '💌 تم إرسال رسالتك المدفوعة بنجاح!',
-          subtitle: `حصل ${activePeer?.displayName || 'المستلم'} على +${res.immediatePmDiamondsAwarded.toLocaleString('en-US')} ألماسة فوراً في رصيده.`,
-        });
-        setTimeout(() => setCelebration(null), 4000);
       } else if (res.luckyMultiplier && res.luckyBonusCoins) {
         setCelebration({
           title: `🎰 مضاعف هدية الحظ ×${res.luckyMultiplier}!`,
@@ -859,48 +996,54 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     }
   };
 
-  const handleDeleteConversation = async (conversation: PrivateConversation) => {
-    try {
-      const { error: deleteError } = await supabase
-        .from('sada_private_messages')
-        .delete()
-        .eq('conversation_id', conversation.id);
-      if (deleteError) throw new Error(deleteError.message);
+  const handleDeleteConversation = useCallback(
+    async (conversation: PrivateConversation) => {
+      try {
+        const { error: deleteError } = await supabase
+          .from('sada_private_messages')
+          .delete()
+          .eq('conversation_id', conversation.id);
+        if (deleteError) throw new Error(deleteError.message);
 
-      setConversations((current) => current.filter((item) => item.id !== conversation.id));
-      setOpenConversationMenuId(null);
-      if (selectedPeerId === conversation.peer.id) {
-        setSelectedPeerId(null);
-        setMobileChatOpen(false);
-        if (!embedded) {
-          setSearchParams((current) => {
-            const next = new URLSearchParams(current);
-            next.delete('to');
-            next.delete('gift');
-            return next;
-          }, { replace: true });
+        setConversations((current) => current.filter((item) => item.id !== conversation.id));
+        setOpenConversationMenuId(null);
+        if (selectedPeerIdRef.current === conversation.peer.id) {
+          setSelectedPeerId(null);
+          setMobileChatOpen(false);
+          if (!embedded) {
+            setSearchParams((current) => {
+              const next = new URLSearchParams(current);
+              next.delete('to');
+              next.delete('gift');
+              return next;
+            }, { replace: true });
+          }
         }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'تعذّر حذف المحادثة.');
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'تعذّر حذف المحادثة.');
-    }
-  };
+    },
+    [embedded, setSearchParams]
+  );
 
-  const handleToggleBlockedPeer = async (peerId: string) => {
-    if (!user?.id) return;
-    const nextBlockedPeerIds = blockedPeerIds.includes(peerId)
-      ? blockedPeerIds.filter((id) => id !== peerId)
-      : [...blockedPeerIds, peerId];
-    try {
-      await saveBlockedUserIds(user.id, nextBlockedPeerIds);
-      setBlockedPeerIds(nextBlockedPeerIds);
-      setOpenConversationMenuId(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'تعذّر تحديث قائمة الحظر.');
-    }
-  };
+  const handleToggleBlockedPeer = useCallback(
+    async (peerId: string) => {
+      if (!user?.id) return;
+      const nextBlockedPeerIds = blockedPeerIds.includes(peerId)
+        ? blockedPeerIds.filter((id) => id !== peerId)
+        : [...blockedPeerIds, peerId];
+      try {
+        await saveBlockedUserIds(user.id, nextBlockedPeerIds);
+        setBlockedPeerIds(nextBlockedPeerIds);
+        setOpenConversationMenuId(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'تعذّر تحديث قائمة الحظر.');
+      }
+    },
+    [blockedPeerIds, user?.id]
+  );
 
-  const startConversationLongPress = (conversationId: string) => {
+  const startConversationLongPress = useCallback((conversationId: string) => {
     if (longPressTimerRef.current !== null) {
       window.clearTimeout(longPressTimerRef.current);
     }
@@ -910,16 +1053,15 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       suppressConversationClickRef.current = true;
       longPressTimerRef.current = null;
     }, 500);
-  };
+  }, []);
 
-  const cancelConversationLongPress = () => {
+  const cancelConversationLongPress = useCallback(() => {
     if (longPressTimerRef.current !== null) {
       window.clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const pendingInCurrentChat = activeConversation?.pendingDiamondsForMe || 0;
   const followRel =
     user && activePeer
       ? getFollowStatus(userFollows, user.id, activePeer.id)
@@ -964,13 +1106,16 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 <X className="w-4 h-4" />
               </button>
             )}
-            <h1 className="text-lg sm:text-xl font-extrabold text-slate-900">صندوق الوارد</h1>
+            <h1 className="flex items-center gap-2 text-lg sm:text-xl font-extrabold text-slate-900">
+              <InboxIcon className="h-6 w-6" />
+              صندوق الوارد
+            </h1>
           </div>
 
           <div className="flex items-center gap-2">
             {pendingDiamondsTotal > 0 && (
               <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700 font-mono-num">
-                +{pendingDiamondsTotal} 💎
+                +{pendingDiamondsTotal} <DiamondIcon className="inline h-3 w-3" />
               </span>
             )}
             <button
@@ -1148,113 +1293,22 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                   </p>
                 </div>
               ) : (
-                filteredConversations.map((conv) => {
-                  const active = conv.peer.id === selectedPeerId;
-                  return (
-                    <div
-                      key={conv.id}
-                      onClick={() => {
-                        if (suppressConversationClickRef.current) {
-                          suppressConversationClickRef.current = false;
-                          return;
-                        }
-                        handleSelectPeer(conv.peer.id);
-                      }}
-                      onPointerDown={() => startConversationLongPress(conv.id)}
-                      onPointerUp={cancelConversationLongPress}
-                      onPointerLeave={cancelConversationLongPress}
-                      onPointerCancel={cancelConversationLongPress}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        cancelConversationLongPress();
-                        setOpenConversationMenuId(conv.id);
-                      }}
-                      className={`relative p-3.5 flex items-center gap-3 cursor-pointer transition select-none ${
-                        active ? 'bg-emerald-50/70' : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <AvatarWithFrame
-                        src={conv.peer.avatarUrl}
-                        alt={conv.peer.displayName}
-                        frameId={conv.peer.frameId}
-                        vipTier={getUserVipTierInfo(conv.peer).key}
-                        size="md"
-                        onClick={() => openMiniProfile(conv.peer.id, conv.peer)}
-                      />
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                            <span className="text-sm font-extrabold text-slate-900 truncate">
-                              <VipUserName name={conv.peer.displayName} vipTier={getUserVipTierInfo(conv.peer).key} />
-                            </span>
-                            <GenderBadge gender={conv.peer.gender} />
-                            <VipTierBadge vipTier={getUserVipTierInfo(conv.peer).key} compact />
-                            <FemaleVerifiedBadge badge={conv.peer.femaleVerifiedBadge} />
-                            <span className="rounded-full bg-violet-100 text-violet-700 px-1.5 py-0.5 text-[10px] font-bold font-mono-num">
-                              Lv.{conv.peer.level}
-                            </span>
-                          </div>
-                          {conv.pendingDiamondsForMe > 0 && (
-                            <span className="rounded-full bg-rose-50 text-rose-600 border border-rose-200 px-2 py-0.5 text-[10px] font-extrabold font-mono-num shrink-0">
-                              +{conv.pendingDiamondsForMe} 💎
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-500 truncate mt-0.5">
-                          {conv.lastMessage?.text.startsWith('data:image/')
-                            ? '📷 صورة'
-                            : conv.lastMessage?.text || ''}
-                        </p>
-                      </div>
-                      {blockedPeerIds.includes(conv.peer.id) && (
-                        <span className="shrink-0 rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">
-                          محظور
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        aria-label={`خيارات محادثة ${conv.peer.displayName}`}
-                        aria-expanded={openConversationMenuId === conv.id}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          cancelConversationLongPress();
-                          setOpenConversationMenuId((current) =>
-                            current === conv.id ? null : conv.id
-                          );
-                        }}
-                        className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 cursor-pointer"
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
-                      {openConversationMenuId === conv.id && (
-                        <div
-                          className="absolute right-3 top-full z-40 mt-1 flex w-36 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
-                          onClick={(event) => event.stopPropagation()}
-                          onPointerDown={(event) => event.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteConversation(conv)}
-                            className="flex items-center gap-2 px-3 py-2.5 text-right text-xs font-extrabold text-red-600 hover:bg-red-50 cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            حذف
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleToggleBlockedPeer(conv.peer.id)}
-                            className="flex items-center gap-2 border-t border-slate-100 px-3 py-2.5 text-right text-xs font-extrabold text-orange-700 hover:bg-orange-50 cursor-pointer"
-                          >
-                            <Ban className="w-4 h-4" />
-                            {blockedPeerIds.includes(conv.peer.id) ? 'فك الحظر' : 'حظر'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
+                filteredConversations.map((conversation) => (
+                  <PrivateConversationCard
+                    key={conversation.id}
+                    conversation={conversation}
+                    active={conversation.peer.id === selectedPeerId}
+                    isBlocked={blockedPeerIds.includes(conversation.peer.id)}
+                    menuOpen={openConversationMenuId === conversation.id}
+                    onSelectPeer={handleConversationCardSelect}
+                    onStartLongPress={startConversationLongPress}
+                    onCancelLongPress={cancelConversationLongPress}
+                    onOpenMiniProfile={openMiniProfile}
+                    setOpenConversationMenuId={setOpenConversationMenuId}
+                    onDeleteConversation={handleDeleteConversation}
+                    onToggleBlockedPeer={handleToggleBlockedPeer}
+                  />
+                ))
               )}
             </div>
           </aside>
@@ -1318,15 +1372,10 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                         <VipTierBadge vipTier={getUserVipTierInfo(activePeer).key} compact />
                         <FemaleVerifiedBadge badge={activePeer.femaleVerifiedBadge} />
                         <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                          <Crown className="w-3 h-3" />
+                          <CrownIcon className="w-3 h-3" />
                           Lv.{activePeer.level}
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-500 truncate">
-                        {activePeer.gender === 'female'
-                          ? 'حساب نسائي · يحصل على الألماس فوراً من الرسائل والهدايا'
-                          : 'عضو صَدَى · يستقبل الهدايا والألماس'}
-                      </p>
                     </div>
                   </div>
 
@@ -1363,12 +1412,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
                   </div>
                 </div>
-
-                {pendingInCurrentChat > 0 && (
-                  <div className="mb-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800 shrink-0">
-                    💎 لديك {pendingInCurrentChat.toLocaleString('en-US')} ألماسة جاهزة — أرسل ردك الآن لتُضاف تلقائياً لمحفظتك!
-                  </div>
-                )}
 
                 {/* Messages Feed */}
                 <div ref={messagesFeedRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-3 space-y-2">
@@ -1480,7 +1523,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                               }`}
                             >
                               <span>الإجمالي:</span>
-                              <Coins className="w-3.5 h-3.5 text-[#FCE9A6]" aria-label="كوينز" />
+                              <CoinIcon className="w-3.5 h-3.5" aria-label="كوينز" />
                               <span>{giftTotalCost.toLocaleString('en-US')}</span>
                             </span>
                           </div>
@@ -1524,7 +1567,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                               className="flex items-center gap-1.5 rounded-xl bg-black/70 border border-[#F3D37A]/50 px-2.5 py-1.5 shrink-0 cursor-pointer hover:border-[#FCE9A6]"
                               title="رصيدك الحالي · اضغط للشحن السريع"
                             >
-                              <Coins className="w-3.5 h-3.5 text-[#FCE9A6]" aria-label="كوينز" />
+                              <CoinIcon className="w-3.5 h-3.5" aria-label="كوينز" />
                               <span className="text-xs font-mono-num font-black text-[#FCE9A6]">
                                 {(user?.coins ?? 0).toLocaleString('en-US')}
                               </span>
@@ -1680,7 +1723,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
               </>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center text-sm text-slate-400 gap-2">
-                <Gem className="w-10 h-10 text-emerald-400" />
+                <DiamondIcon className="w-10 h-10" />
                 <span>اختر محادثة أو عضواً لبدء المراسلة الخاصة</span>
               </div>
             )}
@@ -1713,6 +1756,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             <img
               src={zoomedImage}
               alt="صورة المحادثة مكبرة"
+              loading="lazy"
+              decoding="async"
               className="max-h-full max-w-full rounded-xl object-contain"
               onClick={(event) => event.stopPropagation()}
             />

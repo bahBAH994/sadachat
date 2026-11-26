@@ -31,7 +31,7 @@ export const USER_COLUMNS =
   'id, email, display_name, bio, avatar_url, gender, female_voice_status, female_verified, female_verified_badge, female_voice_note, is_host, is_agent, agency_id, host_badge, host_agency_name, host_diamonds_earned, referral_code, referred_by, referral_count, referral_spins, frame_id, unlocked_frames, previous_permanent_frame_id, temp_frame_id, temp_frame_expires_at, active_entry_id, active_entry_name, temp_entry_expires_at, svip_level, svip_expires_at, coins, diamonds, level, xp, is_admin, is_banned, device_uuid, created_at, last_seen';
 
 export const ROOM_COLUMNS =
-  'id, title, category, description, host_id, host_name, host_avatar, cover_url, avatar_url, background_url, cover_image, is_private, is_agency, password, max_seats, seats, listeners_count, is_active, total_gifts_coins, created_at';
+  'id, title, category, description, host_id, host_name, host_avatar, cover_url, avatar_url, background_url, cover_image, is_private, is_agency, agency_id, password, max_seats, seats, listeners_count, is_active, total_gifts_coins, created_at';
 
 export const ROOM_MESSAGE_COLUMNS =
   'id, room_id, user_id, display_name, level, is_admin, vip_tier, host_badge, female_verified_badge, text, type, timestamp';
@@ -220,6 +220,7 @@ export function rowToRoom(
     id: String(r.id),
     isAgency,
     is_agency: isAgency,
+    agencyId: (r.agency_id as string | null) || null,
     title: String(r.title),
     category: (r.category as Room['category']) || 'حوار',
     description: String(r.description || ''),

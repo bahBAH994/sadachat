@@ -5,22 +5,19 @@ import {
   Award,
   ArrowRight,
   BadgeCheck,
-  Building2,
   Calendar,
   Check,
   ChevronDown,
   ChevronUp,
   Clock,
   Copy,
-  Crown,
-  Gem,
   History,
   MessageCircleHeart,
-  Mic2,
   Search,
   Sparkles,
   Users,
 } from 'lucide-react';
+import { AgencyIcon, CrownIcon, DiamondIcon, MicIcon } from '../components/AppIcons';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { formatShortNumericId, getUserVipTierInfo } from '../lib/sadaCatalog';
@@ -50,6 +47,7 @@ interface AgencyOverviewResponse {
     pendingApplications: HostJoinApplication[];
     commissionTransactions: Transaction[];
   } | null;
+  pendingAgency: Agency | null;
   joinedAgency: Agency | null;
   myApplications: HostJoinApplication[];
   publicAgencies: Array<{
@@ -196,14 +194,12 @@ export const AgencyPage: React.FC = () => {
         name: agencyName,
         description: agencyDesc,
       });
-      updateLocalUser(res.user);
       setAgencyName('');
       setAgencyDesc('');
       setShowCreateAgency(false);
       await loadOverview();
-      setSearchParams({ tab: 'my-agency' });
       setFeedback(
-        `تم اعتماد وكالتك "${res.agency.name}" بنجاح! كود دعوة المضيفين: ${res.agency.code}`
+        `تم استلام طلب تأسيس وكالة "${res.agency.name}"، وهو قيد المراجعة لدى الإدارة العليا.`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'تعذّر تقديم طلب الوكالة.');
@@ -250,7 +246,7 @@ export const AgencyPage: React.FC = () => {
     );
   }
 
-  const { myAgency, joinedAgency, myApplications } = data;
+  const { myAgency, pendingAgency, joinedAgency, myApplications } = data;
   const canAccessMyAgency = Boolean(myAgency || user?.isAgent || user?.is_admin);
   const requestedTab = searchParams.get('tab');
   const activeTab: 'my-agency' | 'host-center' =
@@ -281,7 +277,7 @@ export const AgencyPage: React.FC = () => {
         <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#17253D] to-[#064E3B] p-5 sm:p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1.5">
             <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/20 border border-emerald-300/40 px-3 py-1 text-[11px] font-bold text-emerald-200">
-              <Building2 className="w-3.5 h-3.5" />
+              <AgencyIcon className="w-3.5 h-3.5" />
               <span>منظومة الوكالات والمضيفين — صَدَى</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black">
@@ -314,7 +310,7 @@ export const AgencyPage: React.FC = () => {
                 activeTab === 'my-agency' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
-              <Building2 className="w-4 h-4" />
+              <AgencyIcon className="w-4 h-4" />
               <span>وكالتي</span>
             </button>
 
@@ -325,7 +321,7 @@ export const AgencyPage: React.FC = () => {
                 activeTab === 'host-center' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
-              <Mic2 className="w-4 h-4" />
+              <MicIcon className="w-4 h-4" />
               <span>مركز المضيف</span>
             </button>
           </div>
@@ -350,6 +346,15 @@ export const AgencyPage: React.FC = () => {
           </div>
         )}
 
+        {pendingAgency && (
+          <section
+            role="status"
+            className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold leading-6 text-amber-900"
+          >
+            طلب تأسيس الوكالة «{pendingAgency.name}» قيد المراجعة لدى الإدارة العليا.
+          </section>
+        )}
+
         {/* ==================== TAB 1: MY AGENCY ("وكالتي") ==================== */}
         {activeTab === 'my-agency' && myAgency && (
           <div className="space-y-5">
@@ -357,7 +362,8 @@ export const AgencyPage: React.FC = () => {
             <section className="light-card rounded-3xl p-4 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div>
-                  <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-0.5">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-0.5">
+                    <AgencyIcon className="w-3.5 h-3.5" />
                     وكالة معتمدة · ID: {formatShortNumericId(myAgency.agency.id).slice(0, 6)}
                   </span>
                   <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1.5 break-words">
@@ -414,17 +420,23 @@ export const AgencyPage: React.FC = () => {
                     <Calendar className="w-4 h-4 text-sky-600" />
                   </div>
                   <p className="mt-2 text-2xl font-black font-mono-num text-sky-900">
-                    {myAgency.weeklyAgencyTotalDiamonds.toLocaleString('en-US')} 💎
+                    <span className="inline-flex items-center gap-1">
+                      {myAgency.weeklyAgencyTotalDiamonds.toLocaleString('en-US')}
+                      <DiamondIcon className="w-5 h-5" />
+                    </span>
                   </p>
                 </div>
 
                 <div className="rounded-2xl bg-indigo-50 border border-indigo-200 p-4">
                   <div className="flex items-center justify-between text-xs text-indigo-800 font-bold">
                     <span>تراكمي ألماس الوكالة</span>
-                    <Gem className="w-4 h-4 text-indigo-600" />
+                    <DiamondIcon className="w-4 h-4 text-indigo-600" />
                   </div>
                   <p className="mt-2 text-2xl font-black font-mono-num text-indigo-900">
-                    {myAgency.agency.totalHostDiamonds.toLocaleString('en-US')} 💎
+                    <span className="inline-flex items-center gap-1">
+                      {myAgency.agency.totalHostDiamonds.toLocaleString('en-US')}
+                      <DiamondIcon className="w-5 h-5" />
+                    </span>
                   </p>
                 </div>
 
@@ -436,7 +448,10 @@ export const AgencyPage: React.FC = () => {
                     <Sparkles className="w-4 h-4 text-amber-600" />
                   </div>
                   <p className="mt-2 text-2xl font-black font-mono-num text-amber-900">
-                    {myAgency.agency.totalCommissionDiamonds.toLocaleString('en-US')} 💎
+                    <span className="inline-flex items-center gap-1">
+                      {myAgency.agency.totalCommissionDiamonds.toLocaleString('en-US')}
+                      <DiamondIcon className="w-5 h-5" />
+                    </span>
                   </p>
                   <span className="block text-[10px] text-amber-700 mt-0.5">
                     تُحدد وتُصرف حصرياً من الإدارة العليا
@@ -542,7 +557,8 @@ export const AgencyPage: React.FC = () => {
                             <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono-num mt-0.5">
                               <span>Lv.{host.level}</span>
                               <span>
-                                التراكمي: {host.hostDiamondsEarned.toLocaleString('en-US')} 💎
+                                التراكمي: {host.hostDiamondsEarned.toLocaleString('en-US')}{' '}
+                                <DiamondIcon className="inline w-3 h-3" />
                               </span>
                             </div>
                           </div>
@@ -554,7 +570,8 @@ export const AgencyPage: React.FC = () => {
                               التارجت الأسبوعي
                             </span>
                             <span className="text-sm font-black text-sky-900">
-                              {host.weeklyDiamonds.toLocaleString('en-US')} 💎
+                              {host.weeklyDiamonds.toLocaleString('en-US')}{' '}
+                              <DiamondIcon className="inline w-3.5 h-3.5" />
                             </span>
                           </div>
                           <button
@@ -596,7 +613,7 @@ export const AgencyPage: React.FC = () => {
                           </p>
                         </div>
                         <span className="font-mono-num font-black text-emerald-700 shrink-0">
-                          +{tx.amount.toLocaleString('en-US')} 💎
+                          +{tx.amount.toLocaleString('en-US')} <DiamondIcon className="inline w-3.5 h-3.5" />
                         </span>
                       </div>
                     ))}
@@ -647,7 +664,8 @@ export const AgencyPage: React.FC = () => {
                   <div className="rounded-2xl bg-sky-50 border border-sky-200 px-5 py-3 text-center">
                     <span className="block text-[11px] font-bold text-sky-700">أرباحي كمضيف</span>
                     <span className="text-xl font-black font-mono-num text-sky-900">
-                      {(user?.hostDiamondsEarned ?? 0).toLocaleString('en-US')} 💎
+                      {(user?.hostDiamondsEarned ?? 0).toLocaleString('en-US')}{' '}
+                      <DiamondIcon className="inline w-4 h-4" />
                     </span>
                   </div>
                 </div>
@@ -679,7 +697,7 @@ export const AgencyPage: React.FC = () => {
               >
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-2xl bg-violet-100 border border-violet-200 flex items-center justify-center text-violet-700 shrink-0">
-                    <Mic2 className="w-5 h-5" />
+                    <MicIcon className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-base sm:text-lg font-black text-slate-900">
@@ -815,7 +833,7 @@ export const AgencyPage: React.FC = () => {
             )}
 
             {/* Secondary Collapsible Section: Apply to Open a New Agency */}
-            {!myAgency && (
+            {!myAgency && !pendingAgency && (
               <section className="light-card rounded-3xl overflow-hidden">
                 <button
                   type="button"
@@ -824,14 +842,14 @@ export const AgencyPage: React.FC = () => {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700">
-                      <Crown className="w-5 h-5" />
+                      <CrownIcon className="w-5 h-5" />
                     </div>
                     <div>
                       <h3 className="text-sm sm:text-base font-black text-slate-900">
-                        تأسيس وكالة جديدة كـ "وكيل" معتمد
+                        طلب تأسيس وكالة جديدة
                       </h3>
                       <p className="text-[11px] text-slate-500">
-                        افتح لوحة "وكالتي" وأدر مضيفيك وتابع التارجت الأسبوعي.
+                        قدّم طلبك لمراجعته من الإدارة العليا قبل تفعيل الوكالة.
                       </p>
                     </div>
                   </div>
@@ -877,7 +895,7 @@ export const AgencyPage: React.FC = () => {
                       disabled={applying}
                       className="gold-btn w-full min-h-[44px] rounded-2xl text-xs sm:text-sm font-extrabold cursor-pointer disabled:opacity-60"
                     >
-                      {applying ? 'جارٍ اعتماد الوكالة...' : 'إنشاء الوكالة وفتح قسم "وكالتي"'}
+                      {applying ? 'جارٍ إرسال الطلب...' : 'إرسال طلب تأسيس الوكالة'}
                     </button>
                   </form>
                 )}

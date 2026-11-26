@@ -3,13 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCircle2,
-  Coins,
-  Crown,
-  Gift,
   Image as ImageIcon,
   Lock,
   Sparkles,
-  Store,
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +18,7 @@ import {
 } from '../lib/sadaWalletService';
 import type { Store3DItem, StoreBackgroundItem } from '../types';
 import { AvatarWithFrame } from '../components/AvatarWithFrame';
+import { CoinIcon, CrownIcon, GiftIcon, PartyIcon } from '../components/AppIcons';
 
 const RoyalBackdropPreview: React.FC<{ backgroundId: string }> = ({ backgroundId }) => {
   const isEmerald = backgroundId === 'bg_emerald_palace';
@@ -230,7 +227,7 @@ export const StorePage: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/20 border border-amber-300/40 px-3 py-1 text-[11px] font-bold text-[#FCE9A6]">
-                <Store className="w-3.5 h-3.5" />
+                <PartyIcon className="w-4 h-4" />
                 <span>المتجر الملكي — صَدَى</span>
               </div>
               <h1 className="text-xl sm:text-2xl font-extrabold mt-2">
@@ -245,7 +242,7 @@ export const StorePage: React.FC = () => {
               <div className="rounded-2xl bg-white/10 border border-white/15 px-4 py-2 text-center">
                 <span className="block text-[10px] text-amber-200 font-bold">رصيد الكوينز المتاح</span>
                 <span className="text-lg font-black text-[#FCE9A6] font-mono-num">
-                  {user.coins.toLocaleString('en-US')} 🪙
+                  <CoinIcon className="inline h-5 w-5 align-[-3px]" /> {user.coins.toLocaleString('en-US')}
                 </span>
               </div>
               <button
@@ -253,7 +250,7 @@ export const StorePage: React.FC = () => {
                 onClick={() => navigate('/wallet')}
                 className="emerald-btn rounded-2xl px-4 py-2 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <Coins className="w-4 h-4" />
+                <CoinIcon className="w-4 h-4" />
                 <span>شحن الكوينز</span>
                 <ArrowLeft className="w-4 h-4" />
               </button>
@@ -279,7 +276,7 @@ export const StorePage: React.FC = () => {
               <div className="flex items-center justify-between text-[10px] font-mono-num text-slate-300">
                 <span>1,000 🏎️</span>
                 <span>5,000 🦅</span>
-                <span>20,000 👑</span>
+                <span>20,000 <CrownIcon className="inline h-3 w-3" /></span>
                 <span>50,000 🐉</span>
               </div>
 
@@ -289,7 +286,7 @@ export const StorePage: React.FC = () => {
                 </p>
               ) : (
                 <p className="text-xs text-[#FCE9A6] font-extrabold">
-                  👑 تهانينا! تم فتح جميع إطارات الشحن التراكمي في المتجر!
+                  <CrownIcon className="inline h-4 w-4 align-[-3px]" /> تهانينا! تم فتح جميع إطارات الشحن التراكمي في المتجر!
                 </p>
               )}
             </div>
@@ -317,7 +314,7 @@ export const StorePage: React.FC = () => {
               frameTab === 'coins' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
             }`}
           >
-            <Coins className="w-4 h-4" />
+            <CoinIcon className="w-4 h-4" />
             <span>شراء عبر الكوينز</span>
           </button>
 
@@ -328,7 +325,7 @@ export const StorePage: React.FC = () => {
               frameTab === 'gift' ? 'emerald-btn' : 'text-slate-600 hover:bg-slate-50'
             }`}
           >
-            <Gift className="w-4 h-4" />
+            <GiftIcon className="w-4 h-4" />
             <span>إطار هدية / مكافأة</span>
           </button>
         </div>
@@ -381,7 +378,7 @@ export const StorePage: React.FC = () => {
                     <div className="flex items-center justify-between text-xs font-mono-num bg-amber-50/70 border border-amber-200/80 rounded-xl px-3 py-2">
                       <span className="font-bold text-amber-900">السعر المباشر</span>
                       <span className="font-black text-amber-700">
-                        {price.toLocaleString('en-US')} كوينز 🪙
+                        {price.toLocaleString('en-US')} كوينز <CoinIcon className="inline h-3.5 w-3.5 align-[-2px]" />
                       </span>
                     </div>
 
@@ -407,7 +404,7 @@ export const StorePage: React.FC = () => {
                         </>
                       ) : (
                         <>
-                          <Coins className="w-4 h-4" />
+                          <CoinIcon className="w-4 h-4" />
                           <span>
                             {busyId === item.id
                               ? 'جارٍ الشراء...'
@@ -462,7 +459,7 @@ export const StorePage: React.FC = () => {
                         <h2 className="text-base font-extrabold text-white">{item.name}</h2>
                       </div>
                       <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-bold text-[#FCE9A6]">
-                        <Gift className="w-3 h-3" />
+                        <GiftIcon className="w-3 h-3" />
                         {item.giftHint || 'هدية ومكافأة خاصة'}
                       </span>
                     </div>
@@ -521,7 +518,7 @@ export const StorePage: React.FC = () => {
                         onClick={() => navigate('/profile')}
                         className="w-full min-h-[44px] rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition"
                       >
-                        <Gift className="w-4 h-4" />
+                        <GiftIcon className="w-4 h-4" />
                         <span>افتحه مجاناً من مهام المضيف (7 أيام متتالية)</span>
                       </button>
                     ) : (
@@ -574,7 +571,7 @@ export const StorePage: React.FC = () => {
                     <div className="flex items-center justify-between relative z-10">
                       <span className="text-2xl">{bg.badgeGlyph}</span>
                       <span className="rounded-full bg-black/50 border border-amber-300/50 px-2.5 py-0.5 text-[11px] font-extrabold text-[#FCE9A6] font-mono-num">
-                        {bg.priceCoins.toLocaleString('en-US')} 🪙
+                        {bg.priceCoins.toLocaleString('en-US')} <CoinIcon className="inline h-3.5 w-3.5 align-[-2px]" />
                       </span>
                     </div>
                     <h3 className="text-sm font-black text-white relative z-10">{bg.name}</h3>
@@ -609,7 +606,7 @@ export const StorePage: React.FC = () => {
                         onClick={() => handleBuyBackground(bg)}
                         className="gold-btn w-full min-h-[42px] rounded-2xl text-xs font-extrabold cursor-pointer flex items-center justify-center gap-1.5"
                       >
-                        <Coins className="w-4 h-4" />
+                        <CoinIcon className="w-4 h-4" />
                         <span>
                           {busyId === bg.id
                             ? 'جارٍ الشراء...'
@@ -630,7 +627,7 @@ export const StorePage: React.FC = () => {
             onClick={() => navigate('/bag')}
             className="rounded-2xl bg-white border border-slate-200 px-5 py-2.5 text-xs font-extrabold text-slate-700 hover:border-emerald-400 cursor-pointer flex items-center gap-2 shadow-sm"
           >
-            <Crown className="w-4 h-4 text-amber-500" />
+            <CrownIcon className="w-4 h-4" />
             <span>الانتقال إلى الحقيبة وممتلكاتي</span>
           </button>
         </div>

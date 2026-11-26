@@ -44,7 +44,6 @@ import {
   TRANSACTION_COLUMNS,
   USER_COLUMNS,
 } from './sadaMappers';
-import { createRoomInSupabase } from './sadaRoomsService';
 import { fetchUsersVipTotalsBatch } from './sadaVipService';
 import { supabase } from './supabase';
 
@@ -704,8 +703,8 @@ export async function getPmOverviewFromSupabase(user: User) {
         .select(PRIVATE_MESSAGE_COLUMNS)
         .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
         .order('created_at', { ascending: false })
-        .limit(50),
-      supabase.from('sada_rooms').select('host_id'),
+        .limit(30),
+      supabase.from('sada_rooms').select('host_id').limit(30),
       getPlatformState(),
     ]);
   if (usersError || messagesError || roomsError) {
@@ -870,7 +869,7 @@ export async function sendPrivateMessageInSupabase(
     await Promise.all([
       supabase.from('sada_users').select(USER_COLUMNS).eq('id', sender.id).maybeSingle(),
       supabase.from('sada_users').select(USER_COLUMNS).eq('id', payload.recipientId).maybeSingle(),
-      supabase.from('sada_rooms').select('host_id'),
+      supabase.from('sada_rooms').select('host_id').limit(30),
       getPlatformState(),
     ]);
   if (senderError || recipientError || roomsError) {
@@ -913,7 +912,7 @@ export async function sendPrivateMessageInSupabase(
     .select(PRIVATE_MESSAGE_COLUMNS)
     .eq('conversation_id', convId)
     .order('created_at', { ascending: false })
-    .limit(50);
+    .limit(30);
 
   const convMsgs = (convMsgsRaw || []).slice().reverse().map(rowToPrivateMessage);
   const unclaimedIncoming = convMsgs.filter(
@@ -1239,6 +1238,7 @@ export async function getAgencyOverviewFromSupabase(user: User): Promise<{
     pendingApplications: HostJoinApplication[];
     commissionTransactions: Transaction[];
   } | null;
+  pendingAgency: Agency | null;
   joinedAgency: Agency | null;
   myApplications: HostJoinApplication[];
   publicAgencies: Array<{
@@ -1294,10 +1294,18 @@ export async function getAgencyOverviewFromSupabase(user: User): Promise<{
     weeklyDiamondsByUser.set(uid, (weeklyDiamondsByUser.get(uid) || 0) + amt);
   }
 
-  const myOwnedAgency = agencies.find((a) => a.ownerId === freshUser.id) || null;
+  const ownedAgency =
+    agencies
+      .filter((agency) => agency.ownerId === freshUser.id)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] || null;
+  const pendingAgency = ownedAgency?.status === 'pending' ? ownedAgency : null;
+  const myOwnedAgency =
+    ownedAgency && ownedAgency.status !== 'pending' && ownedAgency.status !== 'rejected'
+      ? ownedAgency
+      : null;
   const myJoinedAgency =
     !myOwnedAgency && freshUser.agencyId
-      ? agencies.find((a) => a.id === freshUser.agencyId) || null
+      ? agencies.find((a) => a.id === freshUser.agencyId && a.status === 'approved') || null
       : null;
 
   const mapHosts = (agencyId: string): AgencyHostSummary[] => {
@@ -1327,7 +1335,7 @@ export async function getAgencyOverviewFromSupabase(user: User): Promise<{
       (weeklyDiamondsByUser.get(myOwnedAgency.ownerId) || 0)
     : 0;
 
-  const publicAgencies = agencies.map((a) => ({
+  const publicAgencies = agencies.filter((a) => a.status === 'approved').map((a) => ({
     id: a.id,
     name: a.name,
     description: a.description,
@@ -1353,6 +1361,7 @@ export async function getAgencyOverviewFromSupabase(user: User): Promise<{
           commissionTransactions: (txRows || []).map(rowToTransaction),
         }
       : null,
+    pendingAgency,
     joinedAgency: myJoinedAgency,
     myApplications: allApps
       .filter((app) => app.userId === freshUser.id)
@@ -1368,7 +1377,10 @@ export async function lookupAgencyByIdOrCodeInSupabase(
   if (!clean) return null;
   const upper = clean.toUpperCase();
 
-  const { data: rows } = await supabase.from('sada_agencies').select(AGENCY_COLUMNS);
+  const { data: rows } = await supabase
+    .from('sada_agencies')
+    .select(AGENCY_COLUMNS)
+    .eq('status', 'approved');
   const agencies = (rows || []).map(rowToAgency);
 
   return (
@@ -1441,13 +1453,32 @@ export async function applyAsAgencyInSupabase(
   user: User,
   payload: { name: string; description?: string; commissionRate?: number }
 ): Promise<{ user: User; agency: Agency }> {
-  const [{ data: existingOwned }, { data: allAgencies }] = await Promise.all([
-    supabase.from('sada_agencies').select('id').eq('owner_id', user.id).maybeSingle(),
-    supabase.from('sada_agencies').select('id, code, host_ids'),
+  const [ownedAgenciesResult, allAgenciesResult] = await Promise.all([
+    supabase
+      .from('sada_agencies')
+      .select('id, status')
+      .eq('owner_id', user.id)
+      .order('created_at', { ascending: false }),
+    supabase.from('sada_agencies').select('id, code'),
   ]);
 
+  if (ownedAgenciesResult.error) {
+    throw new Error(`تعذّر التحقق من طلبات الوكالة السابقة: ${ownedAgenciesResult.error.message}`);
+  }
+  if (allAgenciesResult.error) {
+    throw new Error(`تعذّر التحقق من أكواد الوكالات السابقة: ${allAgenciesResult.error.message}`);
+  }
+  const existingOwned = (ownedAgenciesResult.data || []).find(
+    (agency) => agency.status !== 'rejected'
+  );
+  const allAgencies = allAgenciesResult.data;
+
   if (existingOwned) {
-    throw new Error('لديك وكالة معتمدة بالفعل.');
+    throw new Error(
+      existingOwned.status === 'pending'
+        ? 'لديك طلب تأسيس وكالة قيد المراجعة بالفعل.'
+        : 'لديك وكالة مسجلة بالفعل.'
+    );
   }
 
   const cleanName = (payload.name || '').trim();
@@ -1489,17 +1520,8 @@ export async function applyAsAgencyInSupabase(
     totalCommissionDiamonds: 0,
     totalHostDiamonds: 0,
     hostIds: [],
-    status: 'approved',
+    status: 'pending',
     createdAt: now,
-  };
-
-  const nextUser: User = {
-    ...user,
-    isAgent: true,
-    isHost: true,
-    agencyId: agency.id,
-    hostBadge: 'وكيل معتمد ✦',
-    hostAgencyName: agency.name,
   };
 
   const { error: agencyInsertError } = await supabase.from('sada_agencies').insert({
@@ -1514,81 +1536,14 @@ export async function applyAsAgencyInSupabase(
       total_commission_diamonds: 0,
       total_host_diamonds: 0,
       host_ids: [],
-      status: 'approved',
+      status: 'pending',
       created_at: now,
     });
   if (agencyInsertError) {
     throw new Error(`تعذّر إنشاء سجل الوكالة: ${agencyInsertError.message}`);
   }
 
-  const { error: userUpdateError } = await supabase
-    .from('sada_users')
-    .update({
-      is_agent: true,
-      is_host: true,
-      agency_id: agency.id,
-      host_badge: nextUser.hostBadge,
-      host_agency_name: agency.name,
-    })
-    .eq('id', user.id);
-  if (userUpdateError) {
-    const { error: cleanupError } = await supabase
-      .from('sada_agencies')
-      .delete()
-      .eq('id', agency.id);
-    if (cleanupError) {
-      throw new Error(
-        `تعذّر ربط حساب مالك الوكالة (${userUpdateError.message}) أو إزالة سجل الوكالة الجزئي (${cleanupError.message}).`
-      );
-    }
-    throw new Error(`تعذّر ربط حساب مالك الوكالة: ${userUpdateError.message}`);
-  }
-
-  try {
-    await createRoomInSupabase(nextUser, {
-      title: `وكالة ${agency.name}`,
-      description: agency.description,
-      maxSeats: 12,
-      isAgency: true,
-    });
-  } catch (roomError) {
-    const [{ error: agencyCleanupError }, { error: userRestoreError }] = await Promise.all([
-      supabase.from('sada_agencies').delete().eq('id', agency.id),
-      supabase
-        .from('sada_users')
-        .update({
-          is_agent: Boolean(user.isAgent),
-          is_host: Boolean(user.isHost),
-          agency_id: user.agencyId || null,
-          host_badge: user.hostBadge || null,
-          host_agency_name: user.hostAgencyName || null,
-        })
-        .eq('id', user.id),
-    ]);
-    if (agencyCleanupError || userRestoreError) {
-      throw new Error(
-        `تعذّر إنشاء غرفة الوكالة (${roomError instanceof Error ? roomError.message : 'خطأ غير معروف'}) أو التراجع عن الوكالة (${agencyCleanupError?.message || userRestoreError?.message}).`
-      );
-    }
-    throw roomError;
-  }
-
-  if (user.agencyId) {
-    const previousAgency = (allAgencies || []).find((item) => String(item.id) === user.agencyId);
-    if (previousAgency && Array.isArray(previousAgency.host_ids)) {
-      const { error: previousAgencyError } = await supabase
-        .from('sada_agencies')
-        .update({
-          host_ids: (previousAgency.host_ids as string[]).filter((id) => id !== user.id),
-        })
-        .eq('id', previousAgency.id);
-      if (previousAgencyError) {
-        throw new Error(`تعذّر تحديث الوكالة السابقة: ${previousAgencyError.message}`);
-      }
-    }
-  }
-
-  return { user: nextUser, agency };
+  return { user, agency };
 }
 
 export async function joinAgencyByCodeInSupabase(
@@ -1602,6 +1557,7 @@ export async function joinAgencyByCodeInSupabase(
     .from('sada_agencies')
     .select(AGENCY_COLUMNS)
     .ilike('code', cleanCode)
+    .eq('status', 'approved')
     .maybeSingle();
 
   if (!agencyRow) throw new Error('كود الوكالة غير صحيح أو غير موجود.');

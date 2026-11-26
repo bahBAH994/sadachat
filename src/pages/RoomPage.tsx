@@ -5,32 +5,36 @@ import {
   Ban,
   Check,
   Copy,
-  Coins,
-  Crown,
-  Gift,
   Heart,
   Lock,
   Mail,
-  MessageCircle,
   MessageSquareText,
-  Mic,
   MicOff,
   Minimize2,
   Music,
   Plus,
   Send,
-  Settings,
   Shield,
   Smile,
   Sparkles,
   Trash2,
-  Trophy,
   UserMinus,
   Users,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react';
+import {
+  CoinIcon,
+  CrownIcon,
+  DiamondIcon,
+  GiftIcon,
+  InboxIcon,
+  MicIcon,
+  SettingsIcon,
+  TrophyIcon,
+  WheelIcon,
+} from '../components/AppIcons';
 import { MessagesPage } from './MessagesPage';
 import { useAuth } from '../context/AuthContext';
 import { useActiveRoom } from '../context/ActiveRoomContext';
@@ -599,11 +603,11 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
         <header className="flex items-center justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-extrabold text-[#FCE9A6]">
-              <Sparkles className="h-5 w-5" />
+              <WheelIcon className="h-5 w-5" />
               دولاب الإقصاء الجماعي
             </h2>
             <p className="mt-1 flex items-center gap-1 text-xs text-slate-300">
-              <Coins className="h-3.5 w-3.5 text-[#F3D37A]" />
+              <CoinIcon className="h-3.5 w-3.5 text-[#F3D37A]" />
               رصيدك {userCoins.toLocaleString('en-US')} كوينز
             </p>
           </div>
@@ -780,7 +784,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
             </div>
 
             <div className="flex items-center justify-center gap-2 text-xs text-slate-300">
-              <Trophy className="h-4 w-4 text-[#F3D37A]" />
+              <TrophyIcon className="h-4 w-4 text-[#F3D37A]" />
               {alivePlayers.length} متنافس متبقٍ من {round.players.length}
             </div>
             {round.players.some((player) => player.test) && (
@@ -849,12 +853,140 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
                 انتهت الجولة — الفائز: {round.players.find((player) => player.userId === round.winnerId)?.displayName}
               </p>
             )}
-          </>
-        )}
+        </div>
       </section>
     </div>
   );
 };
+
+interface RoomChatInputProps {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  roomContainerRef: React.RefObject<HTMLDivElement | null>;
+  insertEmojiRef: React.MutableRefObject<(emoji: string) => void>;
+  onInputFocus: () => void;
+  sendChat: (text: string) => Promise<void>;
+  setShowEmojiPicker: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+const RoomChatInput = memo<RoomChatInputProps>(
+  ({
+    inputRef,
+    roomContainerRef,
+    insertEmojiRef,
+    onInputFocus,
+    sendChat,
+    setShowEmojiPicker,
+  }) => {
+    const [chatText, setChatText] = useState('');
+    const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+    useEffect(() => {
+      insertEmojiRef.current = (emoji) => setChatText((current) => `${current}${emoji}`);
+      return () => {
+        insertEmojiRef.current = () => {};
+      };
+    }, [insertEmojiRef]);
+
+    useEffect(() => {
+      const viewport = window.visualViewport;
+      let maxViewportHeight = Math.max(window.innerHeight, viewport?.height || 0);
+      let orientationTimer: number | undefined;
+
+      const updateKeyboardState = () => {
+        const height = viewport?.height ?? window.innerHeight;
+        maxViewportHeight = Math.max(maxViewportHeight, height);
+        const keyboardOpen = maxViewportHeight - height > 120;
+        setIsKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
+
+        const container = roomContainerRef.current;
+        if (container) {
+          container.style.top = `${viewport?.offsetTop || 0}px`;
+          container.style.height = `${height}px`;
+          container.dataset.roomKeyboardOpen = String(keyboardOpen);
+        }
+      };
+
+      const resetAfterOrientationChange = () => {
+        window.clearTimeout(orientationTimer);
+        orientationTimer = window.setTimeout(() => {
+          maxViewportHeight = viewport?.height ?? window.innerHeight;
+          updateKeyboardState();
+        }, 350);
+      };
+
+      viewport?.addEventListener('resize', updateKeyboardState);
+      viewport?.addEventListener('scroll', updateKeyboardState);
+      window.addEventListener('resize', updateKeyboardState);
+      window.addEventListener('orientationchange', resetAfterOrientationChange);
+      updateKeyboardState();
+
+      return () => {
+        viewport?.removeEventListener('resize', updateKeyboardState);
+        viewport?.removeEventListener('scroll', updateKeyboardState);
+        window.removeEventListener('resize', updateKeyboardState);
+        window.removeEventListener('orientationchange', resetAfterOrientationChange);
+        window.clearTimeout(orientationTimer);
+        const container = roomContainerRef.current;
+        if (container) {
+          container.style.top = '0px';
+          container.style.height = '100dvh';
+          container.dataset.roomKeyboardOpen = 'false';
+        }
+      };
+    }, [roomContainerRef]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!chatText.trim()) return;
+      const text = chatText.trim();
+      try {
+        await sendChat(text);
+        setChatText('');
+        setShowEmojiPicker(false);
+      } catch {
+        setChatText(text);
+      }
+    };
+
+    return (
+      <form
+        onSubmit={handleSubmit}
+        className="flex-1 min-w-0 flex items-center gap-1 rounded-full bg-black/15 border border-white/20 px-3 py-1"
+      >
+        <input
+          ref={inputRef}
+          type="text"
+          value={chatText}
+          onChange={(e) => setChatText(e.target.value)}
+          onFocus={onInputFocus}
+          placeholder="أهلاً..."
+          className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none py-1"
+        />
+        {isKeyboardOpen && (
+          <button
+            type="button"
+            onClick={() => {
+              inputRef.current?.blur();
+              setShowEmojiPicker((current) => !current);
+            }}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[#FCE9A6] cursor-pointer shrink-0"
+            aria-label="سمايلات"
+          >
+            <Smile className="w-5 h-5" />
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={!chatText.trim()}
+          className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FEF08A] via-[#D4AF37] to-[#B45309] border border-[#FFF8DC] text-[#070913] flex items-center justify-center cursor-pointer shrink-0 shadow-[0_0_12px_rgba(212,175,55,0.45)] disabled:opacity-50 disabled:cursor-default active:scale-95"
+          aria-label="إرسال"
+        >
+          <Send className="w-3.5 h-3.5" />
+        </button>
+      </form>
+    );
+  }
+);
 
 interface RoomSeatItemProps {
   seat: RoomSeat;
@@ -904,12 +1036,12 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
                 isTop1
                   ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-[#070913]'
                   : backgroundIsLight
-                    ? 'bg-slate-950/75 backdrop-blur-md border border-white/20 text-white'
-                    : 'bg-white/15 backdrop-blur-md border border-white/15 text-white drop-shadow-sm'
+                    ? 'bg-black/45 border border-white/20 text-white'
+                    : 'bg-white/10 border border-white/15 text-white drop-shadow-sm'
               }`}
             >
               <span>{formatCompactMetric(seat.receivedDiamonds || 0)}</span>
-              <span className="text-[8px]">💎</span>
+              <DiamondIcon className="w-2 h-2" />
             </span>
           ) : (
             <span
@@ -927,14 +1059,14 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
           ref={(el) => registerSeatRef(seat.seatIndex, el)}
           className={`relative flex items-center justify-center rounded-full border ${
             backgroundIsLight
-              ? 'bg-slate-950/75 backdrop-blur-md border-white/20'
-              : 'bg-white/15 backdrop-blur-md border-white/15 drop-shadow-sm'
+              ? 'bg-black/45 border-white/20'
+              : 'bg-white/10 border-white/15 drop-shadow-sm'
           }`}
         >
           {/* Golden Speaking Waves */}
           {isActiveSpeaker && (
             <>
-              <span className="absolute -inset-1.5 rounded-full border-2 border-[#FCE9A6] animate-gold-wave pointer-events-none" />
+              <span className="absolute -inset-1.5 rounded-full border-2 border-[#FCE9A6] pointer-events-none" />
               <span className="absolute -inset-0.5 rounded-full border border-amber-400/90 shadow-[0_0_16px_rgba(251,191,36,0.9)] pointer-events-none" />
             </>
           )}
@@ -945,9 +1077,9 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
               <motion.span
                 aria-hidden="true"
                 initial={{ scale: 0.85, opacity: 0.4 }}
-                animate={{ scale: [1, 1.24, 1], opacity: [0.95, 0.45, 0.95] }}
-                transition={{ duration: 1.15, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute -inset-2.5 rounded-full border-2 border-[#FEF08A] bg-amber-400/20 shadow-[0_0_28px_rgba(251,191,36,0.95)] pointer-events-none z-10"
+                animate={{ scale: 1, opacity: 0.95 }}
+                transition={{ duration: 0.2 }}
+                className="absolute -inset-2.5 rounded-full border-2 border-[#FEF08A] bg-amber-400/20 pointer-events-none z-10"
               />
               <span
                 aria-hidden="true"
@@ -969,7 +1101,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
           {isTop1 && (
             <span
               aria-hidden="true"
-              className="absolute -inset-2 pointer-events-none flex items-center justify-between text-amber-300 text-xs animate-top1-shimmer"
+              className="absolute -inset-2 pointer-events-none flex items-center justify-between text-amber-300 text-xs"
             >
               <span className="-mr-1">🪽</span>
               <span className="-ml-1 scale-x-[-1]">🪽</span>
@@ -996,7 +1128,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
               {seat.isLocked ? (
                 <Lock className="w-4 h-4" />
               ) : (
-                <Mic className={isHero5 ? 'w-5 h-5' : 'w-4 h-4'} />
+                <MicIcon className={isHero5 ? 'w-5 h-5' : 'w-4 h-4'} />
               )}
             </div>
           )}
@@ -1100,7 +1232,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
         <div className="mt-1 flex items-center justify-center gap-0.5 w-full max-w-[52px] mx-auto px-0.5 text-center">
           {seat.userId ? (
             <>
-              {isHost && <span className="text-[8px] text-amber-300 shrink-0">👑</span>}
+              {isHost && <CrownIcon className="w-2.5 h-2.5 shrink-0" />}
               <VipUserName
                 name={seat.displayName || 'متحدث'}
                 vipTier={resolvedVip}
@@ -1169,8 +1301,8 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
         <div
           className={`inline-block rounded-xl border px-2.5 py-1 text-[11px] text-white ${
             backgroundIsLight
-              ? 'bg-slate-950/75 backdrop-blur-md border-white/20'
-              : 'bg-white/15 backdrop-blur-md border-white/15 drop-shadow-sm'
+              ? 'bg-slate-950/75 border-white/20'
+              : 'bg-white/15 border-white/15 drop-shadow-sm'
           }`}
         >
           {m.text}
@@ -1223,8 +1355,8 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
       <div
         className={`rounded-xl border px-2.5 py-1.5 text-xs leading-snug text-white flex items-start gap-2 ${
           backgroundIsLight
-            ? 'bg-slate-950/75 backdrop-blur-md border-white/20'
-            : 'bg-white/15 backdrop-blur-md border-white/15 drop-shadow-sm'
+            ? 'bg-slate-950/75 border-white/20'
+            : 'bg-white/15 border-white/15 drop-shadow-sm'
         }`}
       >
         <button
@@ -1359,12 +1491,9 @@ export const RoomPage: React.FC = () => {
     clearGiftTargetRequest,
   } = useActiveRoom();
 
-  const [chatText, setChatText] = useState('');
   const chatInputRef = useRef<HTMLInputElement | null>(null);
+  const insertChatEmojiRef = useRef<(emoji: string) => void>(() => {});
   const [chatFilter, setChatFilter] = useState<'all' | 'chat'>('all');
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
-  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
-  const [visualViewportTop, setVisualViewportTop] = useState(0);
   const [canManageRoomActions, setCanManageRoomActions] = useState(false);
   const [clearChatAuthorization, setClearChatAuthorization] = useState<{
     roomId: string;
@@ -1487,47 +1616,9 @@ export const RoomPage: React.FC = () => {
       });
   }, [activeRoomId, liveListenersCount, room?.id, room?.seats]);
 
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    let maxViewportHeight = Math.max(window.innerHeight, viewport?.height || 0);
-    let orientationTimer: number | undefined;
-    const updateKeyboardState = () => {
-      const height = viewport?.height ?? window.innerHeight;
-      maxViewportHeight = Math.max(maxViewportHeight, height);
-      setViewportHeight(height);
-      setVisualViewportTop(viewport?.offsetTop || 0);
-      window.scrollTo(0, 0);
-      setIsKeyboardOpen(maxViewportHeight - height > 120);
-    };
-    const resetAfterOrientationChange = () => {
-      window.clearTimeout(orientationTimer);
-      orientationTimer = window.setTimeout(() => {
-        const height = viewport?.height ?? window.innerHeight;
-        maxViewportHeight = height;
-        setIsKeyboardOpen(false);
-        setViewportHeight(height);
-        setVisualViewportTop(viewport?.offsetTop || 0);
-        window.scrollTo(0, 0);
-      }, 350);
-    };
-
-    viewport?.addEventListener('resize', updateKeyboardState);
-    viewport?.addEventListener('scroll', updateKeyboardState);
-    window.addEventListener('resize', updateKeyboardState);
-    window.addEventListener('orientationchange', resetAfterOrientationChange);
-    updateKeyboardState();
-
-    return () => {
-      viewport?.removeEventListener('resize', updateKeyboardState);
-      viewport?.removeEventListener('scroll', updateKeyboardState);
-      window.removeEventListener('resize', updateKeyboardState);
-      window.removeEventListener('orientationchange', resetAfterOrientationChange);
-      window.clearTimeout(orientationTimer);
-    };
-  }, []);
-
   const chatFeedRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const roomContainerRef = useRef<HTMLDivElement | null>(null);
   const headerAnchorRef = useRef<HTMLDivElement | null>(null);
   const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const backgroundBrightnessCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -2263,18 +2354,9 @@ export const RoomPage: React.FC = () => {
     return deduplicated;
   }, [chatFilter, hiddenRoomMessageIds, room?.messages]);
 
-  const handleSendChat = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatText.trim()) return;
-    const text = chatText.trim();
-    try {
-      await sendChat(text);
-      setChatText('');
-      setShowEmojiPicker(false);
-    } catch {
-      setChatText(text);
-    }
-  };
+  const handleChatInputFocus = useCallback(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   const handlePickSeatEmoji = (item: (typeof ROOM_REACTION_EMOJIS)[number]) => {
     setShowEmojiPicker(false);
@@ -2355,14 +2437,16 @@ export const RoomPage: React.FC = () => {
 
   return (
     <div
+      ref={roomContainerRef}
       style={{
-        top: `${visualViewportTop}px`,
-        height: viewportHeight ? `${viewportHeight}px` : '100dvh',
+        top: '0px',
+        height: '100dvh',
       }}
       className={`fixed inset-x-0 z-50 flex flex-col overflow-hidden bg-transparent text-white ${
         fullscreenGift ? 'animate-dragon-shake' : ''
       }`}
     >
+      <style>{'[data-room-keyboard-open="true"] .room-keyboard-hide { display: none !important; }'}</style>
       <canvas
         ref={backgroundBrightnessCanvasRef}
         width={32}
@@ -2413,8 +2497,8 @@ export const RoomPage: React.FC = () => {
         <header
           className={`relative z-30 shrink-0 py-1.5 px-2.5 flex items-center justify-between gap-1.5 border ${
             backgroundIsLight
-              ? 'bg-slate-950/75 backdrop-blur-md border-white/20 text-white'
-              : 'bg-white/15 backdrop-blur-md border-white/15 text-white drop-shadow-sm'
+              ? 'bg-slate-950/75 border-white/20 text-white'
+              : 'bg-white/15 border-white/15 text-white drop-shadow-sm'
           }`}
         >
           {/* Right Side (RTL start): Agency Square Avatar, Title + Follow Button, ID */}
@@ -2559,8 +2643,8 @@ export const RoomPage: React.FC = () => {
               }}
               className={`flex items-center gap-0.5 border rounded-full px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-mono-num font-bold text-white cursor-pointer ${
                 backgroundIsLight
-                  ? 'bg-slate-950/75 backdrop-blur-md border-white/20'
-                  : 'bg-white/15 backdrop-blur-md border-white/15 drop-shadow-sm'
+                  ? 'bg-slate-950/75 border-white/20'
+                  : 'bg-white/15 border-white/15 drop-shadow-sm'
               }`}
               title="المتواجدون الآن داخل الغرفة"
             >
@@ -2580,7 +2664,7 @@ export const RoomPage: React.FC = () => {
                 aria-label="إعدادات الغرفة"
                 title="إعدادات وإدارة الغرفة"
               >
-                <Settings className="w-4 h-4" />
+                <SettingsIcon className="w-4 h-4" />
               </button>
             )}
 
@@ -2610,7 +2694,7 @@ export const RoomPage: React.FC = () => {
               title="قائمة داعمي الغرفة"
               aria-label="قائمة داعمي الغرفة"
             >
-              <Trophy className="w-4 h-4 text-[#FDE047]" />
+              <TrophyIcon className="w-4 h-4 text-[#FDE047]" />
             </button>
 
             <button
@@ -2619,7 +2703,7 @@ export const RoomPage: React.FC = () => {
               className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-rose-700/80 to-amber-700/80 border border-amber-300/50 px-2 py-1 text-[10px] font-extrabold text-white cursor-pointer"
               title="دولاب الإقصاء الجماعي بالكوينز"
             >
-              <Sparkles className="w-3 h-3 text-amber-200" />
+              <WheelIcon className="w-3 h-3 text-amber-200" />
               <span>دولاب الإقصاء</span>
             </button>
 
@@ -2674,11 +2758,7 @@ export const RoomPage: React.FC = () => {
         {/* 3. PUBLIC CHAT (Compact Height + 2 Filter Tabs: All/Gifts vs Chat Only) */}
         <section className="flex-1 min-h-0 overflow-hidden px-3 pb-1 py-1 flex flex-col mt-1">
           {/* Compact Chat Filter Tabs */}
-          <div
-            className={`flex items-center gap-1.5 px-1 mb-1 shrink-0 ${
-              isKeyboardOpen ? 'hidden' : ''
-            }`}
-          >
+          <div className="room-keyboard-hide flex items-center gap-1.5 px-1 mb-1 shrink-0">
             <button
               type="button"
               onClick={() => setChatFilter('all')}
@@ -2700,7 +2780,7 @@ export const RoomPage: React.FC = () => {
                   : 'bg-black/45 border-white/15 text-slate-300 hover:text-white'
               }`}
             >
-              <MessageCircle className="w-3 h-3" />
+              <InboxIcon className="w-3 h-3" />
               <span>الدردشة فقط</span>
             </button>
           </div>
@@ -2723,24 +2803,12 @@ export const RoomPage: React.FC = () => {
               <div
                 className={`rounded-2xl border px-3 py-1.5 text-xs leading-relaxed ${
                   backgroundIsLight
-                    ? 'bg-slate-950/75 backdrop-blur-md border-white/20 text-white'
-                    : 'bg-white/15 backdrop-blur-md border-white/15 text-white drop-shadow-sm'
+                    ? 'bg-slate-950/75 border-white/20 text-white'
+                    : 'bg-white/15 border-white/15 text-white drop-shadow-sm'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2 mb-0.5">
                   <span className="font-extrabold text-[#FCE9A6]">إعلان الغرفة</span>
-                  {canManage && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettingsInitialTab('agency');
-                        setShowSettingsModal(true);
-                      }}
-                      className="text-[10px] font-bold text-amber-300/90 hover:underline cursor-pointer"
-                    >
-                      تعديل
-                    </button>
-                  )}
                 </div>
                 <p className="text-[11px] font-semibold text-white whitespace-pre-line">
                   {room.description || 'أهلاً بكم في الغرفة الصوتية · نتمنى لكم أطيب الأوقات!'}
@@ -2786,7 +2854,7 @@ export const RoomPage: React.FC = () => {
               initial={{ opacity: 0, y: 12, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.96 }}
-              className="mb-1.5 rounded-2xl bg-black/15 border border-[#F3D37A]/45 p-2.5 shadow-[0_0_24px_rgba(0,0,0,0.7)] shrink-0"
+              className="room-keyboard-hide mb-1.5 rounded-2xl bg-black/15 border border-[#F3D37A]/45 p-2.5 shadow-[0_0_24px_rgba(0,0,0,0.7)] shrink-0"
             >
               <div className="flex items-center justify-between px-1 mb-1.5">
                 <span className="text-[11px] font-extrabold text-[#FCE9A6]">
@@ -2808,7 +2876,7 @@ export const RoomPage: React.FC = () => {
                       <button
                         key={emoji}
                         type="button"
-                        onClick={() => setChatText((prev) => `${prev}${emoji}`)}
+                        onClick={() => insertChatEmojiRef.current(emoji)}
                         className="h-8 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-xl flex items-center justify-center cursor-pointer"
                         aria-label={`إضافة ${emoji}`}
                       >
@@ -2878,50 +2946,16 @@ export const RoomPage: React.FC = () => {
         <footer className="relative z-30 shrink-0 bg-[#14161f] px-2 py-2 pb-4">
           <div className="flex items-center gap-1.5">
             {/* 1. Public Chat Input Box */}
-            <form
-              onSubmit={handleSendChat}
-              className="flex-1 min-w-0 flex items-center gap-1 rounded-full bg-black/15 border border-white/20 px-3 py-1"
-            >
-              <input
-                ref={chatInputRef}
-                type="text"
-                value={chatText}
-                onChange={(e) => setChatText(e.target.value)}
-                onFocus={() => {
-                  setShowEmojiPicker(false);
-                  window.scrollTo(0, 0);
-                  const viewport = window.visualViewport;
-                  setVisualViewportTop(viewport?.offsetTop || 0);
-                  setViewportHeight(viewport?.height || window.innerHeight);
-                }}
-                placeholder="أهلاً..."
-                className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none py-1"
-              />
-              {isKeyboardOpen && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    chatInputRef.current?.blur();
-                    setShowEmojiPicker((current) => !current);
-                  }}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-[#FCE9A6] cursor-pointer shrink-0"
-                  aria-label="سمايلات"
-                >
-                  <Smile className="w-5 h-5" />
-                </button>
-              )}
-              <button
-                type="submit"
-                disabled={!chatText.trim()}
-                className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FEF08A] via-[#D4AF37] to-[#B45309] border border-[#FFF8DC] text-[#070913] flex items-center justify-center cursor-pointer shrink-0 shadow-[0_0_12px_rgba(212,175,55,0.45)] disabled:opacity-50 disabled:cursor-default active:scale-95"
-                aria-label="إرسال"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </form>
+            <RoomChatInput
+              inputRef={chatInputRef}
+              roomContainerRef={roomContainerRef}
+              insertEmojiRef={insertChatEmojiRef}
+              onInputFocus={handleChatInputFocus}
+              sendChat={sendChat}
+              setShowEmojiPicker={setShowEmojiPicker}
+            />
 
-            {!isKeyboardOpen && (
-              <>
+            <div className="room-keyboard-hide flex items-center gap-1.5">
             {/* 2. Interactive Seat Emojis Button (😊) */}
             <button
               type="button"
@@ -2992,11 +3026,10 @@ export const RoomPage: React.FC = () => {
               {mySeat?.isMuted ? (
                 <MicOff className="w-4 h-4" />
               ) : (
-                <Mic className="w-4 h-4" />
+                <MicIcon className="w-4 h-4" />
               )}
             </button>
-              </>
-            )}
+            </div>
           </div>
 
           {mySeat && micDenied && !mySeat.isMuted && (
@@ -3146,7 +3179,7 @@ export const RoomPage: React.FC = () => {
                           <VipTierBadge vipTier={targetVip} compact />
                         </div>
                         <p className="text-[11px] text-[#FCE9A6] font-mono-num">
-                          مايك {seatActionTarget.seatIndex + 1} · 💎{' '}
+                          مايك {seatActionTarget.seatIndex + 1} · <DiamondIcon className="inline w-3 h-3" />{' '}
                           {(seatActionTarget.receivedDiamonds || 0).toLocaleString('en-US')}
                         </p>
                       </div>
@@ -3173,7 +3206,7 @@ export const RoomPage: React.FC = () => {
                     className="min-h-[44px] rounded-2xl bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-[#FCE9A6] text-xs font-extrabold flex flex-col items-center justify-center gap-1 cursor-pointer"
                   >
                     {seatActionTarget.isMuted ? (
-                      <Mic className="w-4 h-4" />
+                      <MicIcon className="w-4 h-4" />
                     ) : (
                       <MicOff className="w-4 h-4" />
                     )}
@@ -3393,9 +3426,9 @@ export const RoomPage: React.FC = () => {
                       <Users className="w-5 h-5" />
                     ) : (
                       leaderboardModalTab === 'supporters' ? (
-                        <Gift className="w-5 h-5" />
+                        <GiftIcon className="w-5 h-5" />
                       ) : (
-                        <Trophy className="w-5 h-5" />
+                        <TrophyIcon className="w-5 h-5" />
                       )
                     )}
                   </div>
@@ -3436,7 +3469,10 @@ export const RoomPage: React.FC = () => {
                         : 'text-slate-300 hover:text-white'
                     }`}
                   >
-                    🎁 الداعمون
+                    <span className="inline-flex items-center justify-center gap-1">
+                      <GiftIcon className="w-3.5 h-3.5" />
+                      الداعمون
+                    </span>
                   </button>
                   <button
                     type="button"
@@ -3447,7 +3483,10 @@ export const RoomPage: React.FC = () => {
                         : 'text-slate-300 hover:text-white'
                     }`}
                   >
-                    🏆 الأبطال
+                    <span className="inline-flex items-center justify-center gap-1">
+                      <TrophyIcon className="w-3.5 h-3.5" />
+                      الأبطال
+                    </span>
                   </button>
                 </div>
               )}
@@ -3568,7 +3607,7 @@ export const RoomPage: React.FC = () => {
                               <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono-num mt-0.5">
                                 {leaderboardModalTab === 'supporters' ? (
                                   <span className="text-amber-300">
-                                    🎁 دعم: {entry.supportCoins.toLocaleString('en-US')}
+                                    <GiftIcon className="inline h-3 w-3" /> دعم: {entry.supportCoins.toLocaleString('en-US')}
                                   </span>
                                 ) : (
                                   <span className="text-emerald-300">

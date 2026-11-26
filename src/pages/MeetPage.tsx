@@ -9,14 +9,17 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { AgencyIcon, FriendsIcon } from '../components/AppIcons';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { ARAB_COUNTRIES, formatShortNumericId, getUserVipTierInfo } from '../lib/sadaCatalog';
 import {
   getDiscoveryDirectoryFromSupabase,
   getFollowStatus,
+  searchUsersForFriendInSupabase,
   toggleFollowUserInSupabase,
 } from '../lib/sadaSocialService';
+import { rowToUser, USER_COLUMNS } from '../lib/sadaMappers';
 import { supabase } from '../lib/supabase';
 import type { User } from '../types';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/AvatarWithFrame';
@@ -31,7 +34,9 @@ export const MeetPage: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [showAllDirectory, setShowAllDirectory] = useState(false);
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
   const [togglingFollowId, setTogglingFollowId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -70,9 +75,69 @@ export const MeetPage: React.FC = () => {
     };
   }, [loadDirectory]);
 
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!user?.id || !query) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setSearchError(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearchLoading(true);
+    setSearchError(false);
+    const timer = window.setTimeout(async () => {
+      try {
+        const pattern = `%${query}%`;
+        const [nameResult, idResult, shortIdMatches] = await Promise.all([
+          supabase
+            .from('sada_users')
+            .select(USER_COLUMNS)
+            .eq('is_banned', false)
+            .ilike('display_name', pattern)
+            .order('last_seen', { ascending: false })
+            .limit(25),
+          supabase
+            .from('sada_users')
+            .select(USER_COLUMNS)
+            .eq('is_banned', false)
+            .ilike('id', pattern)
+            .order('last_seen', { ascending: false })
+            .limit(25),
+          /^\d+$/.test(query) ? searchUsersForFriendInSupabase(user.id, query) : [],
+        ]);
+
+        if (nameResult.error) throw nameResult.error;
+        if (idResult.error) throw idResult.error;
+        const matchedUsers = [
+          ...(nameResult.data || []).map(rowToUser),
+          ...(idResult.data || []).map(rowToUser),
+          ...shortIdMatches,
+        ];
+        const uniqueUsers = new Map(
+          matchedUsers
+            .filter((matchedUser) => matchedUser.id !== user.id)
+            .map((matchedUser) => [matchedUser.id, matchedUser])
+        );
+        if (!cancelled) setSearchResults(Array.from(uniqueUsers.values()).slice(0, 25));
+      } catch {
+        if (!cancelled) {
+          setSearchResults([]);
+          setSearchError(true);
+        }
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    }, 220);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery, user?.id]);
+
   const targetGender: 'male' | 'female' = user?.gender === 'female' ? 'male' : 'female';
-  const targetLabel = targetGender === 'female' ? 'البنات المتصلات حالياً' : 'الشباب المتصلين حالياً';
-  const directoryLabel = showAllDirectory ? 'الأعضاء المتصلون حالياً' : targetLabel;
 
   const onlineIdSet = useMemo(() => {
     return new Set<string>(onlineUserIds);
@@ -83,38 +148,17 @@ export const MeetPage: React.FC = () => {
     [onlineIdSet]
   );
 
-  const { onlineUsers, searchableOfflineUsers, onlineCount } = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const oppositePool = allUsers.filter((u) => u.gender === targetGender);
-    const activePool = showAllDirectory ? allUsers : oppositePool;
-
-    const matchesQuery = (u: User) => {
-      if (!q) return true;
-      const numId = formatShortNumericId(u.id);
-      return (
-        u.displayName.toLowerCase().includes(q) ||
-        numId.includes(q) ||
-        u.id.toLowerCase().includes(q)
-      );
-    };
-
-    const filtered = activePool.filter(matchesQuery);
-    const online = filtered
+  const { onlineUsers, onlineCount } = useMemo(() => {
+    const activePool = allUsers.filter((u) => u.gender === targetGender);
+    const online = activePool
       .filter((u) => isUserLiveOnline(u))
-      .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
-
-    const offline = filtered
-      .filter((u) => !isUserLiveOnline(u))
       .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
 
     return {
       onlineUsers: online,
-      searchableOfflineUsers: offline,
-      onlineCount: showAllDirectory
-        ? Math.max(0, onlineIdSet.size - Number(Boolean(user?.id && onlineIdSet.has(user.id))))
-        : activePool.filter((u) => isUserLiveOnline(u)).length,
+      onlineCount: online.length,
     };
-  }, [allUsers, onlineIdSet, targetGender, showAllDirectory, searchQuery, isUserLiveOnline, user?.id]);
+  }, [allUsers, targetGender, isUserLiveOnline]);
 
   const handleToggleFollow = async (targetUserId: string) => {
     if (!user?.id) return;
@@ -132,6 +176,10 @@ export const MeetPage: React.FC = () => {
     const found = ARAB_COUNTRIES.find((c) => c.code === code);
     return found ? `${found.flag} ${found.label}` : code;
   };
+
+  const isSearching = Boolean(searchQuery.trim());
+  const displayedUsers = isSearching ? searchResults : onlineUsers;
+  const isDirectoryLoading = isSearching ? searchLoading : loading;
 
   const renderUserCard = (u: User, liveOnline: boolean) => {
     const rel = user ? getFollowStatus(userFollows, user.id, u.id) : { iFollowThem: false, theyFollowMe: false, isMutual: false };
@@ -173,6 +221,11 @@ export const MeetPage: React.FC = () => {
               <GenderBadge gender={u.gender} />
               <VipTierBadge vipTier={vipInfo.key} compact />
               {u.femaleVerifiedBadge && <FemaleVerifiedBadge badge={u.femaleVerifiedBadge} />}
+              {(u.isAgent || u.isHost) && (
+                <span title="مضيف أو وكيل معتمد">
+                  <AgencyIcon className="w-4 h-4" />
+                </span>
+              )}
             </div>
 
             <div className="flex items-center flex-wrap gap-1.5 text-[10px] font-bold">
@@ -275,70 +328,44 @@ export const MeetPage: React.FC = () => {
           <div className="flex items-center justify-between gap-2 text-[11px]">
             <span className="font-extrabold text-emerald-700 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>{directoryLabel} ({onlineCount})</span>
+              <span>
+                {isSearching
+                  ? `نتائج البحث (${searchResults.length})`
+                  : `الأصدقاء المتصلون حالياً (${onlineCount})`}
+              </span>
             </span>
-            <button
-              type="button"
-              onClick={() => setShowAllDirectory((prev) => !prev)}
-              className="font-bold text-slate-500 hover:text-emerald-700 cursor-pointer"
-            >
-              {showAllDirectory ? 'عرض الجنس المقابل فقط' : 'عرض جميع الأعضاء'}
-            </button>
           </div>
         </section>
 
-        {/* Online Opposite-Gender Users */}
         <section className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y pb-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h1 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-              <Users className="w-4 h-4 text-emerald-600" />
-              <span>{directoryLabel}</span>
-            </h1>
-            <span className="text-[11px] font-semibold text-slate-500">
-              توثيق حقيقي ومتابعة متبادلة للدردشة المجانية
-            </span>
-          </div>
+          <h1 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
+            <FriendsIcon className="w-5 h-5" />
+            <span>الأصدقاء المتصلون حالياً</span>
+          </h1>
 
-          {loading ? (
+          {isDirectoryLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="light-card rounded-2xl h-32 animate-pulse" />
               ))}
             </div>
-          ) : onlineUsers.length === 0 ? (
+          ) : searchError ? (
+            <div className="light-card rounded-2xl p-6 text-center">
+              <p className="text-xs sm:text-sm font-bold text-rose-700">
+                تعذّر البحث عن الأعضاء. يرجى المحاولة مرة أخرى.
+              </p>
+            </div>
+          ) : displayedUsers.length === 0 ? (
             <div className="light-card rounded-2xl p-6 text-center space-y-2">
               <p className="text-xs sm:text-sm font-bold text-slate-700">
-                {searchQuery.trim()
-                  ? 'لا توجد نتائج متصلة تطابق البحث.'
-                  : showAllDirectory
-                  ? 'لا يوجد أعضاء متصلون الآن.'
+                {isSearching
+                  ? 'لا توجد نتائج تطابق البحث.'
                   : `لا يوجد حسابات ${targetGender === 'female' ? 'بنات' : 'شباب'} متصلة الآن في هذه اللحظة.`}
-              </p>
-              <p className="text-[11px] text-slate-500">
-                يمكنك البحث بالاسم أو الـ ID أعلاه للوصول إلى جميع الأعضاء المسجلين.
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {onlineUsers.map((u) => renderUserCard(u, true))}
-            </div>
-          )}
-
-          {/* Offline searchable members when filtering or available */}
-          {searchableOfflineUsers.length > 0 && (
-            <div className="pt-2 space-y-2.5">
-              <h2 className="text-xs font-extrabold text-slate-500">
-                {searchQuery.trim()
-                  ? `نتائج البحث من الأعضاء المسجلين (${searchableOfflineUsers.length})`
-                  : showAllDirectory
-                  ? `الأعضاء المسجلون (${searchableOfflineUsers.length})`
-                  : `أعضاء ${targetGender === 'female' ? 'البنات' : 'الشباب'} المسجلون (${searchableOfflineUsers.length})`}
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {searchableOfflineUsers.slice(0, searchQuery.trim() ? 20 : 8).map((u) =>
-                  renderUserCard(u, false)
-                )}
-              </div>
+              {displayedUsers.map((u) => renderUserCard(u, isUserLiveOnline(u)))}
             </div>
           )}
         </section>

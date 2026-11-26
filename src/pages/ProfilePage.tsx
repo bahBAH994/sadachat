@@ -2,33 +2,35 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
 import {
   Briefcase,
-  Building2,
   CalendarCheck,
   Camera,
   Check,
   CheckCircle2,
   ChevronLeft,
-  Coins,
   Copy,
-  Crown,
   Flame,
-  Gem,
-  Gift,
   Lock,
   LogOut,
   MapPin,
   MessageCircleHeart,
-  Mic2,
   Save,
-  Settings,
   ShieldCheck,
   Sparkles,
-  Store,
-  User as UserIcon,
   Users,
   Unlock,
   X,
 } from 'lucide-react';
+import {
+  CoinIcon,
+  CrownIcon,
+  DiamondIcon,
+  GiftIcon,
+  MicIcon,
+  AgencyIcon,
+  PartyIcon,
+  ProfileIcon,
+  SettingsIcon,
+} from '../components/AppIcons';
 import { useAuth } from '../context/AuthContext';
 import { useMiniProfile } from '../context/MiniProfileContext';
 import { AVATAR_CHOICES } from '../lib/assets';
@@ -497,6 +499,7 @@ export const ProfilePage: React.FC = () => {
         category: myRoomCategory,
         description: myRoomDescription,
         maxSeats: myRoomSeats,
+        isAgency: false,
         isPrivate: myRoomIsPrivate,
         password: myRoomIsPrivate ? myRoomPin : '',
       });
@@ -537,7 +540,7 @@ export const ProfilePage: React.FC = () => {
               }}
               className="inline-flex items-center gap-1.5 rounded-full bg-white/90 hover:bg-white px-3 py-1.5 font-bold text-slate-700 border border-slate-200 cursor-pointer transition"
             >
-              <Settings className="w-3.5 h-3.5 text-[#FCE9A6]" />
+              <SettingsIcon className="w-3.5 h-3.5" />
               <span>تعديل الحساب</span>
             </button>
 
@@ -605,7 +608,7 @@ export const ProfilePage: React.FC = () => {
                         }}
                         className="inline-flex items-center gap-1 rounded-full bg-pink-50 hover:bg-pink-100 border border-pink-200 px-2.5 py-0.5 text-[11px] font-extrabold text-pink-800 cursor-pointer transition"
                       >
-                        <Mic2 className="w-3 h-3 text-pink-200" />
+                        <MicIcon className="w-3 h-3 text-pink-200" />
                         <span>توثيق الحساب</span>
                       </button>
                     )}
@@ -631,7 +634,7 @@ export const ProfilePage: React.FC = () => {
                     onClick={() => navigate('/my-level')}
                     className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800 font-mono-num cursor-pointer"
                   >
-                    <Crown className="w-3 h-3 text-[#D4AF37]" />
+                    <CrownIcon className="w-3 h-3 text-[#D4AF37]" />
                     <span>Lv.{giftLevels.sendLevel}</span>
                   </button>
 
@@ -640,7 +643,7 @@ export const ProfilePage: React.FC = () => {
                     onClick={() => navigate('/my-level')}
                     className="inline-flex items-center gap-1 rounded-full bg-sky-50 border border-sky-200 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-800 font-mono-num cursor-pointer"
                   >
-                    <Gift className="w-3 h-3 text-[#D4AF37]" />
+                    <GiftIcon className="w-3 h-3 text-[#D4AF37]" />
                     <span>Lv.{giftLevels.receiveLevel}</span>
                   </button>
                 </div>
@@ -728,11 +731,11 @@ export const ProfilePage: React.FC = () => {
       <div className="w-full max-w-3xl mx-auto -mt-6 relative z-20 shrink-0 rounded-t-[28px] bg-slate-50/90 px-4 pt-5 pb-3 space-y-3">
         <section className="light-card rounded-3xl p-3 grid grid-cols-4 gap-1.5 text-center">
           <button type="button" onClick={() => navigate('/my-level')} className="flex flex-col items-center gap-1 cursor-pointer">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 border border-amber-300/70 flex items-center justify-center text-amber-700"><Crown className="w-5 h-5" /></div>
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 border border-amber-300/70 flex items-center justify-center text-amber-700"><CrownIcon className="w-5 h-5" /></div>
             <span className="text-[11px] font-extrabold text-slate-800">مستواي</span>
           </button>
           <button type="button" onClick={() => navigate('/store')} className="flex flex-col items-center gap-1 cursor-pointer">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-200 border border-emerald-300/70 flex items-center justify-center text-emerald-700"><Store className="w-5 h-5" /></div>
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-200 border border-emerald-300/70 flex items-center justify-center text-emerald-700"><PartyIcon className="w-5 h-5" /></div>
             <span className="text-[11px] font-extrabold text-slate-800">المتجر</span>
           </button>
           <button type="button" onClick={() => navigate('/bag')} className="flex flex-col items-center gap-1 cursor-pointer">
@@ -740,18 +743,18 @@ export const ProfilePage: React.FC = () => {
             <span className="text-[11px] font-extrabold text-slate-800">الحقيبة</span>
           </button>
           <button type="button" onClick={() => navigate('/diamond-wallet')} className="flex flex-col items-center gap-1 cursor-pointer">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-sky-100 to-cyan-200 border border-sky-300/70 flex items-center justify-center text-sky-700"><Gem className="w-5 h-5" /></div>
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-sky-100 to-cyan-200 border border-sky-300/70 flex items-center justify-center text-sky-700"><DiamondIcon className="w-5 h-5" /></div>
             <span className="text-[11px] font-extrabold text-slate-800">محفظة الألماس</span>
           </button>
         </section>
         <section className="light-card rounded-3xl p-3 grid grid-cols-2 divide-x divide-x-reverse divide-slate-100">
           <div className="pl-2 text-right space-y-1">
             <span className="block text-[11px] text-slate-500 font-bold">عدد الكوينز</span>
-            <span className="flex items-center gap-2 text-xl font-black text-slate-900 font-mono-num"><Coins className="w-5 h-5 text-amber-500" />{user.coins.toLocaleString('en-US')}</span>
+            <span className="flex items-center gap-2 text-xl font-black text-slate-900 font-mono-num"><CoinIcon className="w-5 h-5 text-amber-500" />{user.coins.toLocaleString('en-US')}</span>
           </div>
           <div className="pr-3 text-right space-y-1">
             <span className="block text-[11px] text-slate-500 font-bold">عدد الألماس</span>
-            <span className="flex items-center gap-2 text-xl font-black text-slate-900 font-mono-num"><Gem className="w-5 h-5 text-sky-500" />{user.diamonds.toLocaleString('en-US')}</span>
+            <span className="flex items-center gap-2 text-xl font-black text-slate-900 font-mono-num"><DiamondIcon className="w-5 h-5 text-sky-500" />{user.diamonds.toLocaleString('en-US')}</span>
           </div>
         </section>
       </div>
@@ -809,7 +812,7 @@ export const ProfilePage: React.FC = () => {
                   </>
                 ) : (
                   <span className="text-amber-800 font-extrabold">
-                    👑 لقد وصلت إلى القمة — SVIP الإمبراطوري!
+                    <CrownIcon className="inline h-4 w-4 align-[-3px]" /> لقد وصلت إلى القمة — SVIP الإمبراطوري!
                   </span>
                 )}
               </span>
@@ -869,7 +872,7 @@ export const ProfilePage: React.FC = () => {
               {openingMyRoom ? 'جارٍ فتح الغرفة...' : 'غرفتي / وكالتي'}
             </span>
             <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-emerald-600 shadow-sm">
-              <Building2 className="w-5 h-5" />
+              <AgencyIcon className="w-5 h-5" />
             </div>
           </button>
 
@@ -880,7 +883,7 @@ export const ProfilePage: React.FC = () => {
           >
             <span className="text-sm font-extrabold text-violet-950">مركز المضيف</span>
             <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-violet-600 shadow-sm">
-              <Mic2 className="w-5 h-5" />
+              <MicIcon className="w-5 h-5" />
             </div>
           </button>
 
@@ -909,7 +912,7 @@ export const ProfilePage: React.FC = () => {
           >
             <span className="text-sm font-extrabold text-rose-950">دعوة الأصدقاء</span>
             <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-rose-600 shadow-sm">
-              <Gift className="w-5 h-5" />
+              <GiftIcon className="w-5 h-5" />
             </div>
           </button>
 
@@ -929,7 +932,7 @@ export const ProfilePage: React.FC = () => {
             }}
             className="flex flex-col items-center gap-1.5 text-slate-600 hover:text-emerald-600 cursor-pointer transition"
           >
-            <UserIcon className="w-5 h-5" />
+            <ProfileIcon className="w-5 h-5" />
             <span className="text-xs font-bold">الحساب</span>
           </button>
 
@@ -938,7 +941,7 @@ export const ProfilePage: React.FC = () => {
             onClick={() => navigate('/wallet')}
             className="flex flex-col items-center gap-1.5 text-slate-600 hover:text-emerald-600 cursor-pointer transition"
           >
-            <Coins className="w-5 h-5" />
+            <CoinIcon className="w-5 h-5" />
             <span className="text-xs font-bold">الشحن USDT</span>
           </button>
 
@@ -1153,7 +1156,7 @@ export const ProfilePage: React.FC = () => {
                   >
                     <span className="block text-[10px] font-bold">يوم {dayNum}</span>
                     <span className="block text-base mt-0.5">
-                      {done ? '✅' : dayNum === 7 ? '🎁' : dayNum === 15 ? '🏎️' : '⭐'}
+                      {done ? '✅' : dayNum === 7 ? <GiftIcon className="inline h-4 w-4" /> : dayNum === 15 ? '🏎️' : '⭐'}
                     </span>
                   </div>
                 );
@@ -1165,7 +1168,7 @@ export const ProfilePage: React.FC = () => {
               <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-xs sm:text-sm font-black text-rose-950">
-                    🎁 مكافأة 7 أيام متتالية: إطار مهام المضيف (7 أيام)
+                    <GiftIcon className="inline h-4 w-4 align-[-3px]" /> مكافأة 7 أيام متتالية: إطار مهام المضيف (7 أيام)
                   </h3>
                   <p className="text-[11px] text-rose-700 mt-0.5">
                     إطار متحرك مجاني لمدة 7 أيام فور إتمام الأسبوع الأول.
@@ -1341,7 +1344,7 @@ export const ProfilePage: React.FC = () => {
                           : 'bg-slate-50 border-slate-200 text-slate-600'
                       }`}
                     >
-                      حساب نسائي 💎
+                      حساب نسائي <DiamondIcon className="inline h-3.5 w-3.5 align-[-2px]" />
                     </button>
                   </div>
                 </div>
@@ -1412,7 +1415,7 @@ export const ProfilePage: React.FC = () => {
             </div>
             {([
               ['personalRoom', 'غرفتي الخاصة', Mic2],
-              ['agencyRoom', 'وكالتي', Building2],
+              ['agencyRoom', 'وكالتي', AgencyIcon],
             ] as const).map(([roomKey, label, Icon]) => {
               const targetRoom = myRoomOptions[roomKey];
               return (

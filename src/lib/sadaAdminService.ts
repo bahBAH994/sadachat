@@ -21,6 +21,7 @@ import {
   getGiftEffectTier,
   getRechargeRewardTier,
   getUserVipTierInfo,
+  makeConversationId,
   setCustomVipIdsCache,
   STORE_3D_ITEMS,
   SUPER_ADMIN_EMAIL,
@@ -52,6 +53,7 @@ import {
   WITHDRAWAL_COLUMNS,
 } from './sadaMappers';
 import { fetchUsersVipTotalsBatch, invalidateUserVipCache } from './sadaVipService';
+import { createRoomInSupabase } from './sadaRoomsService';
 import { supabase } from './supabase';
 
 export interface AdminOverviewPayload {
@@ -1244,6 +1246,162 @@ export async function updateAgencyInSupabase(
     patch.commission_rate = Math.max(0, Math.min(0.5, payload.commissionRate));
   }
   await supabase.from('sada_agencies').update(patch).eq('id', agencyId);
+}
+
+export async function reviewAgencyApplicationInSupabase(
+  agencyId: string,
+  decision: 'approved' | 'rejected',
+  admin: User
+): Promise<void> {
+  const { data: agencyRow, error: agencyError } = await supabase
+    .from('sada_agencies')
+    .select(AGENCY_COLUMNS)
+    .eq('id', agencyId)
+    .maybeSingle();
+
+  if (agencyError) throw new Error(`تعذّر تحميل طلب الوكالة: ${agencyError.message}`);
+  if (!agencyRow) throw new Error('طلب الوكالة غير موجود.');
+  if (agencyRow.status !== 'pending') throw new Error('تمت مراجعة طلب الوكالة مسبقاً.');
+
+  const { data: agencyOwner, error: agencyOwnerError } = await supabase
+    .from('sada_users')
+    .select(USER_COLUMNS)
+    .eq('id', String(agencyRow.owner_id))
+    .maybeSingle();
+  if (agencyOwnerError) {
+    throw new Error(`تعذّر تحميل حساب صاحب الطلب: ${agencyOwnerError.message}`);
+  }
+  if (!agencyOwner) throw new Error('تعذّر العثور على حساب صاحب الطلب.');
+
+  if (decision === 'rejected') {
+    const { data: rejectedAgency, error: rejectError } = await supabase
+      .from('sada_agencies')
+      .update({ status: 'rejected' })
+      .eq('id', agencyId)
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle();
+    if (rejectError) throw new Error(`تعذّر رفض طلب الوكالة: ${rejectError.message}`);
+    if (!rejectedAgency) throw new Error('تمت مراجعة طلب الوكالة مسبقاً.');
+
+    const { error: notificationError } = await supabase.from('sada_private_messages').insert({
+      id: genId('pm'),
+      conversation_id: makeConversationId(admin.id, String(agencyOwner.id)),
+      sender_id: admin.id,
+      recipient_id: String(agencyOwner.id),
+      text: `نأسف لإبلاغك برفض طلب تأسيس وكالة "${String(agencyRow.name)}". يمكنك التواصل مع الإدارة العليا لمزيد من التفاصيل.`,
+      coins_paid: 0,
+      diamonds_potential: 0,
+      diamonds_claimed: false,
+      diamonds_awarded: 0,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    });
+    if (notificationError) {
+      throw new Error(`تم رفض الطلب، لكن تعذّر إرسال إشعار للمستخدم: ${notificationError.message}`);
+    }
+    return;
+  }
+
+  const owner = rowToUser(agencyOwner);
+  const approvedOwner: User = {
+    ...owner,
+    isAgent: true,
+    isHost: true,
+    agencyId: String(agencyRow.id),
+    hostBadge: 'وكيل معتمد ✦',
+    hostAgencyName: String(agencyRow.name),
+  };
+  const { error: ownerUpdateError } = await supabase
+    .from('sada_users')
+    .update({
+      is_agent: true,
+      is_host: true,
+      agency_id: String(agencyRow.id),
+      host_badge: approvedOwner.hostBadge,
+      host_agency_name: approvedOwner.hostAgencyName,
+    })
+    .eq('id', approvedOwner.id);
+  if (ownerUpdateError) {
+    throw new Error(`تعذّر ترقية صاحب الوكالة: ${ownerUpdateError.message}`);
+  }
+
+  let room: Room | null = null;
+  let previousAgencyHostIds: string[] | null = null;
+  let previousAgencyId: string | null = null;
+  try {
+    room = await createRoomInSupabase(approvedOwner, {
+      title: `وكالة ${String(agencyRow.name)}`,
+      description: String(agencyRow.description || ''),
+      maxSeats: 12,
+      isAgency: true,
+      agencyId: String(agencyRow.id),
+    });
+    if (owner.agencyId && owner.agencyId !== String(agencyRow.id)) {
+      const { data: previousAgency, error: previousAgencyError } = await supabase
+        .from('sada_agencies')
+        .select('id, host_ids')
+        .eq('id', owner.agencyId)
+        .maybeSingle();
+      if (previousAgencyError) {
+        throw new Error(`تعذّر تحميل الوكالة السابقة: ${previousAgencyError.message}`);
+      }
+      if (previousAgency && Array.isArray(previousAgency.host_ids)) {
+        previousAgencyId = String(previousAgency.id);
+        previousAgencyHostIds = previousAgency.host_ids.map(String);
+        const { error: hostIdsError } = await supabase
+          .from('sada_agencies')
+          .update({
+            host_ids: previousAgencyHostIds.filter((hostId) => hostId !== owner.id),
+          })
+          .eq('id', previousAgencyId);
+        if (hostIdsError) {
+          throw new Error(`تعذّر تحديث الوكالة السابقة: ${hostIdsError.message}`);
+        }
+      }
+    }
+    const { data: approvedAgency, error: approveError } = await supabase
+      .from('sada_agencies')
+      .update({ status: 'approved' })
+      .eq('id', agencyId)
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle();
+    if (approveError) throw new Error(`تعذّر اعتماد سجل الوكالة: ${approveError.message}`);
+    if (!approvedAgency) throw new Error('تمت مراجعة طلب الوكالة مسبقاً.');
+  } catch (error) {
+    const [
+      { error: roomCleanupError },
+      { error: ownerRestoreError },
+      { error: previousAgencyRestoreError },
+    ] = await Promise.all([
+      room
+        ? supabase.from('sada_rooms').delete().eq('id', room.id)
+        : Promise.resolve({ error: null }),
+      supabase
+        .from('sada_users')
+        .update({
+          is_agent: Boolean(owner.isAgent),
+          is_host: Boolean(owner.isHost),
+          agency_id: owner.agencyId || null,
+          host_badge: owner.hostBadge || null,
+          host_agency_name: owner.hostAgencyName || null,
+        })
+        .eq('id', owner.id),
+      previousAgencyId && previousAgencyHostIds
+        ? supabase
+            .from('sada_agencies')
+            .update({ host_ids: previousAgencyHostIds })
+            .eq('id', previousAgencyId)
+        : Promise.resolve({ error: null }),
+    ]);
+    if (roomCleanupError || ownerRestoreError || previousAgencyRestoreError) {
+      throw new Error(
+        `تعذّر إكمال اعتماد الوكالة (${error instanceof Error ? error.message : 'خطأ غير معروف'}) أو التراجع عن التغييرات (${roomCleanupError?.message || ownerRestoreError?.message || previousAgencyRestoreError?.message}).`
+      );
+    }
+    throw error;
+  }
 }
 
 export async function payoutAgencyCommissionInSupabase(
