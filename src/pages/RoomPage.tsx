@@ -854,7 +854,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
               </p>
             )}
           </>
-       </button>
+       
     </div>
   )
 }
