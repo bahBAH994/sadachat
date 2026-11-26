@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  Building2,
   Briefcase,
   CalendarCheck,
   Camera,
@@ -12,6 +13,7 @@ import {
   Lock,
   LogOut,
   MapPin,
+  Mic2,
   MessageCircleHeart,
   Save,
   ShieldCheck,
@@ -48,6 +50,10 @@ import {
   getProfileSocialListFromSupabase,
   getUserGiftLevelsFromSupabase,
 } from '../lib/sadaSocialService';
+import {
+  getAgencyRequestStatusInSupabase,
+  submitAgencyRequestInSupabase,
+} from '../lib/sadaAgencyRequestService';
 import {
   checkInDailyHostTaskInSupabase,
   claimHostTaskMilestoneInSupabase,
@@ -142,6 +148,12 @@ export const ProfilePage: React.FC = () => {
     agencyRoom: Room;
   } | null>(null);
   const [showMyRoomChoice, setShowMyRoomChoice] = useState(false);
+  const [checkingAgencyStatus, setCheckingAgencyStatus] = useState(false);
+  const [showAgencyRequestForm, setShowAgencyRequestForm] = useState(false);
+  const [agencyRequestName, setAgencyRequestName] = useState('');
+  const [agencyRequestDescription, setAgencyRequestDescription] = useState('');
+  const [agencyRequestContact, setAgencyRequestContact] = useState('');
+  const [submittingAgencyRequest, setSubmittingAgencyRequest] = useState(false);
   const [myRoomCategory, setMyRoomCategory] = useState<Room['category']>('حوار');
   const [myRoomDescription, setMyRoomDescription] = useState('');
   const [myRoomSeats, setMyRoomSeats] = useState(12);
@@ -514,6 +526,60 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
+  const handleOpenAgencyRequest = async () => {
+    if (checkingAgencyStatus) return;
+    setCheckingAgencyStatus(true);
+    setFeedback(null);
+    try {
+      const status = await getAgencyRequestStatusInSupabase(user);
+      if (status === 'pending') {
+        setFeedback({
+          type: 'ok',
+          text: 'طلبك قيد المراجعة من الإدارة العليا.',
+        });
+      } else if (status === 'approved') {
+        setFeedback({ type: 'ok', text: 'حالة وكالتك: معتمدة.' });
+      } else {
+        setAgencyRequestName('');
+        setAgencyRequestDescription('');
+        setAgencyRequestContact('');
+        setShowAgencyRequestForm(true);
+      }
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'تعذّر التحقق من طلب الوكالة.',
+      });
+    } finally {
+      setCheckingAgencyStatus(false);
+    }
+  };
+
+  const handleSubmitAgencyRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmittingAgencyRequest(true);
+    setFeedback(null);
+    try {
+      await submitAgencyRequestInSupabase(user, {
+        agencyName: agencyRequestName,
+        description: agencyRequestDescription,
+        whatsappOrContact: agencyRequestContact,
+      });
+      setShowAgencyRequestForm(false);
+      setFeedback({
+        type: 'ok',
+        text: 'تم إرسال طلبك، وهو الآن قيد المراجعة من الإدارة العليا.',
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'تعذّر إرسال طلب الوكالة.',
+      });
+    } finally {
+      setSubmittingAgencyRequest(false);
+    }
+  };
+
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden bg-gradient-to-b from-emerald-50/90 via-slate-50 to-slate-50">
       <input
@@ -860,19 +926,19 @@ export const ProfilePage: React.FC = () => {
           </div>
         )}
 
-        {/* Room and agency entry is available to every signed-in user. */}
+        {/* Agency creation application */}
         <section className="light-card rounded-3xl p-4 grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => void handleOpenMyRoom()}
-            disabled={openingMyRoom}
+            onClick={() => void handleOpenAgencyRequest()}
+            disabled={checkingAgencyStatus}
             className="rounded-2xl bg-emerald-50/90 hover:bg-emerald-100/80 border border-emerald-100 p-4 flex items-center justify-between cursor-pointer transition"
           >
             <span className="text-sm font-extrabold text-emerald-950">
-              {openingMyRoom ? 'جارٍ فتح الغرفة...' : 'غرفتي / وكالتي'}
+              {checkingAgencyStatus ? 'جارٍ التحقق...' : 'إنشاء وكالة رسمية'}
             </span>
             <div className="w-10 h-10 rounded-xl bg-white/80 flex items-center justify-center text-emerald-600 shadow-sm">
-              <AgencyIcon className="w-5 h-5" />
+              <Building2 className="w-5 h-5" />
             </div>
           </button>
 
@@ -1382,6 +1448,78 @@ export const ProfilePage: React.FC = () => {
               <span>{saving ? 'جارٍ الحفظ...' : 'حفظ التعديلات'}</span>
             </button>
           </form>
+        </div>
+      )}
+
+      {showAgencyRequestForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
+          onClick={() => setShowAgencyRequestForm(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="agency-request-title"
+            className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-white border border-slate-200 p-6 space-y-4 shadow-2xl text-slate-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h3 id="agency-request-title" className="text-lg font-extrabold">
+                طلب إنشاء وكالة رسمية
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAgencyRequestForm(false)}
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+                aria-label="إغلاق"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitAgencyRequest} className="space-y-3">
+              <label className="block text-xs font-bold text-slate-700">
+                اسم الوكالة
+                <input
+                  type="text"
+                  required
+                  minLength={3}
+                  maxLength={48}
+                  value={agencyRequestName}
+                  onChange={(event) => setAgencyRequestName(event.target.value)}
+                  className="mt-1 w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                />
+              </label>
+              <label className="block text-xs font-bold text-slate-700">
+                نبذة عن الوكالة
+                <textarea
+                  required
+                  maxLength={500}
+                  rows={4}
+                  value={agencyRequestDescription}
+                  onChange={(event) => setAgencyRequestDescription(event.target.value)}
+                  className="mt-1 w-full resize-y rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                />
+              </label>
+              <label className="block text-xs font-bold text-slate-700">
+                واتساب أو وسيلة تواصل
+                <input
+                  type="text"
+                  required
+                  maxLength={120}
+                  value={agencyRequestContact}
+                  onChange={(event) => setAgencyRequestContact(event.target.value)}
+                  className="mt-1 w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={submittingAgencyRequest}
+                className="emerald-btn w-full min-h-[46px] rounded-2xl py-2.5 text-sm cursor-pointer disabled:opacity-60"
+              >
+                {submittingAgencyRequest ? 'جارٍ إرسال الطلب...' : 'إرسال الطلب'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
 

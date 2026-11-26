@@ -328,8 +328,8 @@ export const LobbyPage: React.FC = () => {
   );
   const [showMyRoomChoice, setShowMyRoomChoice] = useState(false);
   const [myRoomOptions, setMyRoomOptions] = useState<{
-    personalRoom: Room;
-    agencyRoom: Room;
+    personalRoom: Room | null;
+    agencyRoom: Room | null;
   } | null>(null);
   const [search, setSearch] = useState(initialLobbyNavigationState.search);
   const [selectedCountry, setSelectedCountry] = useState(
@@ -768,18 +768,15 @@ export const LobbyPage: React.FC = () => {
     setMyRoomEntryError(null);
     try {
       const { personalRoom, agencyRoom } = await getUserActiveRoomsInSupabase(user);
-      if (personalRoom && agencyRoom) {
+      if (user.agencyId || agencyRoom) {
         setMyRoomOptions({ personalRoom, agencyRoom });
         setShowMyRoomChoice(true);
+      } else if (personalRoom) {
+        await enterRoom(personalRoom);
       } else {
-        const room = personalRoom || agencyRoom;
-        if (room) {
-          await enterRoom(room);
-        } else {
-          setNewTitle(`${user.displayName} الخاصة`);
-          setCreateError(null);
-          setShowCreate(true);
-        }
+        setMyRoomEntryError('لا توجد غرفة خاصة نشطة. أنشئها من زر «+ إنشاء غرفة» أولاً.');
+        setAgencyToastVisible(true);
+        window.setTimeout(() => setAgencyToastVisible(false), 3500);
       }
     } catch (error) {
       setMyRoomEntryError(
@@ -1220,12 +1217,15 @@ export const LobbyPage: React.FC = () => {
                 </h2>
                 <button
                   type="button"
-                  disabled={openingMyRoom}
-                  onClick={() => void handleGoToAgencyChat()}
+                  onClick={() => {
+                    setNewTitle(`${user?.displayName || 'غرفتي'} الخاصة`);
+                    setCreateError(null);
+                    setShowCreate(true);
+                  }}
                   className="emerald-btn rounded-xl px-3 py-1.5 text-xs font-extrabold flex items-center gap-1 cursor-pointer disabled:opacity-60"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>{openingMyRoom ? 'جارٍ الفتح...' : 'غرفتي / وكالتي'}</span>
+                  <span>إنشاء غرفة</span>
                 </button>
               </div>
 
@@ -1375,7 +1375,7 @@ export const LobbyPage: React.FC = () => {
                   اختر وجهتك
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  لديك غرفة خاصة وغرفة وكالة نشطتان
+                  اختر الغرفة التي تريد الدخول إليها
                 </p>
               </div>
               <button
@@ -1388,19 +1388,21 @@ export const LobbyPage: React.FC = () => {
               </button>
             </div>
             {([
-              ['personalRoom', 'غرفتي الخاصة', MicIcon],
-              ['agencyRoom', 'وكالتي', AgencyIcon],
+              ['personalRoom', 'الدخول إلى غرفتي الخاصة', MicIcon],
+              ['agencyRoom', 'الدخول إلى غرفة الوكالة', AgencyIcon],
             ] as const).map(([roomKey, label, Icon]) => {
               const targetRoom = myRoomOptions[roomKey];
               return (
                 <button
                   key={roomKey}
                   type="button"
+                  disabled={!targetRoom}
                   onClick={() => {
+                    if (!targetRoom) return;
                     setShowMyRoomChoice(false);
                     void enterRoom(targetRoom);
                   }}
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-200 p-4 flex items-center gap-3 text-right transition cursor-pointer"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-200 p-4 flex items-center gap-3 text-right transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="w-11 h-11 rounded-xl bg-white flex items-center justify-center text-emerald-600 shadow-sm">
                     <Icon className="w-5 h-5" />
@@ -1408,7 +1410,10 @@ export const LobbyPage: React.FC = () => {
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-extrabold text-slate-900">{label}</span>
                     <span className="block text-xs text-slate-500 truncate mt-1">
-                      {targetRoom.title}
+                      {targetRoom?.title ||
+                        (roomKey === 'personalRoom'
+                          ? 'أنشئ غرفتك الخاصة من زر «+ إنشاء غرفة»'
+                          : 'لا توجد غرفة وكالة نشطة')}
                     </span>
                   </span>
                   <ChevronDown className="w-4 h-4 -rotate-90 text-slate-400" />

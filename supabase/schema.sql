@@ -266,6 +266,23 @@ CREATE TABLE IF NOT EXISTS public.sada_agencies (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.sada_agency_requests (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  agency_name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  whatsapp_or_contact TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sada_agency_requests_created
+  ON public.sada_agency_requests(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sada_agency_requests_one_pending_per_user
+  ON public.sada_agency_requests(user_id)
+  WHERE status = 'pending';
+
 UPDATE public.sada_rooms AS rooms
 SET is_agency = TRUE,
     agency_id = agencies.id
@@ -504,6 +521,7 @@ BEGIN
     'sada_gifts',
     'sada_transactions',
     'sada_agencies',
+    'sada_agency_requests',
     'sada_competitions',
     'sada_cultural_questions',
     'sada_usdt_deposits',
@@ -1789,6 +1807,7 @@ BEGIN
   DELETE FROM public.sada_transactions;
   DELETE FROM public.sada_rooms;
   DELETE FROM public.sada_agencies;
+  DELETE FROM public.sada_agency_requests;
   DELETE FROM public.sada_competitions;
   DELETE FROM public.sada_cultural_questions;
   DELETE FROM public.sada_usdt_deposits;
@@ -2246,6 +2265,7 @@ BEGIN
     'sada_private_messages',
     'sada_transactions',
     'sada_agencies',
+    'sada_agency_requests',
     'sada_competitions',
     'sada_cultural_questions',
     'sada_usdt_deposits',

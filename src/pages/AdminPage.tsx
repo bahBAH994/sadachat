@@ -73,6 +73,7 @@ import {
   updateHostApprovalInSupabase,
   updatePrizePoolInSupabase,
 } from '../lib/sadaAdminService';
+import { reviewAgencyRequestInSupabase } from '../lib/sadaAgencyRequestService';
 import {
   resetGrandCompetitionCycle,
   saveGrandCompetitionContent,
@@ -80,6 +81,7 @@ import {
 } from '../lib/sadaGrandCompetitionService';
 import type {
   Agency,
+  AgencyRequest,
   Competition,
   CulturalQuestionAdminItem,
   DeviceLock,
@@ -112,6 +114,7 @@ interface AdminOverview {
   rooms: Room[];
   competitions: Competition[];
   agencies: Agency[];
+  agencyRequests: AgencyRequest[];
   culturalQuestions: CulturalQuestionAdminItem[];
   settings: PlatformSettings;
   usdtDeposits: UsdtDepositRequest[];
@@ -190,6 +193,7 @@ type AdminTab =
   | 'users'
   | 'female_voice'
   | 'rooms_agencies'
+  | 'agency_requests'
   | 'gifts_announcements'
   | 'usdt'
   | 'competitions'
@@ -230,6 +234,7 @@ export const AdminPage: React.FC = () => {
   const [agencyRateDrafts, setAgencyRateDrafts] = useState<Record<string, string>>({});
   const [hostAgencyDrafts, setHostAgencyDrafts] = useState<Record<string, string>>({});
   const [reviewingAgencyId, setReviewingAgencyId] = useState<string | null>(null);
+  const [reviewingAgencyRequestId, setReviewingAgencyRequestId] = useState<string | null>(null);
 
   // Questions CSV/Excel import
   const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
@@ -324,6 +329,13 @@ export const AdminPage: React.FC = () => {
           void loadOverview('silent');
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_agency_requests' },
+        () => {
+          void loadOverview('silent');
+        }
+      )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
@@ -346,6 +358,34 @@ export const AdminPage: React.FC = () => {
       showOk('تم نسخ عنوان المحفظة.');
     } catch (err) {
       showErr(err, 'تعذّر نسخ عنوان المحفظة.');
+    }
+  };
+
+  const handleReviewAgencyRequest = async (
+    requestId: string,
+    decision: 'approved' | 'rejected'
+  ) => {
+    if (reviewingAgencyRequestId) return;
+    setReviewingAgencyRequestId(requestId);
+    try {
+      await reviewAgencyRequestInSupabase(requestId, decision);
+      showOk(
+        decision === 'approved'
+          ? 'تمت الموافقة وتفعيل الوكالة وربطها بصاحب الطلب.'
+          : 'تم رفض طلب الوكالة.'
+      );
+      void loadOverview('silent');
+      void refreshUser();
+    } catch (err) {
+      showErr(
+        err,
+        decision === 'approved'
+          ? 'تعذّرت الموافقة على طلب الوكالة.'
+          : 'تعذّر رفض طلب الوكالة.'
+      );
+      void loadOverview('silent');
+    } finally {
+      setReviewingAgencyRequestId(null);
     }
   };
 
@@ -1149,6 +1189,8 @@ export const AdminPage: React.FC = () => {
     data?.hostJoinApplications?.filter((a) => a.status === 'pending').length || 0;
   const pendingAgencyAppsCount =
     data?.agencies.filter((agency) => agency.status === 'pending').length || 0;
+  const pendingAgencyRequestCount =
+    data?.agencyRequests.filter((request) => request.status === 'pending').length || 0;
   const pendingVoiceCount = data?.stats.pendingFemaleVoiceCount || 0;
   const pendingUsdtCount = data?.stats.pendingUsdtCount || 0;
   const shamCashRequests = data ? getShamCashRequests(data.settings) : [];
@@ -1169,6 +1211,11 @@ export const AdminPage: React.FC = () => {
       id: 'rooms_agencies',
       label: 'الغرف والوكالات',
       badge: pendingHostAppsCount + pendingAgencyAppsCount,
+    },
+    {
+      id: 'agency_requests',
+      label: 'طلبات الوكالات',
+      badge: pendingAgencyRequestCount,
     },
     { id: 'gifts_announcements', label: 'الهدايا والإعلانات' },
     { id: 'usdt', label: 'طلبات الشحن والسحب', badge: pendingPaymentCount },
@@ -1749,6 +1796,105 @@ export const AdminPage: React.FC = () => {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {tab === 'agency_requests' && (
+              <section className="royal-glass rounded-3xl p-5 sm:p-6 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-[#FCE9A6]">
+                    <AgencyIcon className="w-5 h-5" />
+                    <h2 className="text-base sm:text-lg font-extrabold">
+                      طلبات الوكالات ({pendingAgencyRequestCount} معلّق)
+                    </h2>
+                  </div>
+                  <span className="text-xs text-slate-300">طلبات إنشاء وكالة رسمية</span>
+                </div>
+
+                {!data?.agencyRequests.length ? (
+                  <p className="text-xs text-slate-400 py-4 text-center">
+                    لا توجد طلبات وكالات حالياً.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-[#D4AF37]/15">
+                    {data.agencyRequests.map((request) => {
+                      const requestOwner = data.users.find(
+                        (candidate) => candidate.id === request.userId
+                      );
+                      return (
+                        <article key={request.id} className="py-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1.5">
+                              <h3 className="text-sm font-extrabold text-white">
+                                {request.agencyName}
+                              </h3>
+                              <p className="text-xs leading-5 text-slate-300">
+                                {request.description || 'لا توجد نبذة.'}
+                              </p>
+                              <p className="text-xs text-slate-300">
+                                مقدّم الطلب:{' '}
+                                <span className="font-bold text-white">
+                                  {requestOwner?.displayName || 'مستخدم غير معروف'}
+                                </span>
+                                {' · '}
+                                <span className="font-mono-num text-[#FCE9A6]" dir="ltr">
+                                  {request.userId}
+                                </span>
+                              </p>
+                              <p className="text-xs text-slate-300">
+                                التواصل:{' '}
+                                <span className="font-bold text-white" dir="auto">
+                                  {request.whatsappOrContact}
+                                </span>
+                              </p>
+                            </div>
+                            <span
+                              className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
+                                request.status === 'pending'
+                                  ? 'bg-amber-500/15 text-amber-200'
+                                  : request.status === 'approved'
+                                    ? 'bg-emerald-500/15 text-emerald-200'
+                                    : 'bg-rose-500/15 text-rose-200'
+                              }`}
+                            >
+                              {request.status === 'pending'
+                                ? 'قيد المراجعة'
+                                : request.status === 'approved'
+                                  ? 'معتمد'
+                                  : 'مرفوض'}
+                            </span>
+                          </div>
+                          {request.status === 'pending' && (
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <button
+                                type="button"
+                                disabled={reviewingAgencyRequestId !== null}
+                                onClick={() =>
+                                  void handleReviewAgencyRequest(request.id, 'approved')
+                                }
+                                className="min-h-[42px] rounded-xl bg-emerald-600 hover:bg-emerald-500 border border-emerald-400/60 px-4 text-xs font-extrabold text-white disabled:opacity-50 cursor-pointer"
+                              >
+                                {reviewingAgencyRequestId === request.id
+                                  ? 'جارٍ التنفيذ...'
+                                  : 'موافقة وتفعيل الوكالة'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={reviewingAgencyRequestId !== null}
+                                onClick={() =>
+                                  void handleReviewAgencyRequest(request.id, 'rejected')
+                                }
+                                className="min-h-[42px] rounded-xl bg-rose-700 hover:bg-rose-600 border border-rose-400/60 px-4 text-xs font-extrabold text-white disabled:opacity-50 cursor-pointer"
+                              >
+                                رفض الطلب
+                              </button>
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
                   </div>
                 )}
               </section>

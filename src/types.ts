@@ -446,6 +446,16 @@ export interface Agency {
   createdAt: string;
 }
 
+export interface AgencyRequest {
+  id: string;
+  userId: string;
+  agencyName: string;
+  description: string;
+  whatsappOrContact: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
 export interface LuckyGiftMultiplierSetting {
   multiplier: number;
   weight: number;
