@@ -57,6 +57,7 @@ import { fetchUsersVipTotalsBatch, invalidateUserVipCache } from './sadaVipServi
 import { createRoomInSupabase } from './sadaRoomsService';
 import { getAgencyRequestsInSupabase } from './sadaAgencyRequestService';
 import { getEconomySettingsFromSupabase, type EconomySettings } from './sadaEconomyService';
+import { safeClearKeysMatching } from './safeStorage';
 import { supabase } from './supabase';
 
 export interface AdminOverviewPayload {
@@ -108,6 +109,7 @@ export async function resetApplicationDataInSupabase(): Promise<void> {
     throw new Error('لم تؤكد قاعدة البيانات اكتمال عملية التصفير.');
   }
 
+  safeClearKeysMatching((key) => /agency|room|message|chat/i.test(key));
   const resetState = await getPlatformState({ forceRefresh: true });
   await savePlatformState({
     settings: {
@@ -531,7 +533,11 @@ export async function reviewShamCashRequestInSupabase(
             .update({ coins: previousBalance })
             .eq('id', String(request.userId))
             .eq('coins', nextBalance),
-          supabase.from('sada_transactions').delete().eq('id', transactionId),
+          supabase
+            .from('sada_transactions')
+            .delete()
+            .not('id', 'is', null)
+            .eq('id', transactionId),
         ]);
       if (balanceRollbackError || transactionRollbackError) {
         throw new Error(
@@ -1264,7 +1270,101 @@ export async function updateAgencyInSupabase(
   if (typeof payload.commissionRate === 'number') {
     patch.commission_rate = Math.max(0, Math.min(0.5, payload.commissionRate));
   }
-  await supabase.from('sada_agencies').update(patch).eq('id', agencyId);
+  const { error: updateError } = await supabase
+    .from('sada_agencies')
+    .update(patch)
+    .eq('id', agencyId);
+  if (updateError) throw new Error(`تعذّر تحديث الوكالة: ${updateError.message}`);
+}
+
+export async function deleteAgencyInSupabase(agencyId: string): Promise<void> {
+  const { data: agency, error: agencyError } = await supabase
+    .from('sada_agencies')
+    .select('id, owner_id, host_ids')
+    .eq('id', agencyId)
+    .maybeSingle();
+  if (agencyError) throw new Error(`تعذّر تحميل الوكالة: ${agencyError.message}`);
+  if (!agency) throw new Error('الوكالة غير موجودة.');
+
+  const [linkedRooms, legacyRooms] = await Promise.all([
+    supabase.from('sada_rooms').select('id').eq('agency_id', agencyId),
+    supabase
+      .from('sada_rooms')
+      .select('id')
+      .eq('is_agency', true)
+      .eq('host_id', String(agency.owner_id)),
+  ]);
+  if (linkedRooms.error || legacyRooms.error) {
+    throw new Error(
+      `تعذّر تحميل غرف الوكالة: ${linkedRooms.error?.message || legacyRooms.error?.message}`
+    );
+  }
+  const roomIds = Array.from(
+    new Set([...(linkedRooms.data || []), ...(legacyRooms.data || [])].map((room) => String(room.id)))
+  );
+  if (roomIds.length) {
+    const { error: roomDeleteError } = await supabase
+      .from('sada_rooms')
+      .delete()
+      .not('id', 'is', null)
+      .in('id', roomIds);
+    if (roomDeleteError) {
+      throw new Error(`تعذّر حذف غرف الوكالة: ${roomDeleteError.message}`);
+    }
+  }
+
+  const { error: memberUpdateError } = await supabase
+    .from('sada_users')
+    .update({
+      agency_id: null,
+      is_agent: false,
+      host_badge: null,
+      host_agency_name: null,
+    })
+    .eq('agency_id', agencyId);
+  if (memberUpdateError) {
+    throw new Error(`تعذّر فصل أعضاء الوكالة: ${memberUpdateError.message}`);
+  }
+
+  const memberIds = Array.isArray(agency.host_ids)
+    ? agency.host_ids.map((memberId) => String(memberId))
+    : [];
+  if (memberIds.length) {
+    const { error: hostUpdateError } = await supabase
+      .from('sada_users')
+      .update({
+        agency_id: null,
+        is_agent: false,
+        host_badge: null,
+        host_agency_name: null,
+      })
+      .in('id', memberIds);
+    if (hostUpdateError) {
+      throw new Error(`تعذّر فصل مضيفي الوكالة: ${hostUpdateError.message}`);
+    }
+  }
+
+  const { error: ownerUpdateError } = await supabase
+    .from('sada_users')
+    .update({
+      agency_id: null,
+      is_agent: false,
+      host_badge: null,
+      host_agency_name: null,
+    })
+    .eq('id', String(agency.owner_id));
+  if (ownerUpdateError) {
+    throw new Error(`تعذّر فصل مالك الوكالة: ${ownerUpdateError.message}`);
+  }
+
+  const { error: deleteError } = await supabase
+    .from('sada_agencies')
+    .delete()
+    .not('id', 'is', null)
+    .eq('id', agencyId);
+  if (deleteError) {
+    throw new Error(`تعذّر حذف الوكالة: ${deleteError.message}`);
+  }
 }
 
 export async function reviewAgencyApplicationInSupabase(
@@ -1395,7 +1495,7 @@ export async function reviewAgencyApplicationInSupabase(
       { error: previousAgencyRestoreError },
     ] = await Promise.all([
       room
-        ? supabase.from('sada_rooms').delete().eq('id', room.id)
+        ? supabase.from('sada_rooms').delete().not('id', 'is', null).eq('id', room.id)
         : Promise.resolve({ error: null }),
       supabase
         .from('sada_users')

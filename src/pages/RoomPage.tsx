@@ -16,7 +16,6 @@ import {
   Send,
   Shield,
   Smile,
-  Sparkles,
   Trash2,
   UserMinus,
   Users,
@@ -360,6 +359,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
     setRotation(rotationRef.current);
     setSpinning(true);
     const tickTimer = window.setInterval(() => playWheelPegTick(0.35), 150);
+    let countdownTimer: number | null = null;
     const timer = window.setTimeout(() => {
       window.clearInterval(tickTimer);
       setSpinning(false);
@@ -368,11 +368,20 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
       );
       if (selectedPlayer) {
         setPendingEliminationId(selectedPlayer.userId);
-        setNotice(`⚠️ سيتم إقصاء ${selectedPlayer.displayName} بعد ثلاث ثوانٍ`);
+        let seconds = 3;
+        const updateCountdown = () => {
+          setNotice(`⚠️ سيتم إقصاء ${selectedPlayer.displayName} خلال ${seconds}...`);
+          seconds -= 1;
+          if (seconds > 0) {
+            countdownTimer = window.setTimeout(updateCountdown, 1000);
+          }
+        };
+        updateCountdown();
       }
     }, ROOM_WHEEL_SPIN_DURATION_MS);
     return () => {
       window.clearTimeout(timer);
+      if (countdownTimer !== null) window.clearTimeout(countdownTimer);
       window.clearInterval(tickTimer);
     };
   }, [round]);
@@ -549,16 +558,6 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
           window.setTimeout(resolve, ROOM_WHEEL_SPIN_DURATION_MS)
         );
         setPendingEliminationId(eliminated.userId);
-        setNotice(`⚠️ سيتم إقصاء ${eliminated.displayName} بعد ثلاث ثوانٍ`);
-        try {
-          await onSendChat(`⚠️ سيتم إقصاء ${eliminated.displayName} من دولاب الإقصاء خلال 3 ثوانٍ.`);
-        } catch (chatError) {
-          setNotice(
-            chatError instanceof Error
-              ? `تعذّر إعلان الإقصاء في الشات: ${chatError.message}`
-              : 'تعذّر إعلان الإقصاء في الشات.'
-          );
-        }
         await new Promise<void>((resolve) => window.setTimeout(resolve, 3000));
         currentRound = {
           ...spinningRound,
@@ -569,15 +568,6 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
         await publishRound(currentRound);
         setPendingEliminationId(null);
         setNotice(`تم إقصاء ${eliminated.displayName}!`);
-        try {
-          await onSendChat(`🎡 تم إقصاء ${eliminated.displayName} من دولاب الإقصاء!`);
-        } catch (chatError) {
-          setNotice(
-            chatError instanceof Error
-              ? `تم الإقصاء لكن تعذّر إرسال إشعار الشات: ${chatError.message}`
-              : 'تم الإقصاء لكن تعذّر إرسال إشعار الشات.'
-          );
-        }
         alive = alive.filter((player) => player.userId !== eliminated.userId);
         if (alive.length > 1) {
           await new Promise<void>((resolve) => window.setTimeout(resolve, 2000));
@@ -612,7 +602,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
       );
       try {
         await onSendChat(
-          `🏆 تهانينا ${winner?.displayName || ''}! فاز بدولاب الإقصاء وربح ${payout.toLocaleString('en-US')} كوينز بعد خصم عمولة المنصة ${commissionPct}%.`
+          `🏆 تهانينا ${winner?.displayName || ''}! فاز بالجائزة الكبرى في دولاب الإقصاء وقيمتها ${payout.toLocaleString('en-US')} كوينز.`
         );
       } catch (chatError) {
         setNotice(
@@ -1100,9 +1090,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
               className={`inline-flex items-center gap-0.5 px-1.5 rounded-full text-[9px] font-mono-num font-extrabold leading-tight ${
                 isTop1
                   ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-[#070913]'
-                  : backgroundIsLight
-                    ? 'bg-black/45 border border-white/20 text-white'
-                    : 'bg-white/10 border border-white/15 text-white drop-shadow-sm'
+                  : 'bg-black/45 border border-white/20 px-2 py-0.5 text-white'
               }`}
             >
               <span>{formatCompactMetric(seat.receivedDiamonds || 0)}</span>
@@ -1110,9 +1098,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
             </span>
           ) : (
             <span
-              className={`text-[9px] font-mono-num text-white ${
-                backgroundIsLight ? '' : 'drop-shadow-sm'
-              }`}
+              className="rounded-full bg-black/45 px-2 py-0.5 text-[9px] font-mono-num text-white"
             >
               {seat.seatIndex + 1}
             </span>
@@ -1294,23 +1280,19 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
         </div>
 
         {/* Speaker Name & Role Micro-Tag */}
-        <div className="mt-1 flex items-center justify-center gap-0.5 w-full max-w-[52px] mx-auto px-0.5 text-center">
+        <div className="mt-1 flex w-full max-w-[58px] items-center justify-center gap-0.5 mx-auto rounded-full bg-black/45 px-2 py-0.5 text-center">
           {seat.userId ? (
             <>
               {isHost && <CrownIcon className="w-2.5 h-2.5 shrink-0" />}
               <VipUserName
                 name={seat.displayName || 'متحدث'}
                 vipTier={resolvedVip}
-                className={`text-[9px] font-medium text-white truncate leading-tight w-full max-w-[52px] mx-auto px-0.5 text-center ${
-                  backgroundIsLight ? '' : 'drop-shadow-sm'
-                }`}
+                className="w-full max-w-[52px] truncate text-[9px] font-medium leading-tight text-white"
               />
             </>
           ) : (
             <span
-              className={`text-[9px] font-medium text-white truncate w-full max-w-[52px] mx-auto px-0.5 text-center ${
-                backgroundIsLight ? '' : 'drop-shadow-sm'
-              }`}
+              className="w-full max-w-[52px] truncate text-[9px] font-medium text-white"
             >
               {seat.isLocked ? 'مقفل' : 'مايك'}
             </span>
@@ -1323,7 +1305,6 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
 
 interface RoomChatMessageItemProps {
   message: RoomMessage;
-  backgroundIsLight: boolean;
   senderAvatarUrl?: string;
   senderFrameId?: string;
   senderGender?: User['gender'];
@@ -1335,7 +1316,6 @@ interface RoomChatMessageItemProps {
 const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
   ({
     message: m,
-    backgroundIsLight,
     senderAvatarUrl,
     senderFrameId,
     senderGender,
@@ -1353,7 +1333,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
     if (isJoinSystem) {
       return (
         <div className="flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#18B75D] to-[#0FA958] px-3 py-0.5 text-[11px] font-bold text-white shadow-sm">
+          <span className="inline-flex items-center gap-1 rounded-2xl border border-white/15 bg-black/60 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm backdrop-blur-md">
             <span>🔔</span>
             <span>{m.text}</span>
           </span>
@@ -1364,11 +1344,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
     if (m.type === 'system') {
       return (
         <div
-          className={`inline-block rounded-xl border px-2.5 py-1 text-[11px] text-white ${
-            backgroundIsLight
-              ? 'bg-slate-950/75 border-white/20'
-              : 'bg-white/15 border-white/15 drop-shadow-sm'
-          }`}
+          className="inline-block rounded-2xl border border-white/15 bg-black/60 px-3 py-1.5 text-[11px] text-white shadow-sm backdrop-blur-md"
         >
           {m.text}
         </div>
@@ -1378,7 +1354,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
     if (m.type === 'entry') {
       if (resolvedVip === 'vip1' || m.text.includes('VIP 1')) {
         return (
-          <div className="vip-bronze-entry-bar rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-[#FFF3DF] flex items-center gap-2">
+          <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-1.5 text-[11px] font-extrabold text-white shadow-sm backdrop-blur-md">
             <VipTierBadge vipTier="vip1" compact />
             <span className="truncate">{m.text}</span>
           </div>
@@ -1386,7 +1362,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
       }
       if (resolvedVip === 'vip2' || m.text.includes('VIP 2')) {
         return (
-          <div className="rounded-xl border border-sky-200/75 bg-gradient-to-r from-slate-800/90 via-sky-900/90 to-slate-900/90 px-3 py-1.5 text-[11px] font-extrabold text-sky-100 flex items-center gap-2 shadow-[0_4px_14px_rgba(56,189,248,0.3)]">
+          <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-1.5 text-[11px] font-extrabold text-white shadow-sm backdrop-blur-md">
             <VipTierBadge vipTier="vip2" compact />
             <span className="truncate">{m.text}</span>
           </div>
@@ -1394,14 +1370,14 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
       }
       if (resolvedVip === 'svip' || m.text.includes('الإمبراطور')) {
         return (
-          <div className="rounded-xl border-2 border-[#FEF08A] bg-gradient-to-r from-[#581C0C]/95 via-[#78350F]/95 to-[#1E1B4B]/95 px-3 py-2 text-xs font-black text-[#FFFBEB] flex items-center gap-2 shadow-[0_0_24px_rgba(251,191,36,0.55)]">
+          <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs font-black text-white shadow-sm backdrop-blur-md">
             <VipTierBadge vipTier="svip" compact />
             <VipUserName name={m.text} vipTier="svip" className="truncate" />
           </div>
         );
       }
       return (
-        <div className="rounded-xl border border-[#D4AF37]/60 bg-gradient-to-r from-[#452806]/90 to-[#181006]/90 px-3 py-1.5 text-[11px] font-extrabold text-[#FCE9A6] flex items-center gap-2 shadow-sm">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-1.5 text-[11px] font-extrabold text-white shadow-sm backdrop-blur-md">
           {resolvedVip !== 'none' && <VipTierBadge vipTier={resolvedVip} compact />}
           <span className="truncate">{m.text}</span>
         </div>
@@ -1410,7 +1386,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
 
     if (m.type === 'gift' || m.type === 'wheel') {
       return (
-        <div className="rounded-xl border border-[#D4AF37]/45 bg-gradient-to-r from-[#362407]/75 to-[#151008]/75 px-3 py-1.5 text-[11px] font-bold text-[#FCE9A6] shadow-sm">
+        <div className="rounded-2xl border border-white/15 bg-black/60 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm backdrop-blur-md">
           {m.text}
         </div>
       );
@@ -1418,11 +1394,7 @@ const RoomChatMessageItem = memo<RoomChatMessageItemProps>(
 
     return (
       <div
-        className={`rounded-xl border px-2.5 py-1.5 text-xs leading-snug text-white flex items-start gap-2 ${
-          backgroundIsLight
-            ? 'bg-slate-950/75 border-white/20'
-            : 'bg-white/15 border-white/15 drop-shadow-sm'
-        }`}
+        className="flex items-start gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs leading-snug text-white shadow-sm backdrop-blur-md"
       >
         <button
           type="button"
@@ -1877,6 +1849,7 @@ export const RoomPage: React.FC = () => {
       const { error: deleteError } = await supabase
         .from('sada_room_messages')
         .delete()
+        .not('id', 'is', null)
         .eq('room_id', room.id);
       if (deleteError) throw new Error(deleteError.message);
       showToast('تم مسح الدردشة من الغرفة.');
@@ -2558,6 +2531,10 @@ export const RoomPage: React.FC = () => {
             `}</style>
             <DragonStageBackdrop coverImage={room.backgroundImage} />
           </div>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-[1] bg-gradient-to-b from-black/45 via-black/30 to-black/75"
+      />
       <div className="relative z-10 flex flex-1 min-h-0 flex-col gap-1 max-w-2xl w-full mx-auto px-2.5 sm:px-4 pt-0 pb-2">
         {/* 1. ROOM TOP BAR */}
         <header
@@ -2867,11 +2844,7 @@ export const RoomPage: React.FC = () => {
 
             {chatFilter === 'all' && (
               <div
-                className={`rounded-2xl border px-3 py-1.5 text-xs leading-relaxed ${
-                  backgroundIsLight
-                    ? 'bg-slate-950/75 border-white/20 text-white'
-                    : 'bg-white/15 border-white/15 text-white drop-shadow-sm'
-                }`}
+                className="rounded-2xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs leading-relaxed text-white shadow-sm backdrop-blur-md"
               >
                 <div className="flex items-center justify-between gap-2 mb-0.5">
                   <span className="font-extrabold text-[#FCE9A6]">إعلان الغرفة</span>
@@ -2895,7 +2868,6 @@ export const RoomPage: React.FC = () => {
                   <RoomChatMessageItem
                     key={m.id}
                     message={m}
-                    backgroundIsLight={backgroundIsLight}
                     senderAvatarUrl={senderInfo?.avatarUrl || m.avatarUrl}
                     senderFrameId={senderInfo?.frameId || m.frameId}
                     senderGender={senderInfo?.gender}

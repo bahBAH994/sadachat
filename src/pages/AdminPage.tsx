@@ -48,6 +48,7 @@ import {
   closeRoomInSupabase,
   createCompetitionInSupabase,
   createCustomGiftInSupabase,
+  deleteAgencyInSupabase,
   deleteCustomGiftInSupabase,
   deleteQuestionInSupabase,
   finishCompetitionInSupabase,
@@ -712,7 +713,7 @@ export const AdminPage: React.FC = () => {
   const handleResetGrandCompetitionCycle = async () => {
     if (
       !window.confirm(
-        'سيتم تصفير اشتراكات ومخزون وأوزان المشاركين للدورة الحالية. ستبقى عمولة المنصة التراكمية محفوظة. هل تريد المتابعة؟'
+        'سيتم تصفير اشتراكات ومخزون وأوزان المشاركين للدورة الحالية. هل تريد المتابعة؟'
       )
     ) {
       return;
@@ -850,6 +851,23 @@ export const AdminPage: React.FC = () => {
       void loadOverview('silent');
     } catch (err) {
       showErr(err, 'تعذّر تحديث الوكالة.');
+    }
+  };
+
+  const handleDeleteAgency = async (agencyId: string, agencyName: string) => {
+    if (
+      !window.confirm(
+        `حذف وكالة «${agencyName}» نهائياً مع غرفتها؟ لا يمكن التراجع عن هذا الإجراء.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await deleteAgencyInSupabase(agencyId);
+      showOk(`تم حذف وكالة «${agencyName}» وغرفتها نهائياً.`);
+      void loadOverview('silent');
+    } catch (err) {
+      showErr(err, 'تعذّر حذف الوكالة وغرفتها.');
     }
   };
 
@@ -2467,6 +2485,14 @@ export const AdminPage: React.FC = () => {
                                     : 'تم رفض الطلب'}
                                 </span>
                               )}
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteAgency(ag.id, ag.name)}
+                                className="min-h-[38px] rounded-xl border border-rose-500/50 bg-rose-950/75 px-3.5 text-xs font-bold text-rose-100 hover:bg-rose-900"
+                              >
+                                <Trash2 className="ml-1 inline h-3.5 w-3.5" />
+                                حذف الوكالة نهائياً
+                              </button>
                             </div>
                           </div>
                         );
@@ -3003,15 +3029,9 @@ export const AdminPage: React.FC = () => {
                       </strong>
                     </p>
                     <p className="text-xs text-slate-300">
-                      مخزون الجوائز بعد خصم 20٪ عمولة
+                      مخزون الجوائز الصافي
                       <strong className="mt-1 block text-lg font-black text-emerald-300 font-mono-num">
                         {(data.settings.grandCompetition?.prizePoolCoins || 0).toLocaleString('en-US')} كوينز
-                      </strong>
-                    </p>
-                    <p className="text-xs text-slate-300">
-                      عمولة المنصة التراكمية
-                      <strong className="mt-1 block text-lg font-black text-amber-200 font-mono-num">
-                        {(data.settings.grandCompetition?.platformCommissionCoins || 0).toLocaleString('en-US')} كوينز
                       </strong>
                     </p>
                   </div>

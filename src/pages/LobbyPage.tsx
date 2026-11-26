@@ -415,21 +415,37 @@ export const LobbyPage: React.FC = () => {
 
   const loadRooms = useCallback(async () => {
     try {
-      const [data, agencyRoomsResult] = await Promise.all([
+      const [activeRooms, approvedAgenciesResult] = await Promise.all([
         listActiveRooms(),
         supabase
+          .from('sada_agencies')
+          .select('id')
+          .eq('status', 'approved'),
+      ]);
+      if (approvedAgenciesResult.error) {
+        throw new Error(`تعذّر تحميل الوكالات المعتمدة: ${approvedAgenciesResult.error.message}`);
+      }
+      const approvedAgencyIds = (approvedAgenciesResult.data || []).map((agency) =>
+        String(agency.id)
+      );
+      let agencyRoomRows: Record<string, unknown>[] = [];
+      if (approvedAgencyIds.length) {
+        const agencyRoomsResult = await supabase
           .from('sada_rooms')
           .select(ROOM_COLUMNS)
           .eq('is_active', true)
           .eq('is_agency', true)
-          .order('created_at', { ascending: false })
-          .limit(30),
-      ]);
-      if (agencyRoomsResult.error) {
-        throw new Error(`تعذّر تحميل غرف الوكالات: ${agencyRoomsResult.error.message}`);
+          .in('agency_id', approvedAgencyIds)
+          .order('created_at', { ascending: false });
+        if (agencyRoomsResult.error) {
+          throw new Error(`تعذّر تحميل غرف الوكالات: ${agencyRoomsResult.error.message}`);
+        }
+        agencyRoomRows = (agencyRoomsResult.data || []) as Record<string, unknown>[];
       }
-      const roomsById = new Map(data.map((room) => [room.id, room]));
-      for (const roomRow of agencyRoomsResult.data || []) {
+      const roomsById = new Map(
+        activeRooms.filter((room) => !room.isAgency).map((room) => [room.id, room])
+      );
+      for (const roomRow of agencyRoomRows) {
         const { password: _password, ...room } = rowToRoom(roomRow, []);
         roomsById.set(room.id, room);
       }
@@ -451,8 +467,7 @@ export const LobbyPage: React.FC = () => {
           supabase
             .from('sada_agencies')
             .select('id, owner_id')
-            .eq('status', 'approved')
-            .limit(30),
+            .eq('status', 'approved'),
         ]);
         if (agenciesRes.error) {
           throw new Error(`تعذّر تحميل الوكالات المعتمدة: ${agenciesRes.error.message}`);
@@ -768,7 +783,7 @@ export const LobbyPage: React.FC = () => {
     setMyRoomEntryError(null);
     try {
       const { personalRoom, agencyRoom } = await getUserActiveRoomsInSupabase(user);
-      if (user.agencyId || agencyRoom) {
+      if (agencyRoom) {
         setMyRoomOptions({ personalRoom, agencyRoom });
         setShowMyRoomChoice(true);
       } else if (personalRoom) {

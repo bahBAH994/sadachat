@@ -298,8 +298,7 @@ export const GrandCompetitionPage: React.FC = () => {
             <div>
               <h2 className="text-base font-black text-slate-900">الاشتراك في المسابقة</h2>
               <p className="mt-1 text-xs leading-5 text-slate-600">
-                يُخصم 20٪ عمولة للمنصة، ويُضاف 80٪ من قيمة الاشتراك إلى مخزون الجوائز. الباقات الأعلى
-                تمنح وزناً تصاعدياً أكبر في حصة المشاركين.
+                اختر باقتك لدعم مخزون الجوائز، وتمنحك الباقات الأعلى حصة أكبر عند توزيع الجوائز.
               </p>
             </div>
             <CoinIcon className="mt-1 h-5 w-5 shrink-0" />
@@ -337,7 +336,18 @@ export const GrandCompetitionPage: React.FC = () => {
                 <span className="block text-sm font-black">
                   {subscription.coins.toLocaleString('en-US')}
                 </span>
-                <span className="mt-1 block text-[10px]">كوينز · وزن ×{subscription.weight}</span>
+                <span className="mt-1 block text-[10px]">
+                  {Math.floor(subscription.coins * 0.8).toLocaleString('en-US')} للجائزة
+                </span>
+                <span className="mt-1 block text-[10px] font-bold">
+                  {subscription.weight === 1
+                    ? 'حصة أساسية'
+                    : subscription.weight === 3
+                    ? 'حصة مضاعفة ×3'
+                    : subscription.weight === 7
+                    ? 'حصة ذهبية ×7'
+                    : 'حصة ملكية ×16'}
+                </span>
               </button>
             ))}
           </div>

@@ -50,10 +50,6 @@ import {
   getUserGiftLevelsFromSupabase,
 } from '../lib/sadaSocialService';
 import {
-  getAgencyRequestStatusInSupabase,
-  submitAgencyRequestInSupabase,
-} from '../lib/sadaAgencyRequestService';
-import {
   checkInDailyHostTaskInSupabase,
   claimHostTaskMilestoneInSupabase,
   getHostTasksOverviewFromSupabase,
@@ -147,12 +143,6 @@ export const ProfilePage: React.FC = () => {
     agencyRoom: Room;
   } | null>(null);
   const [showMyRoomChoice, setShowMyRoomChoice] = useState(false);
-  const [checkingAgencyStatus, setCheckingAgencyStatus] = useState(false);
-  const [showAgencyRequestForm, setShowAgencyRequestForm] = useState(false);
-  const [agencyRequestName, setAgencyRequestName] = useState('');
-  const [agencyRequestDescription, setAgencyRequestDescription] = useState('');
-  const [agencyRequestContact, setAgencyRequestContact] = useState('');
-  const [submittingAgencyRequest, setSubmittingAgencyRequest] = useState(false);
   const [myRoomCategory, setMyRoomCategory] = useState<Room['category']>('حوار');
   const [myRoomDescription, setMyRoomDescription] = useState('');
   const [myRoomSeats, setMyRoomSeats] = useState(12);
@@ -538,61 +528,6 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
-  const handleOpenAgencyRequest = async () => {
-    if (checkingAgencyStatus) return;
-    setCheckingAgencyStatus(true);
-    setFeedback(null);
-    setAgencyRequestName('');
-    setAgencyRequestDescription('');
-    setAgencyRequestContact('');
-    setShowAgencyRequestForm(true);
-    try {
-      const status = await getAgencyRequestStatusInSupabase(user);
-      if (status === 'pending') {
-        setShowAgencyRequestForm(false);
-        setFeedback({
-          type: 'ok',
-          text: 'طلبك قيد المراجعة من الإدارة العليا.',
-        });
-      } else if (status === 'approved') {
-        setShowAgencyRequestForm(false);
-        setFeedback({ type: 'ok', text: 'حالة وكالتك: معتمدة.' });
-      }
-    } catch (err) {
-      setFeedback({
-        type: 'err',
-        text: err instanceof Error ? err.message : 'تعذّر التحقق من طلب الوكالة.',
-      });
-    } finally {
-      setCheckingAgencyStatus(false);
-    }
-  };
-
-  const handleSubmitAgencyRequest = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setSubmittingAgencyRequest(true);
-    setFeedback(null);
-    try {
-      await submitAgencyRequestInSupabase(user, {
-        agencyName: agencyRequestName,
-        description: agencyRequestDescription,
-        whatsappOrContact: agencyRequestContact,
-      });
-      setShowAgencyRequestForm(false);
-      setFeedback({
-        type: 'ok',
-        text: 'تم إرسال طلبك، وهو الآن قيد المراجعة من الإدارة العليا.',
-      });
-    } catch (err) {
-      setFeedback({
-        type: 'err',
-        text: err instanceof Error ? err.message : 'تعذّر إرسال طلب الوكالة.',
-      });
-    } finally {
-      setSubmittingAgencyRequest(false);
-    }
-  };
-
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[#080B14] text-white">
       <input
@@ -953,20 +888,11 @@ export const ProfilePage: React.FC = () => {
         <section className="rounded-3xl bg-[#141927] border border-white/10 p-4 grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() =>
-              canViewMyAgency
-                ? navigate('/agency?tab=my-agency')
-                : void handleOpenAgencyRequest()
-            }
-            disabled={checkingAgencyStatus}
+            onClick={() => navigate('/agency?tab=my-agency')}
             className="min-h-[82px] rounded-2xl bg-amber-400/10 hover:bg-amber-400/15 border border-amber-300/20 p-4 flex items-center justify-between cursor-pointer transition"
           >
             <span className="text-sm font-extrabold text-[#FCE9A6]">
-              {canViewMyAgency
-                ? 'وكالتي'
-                : checkingAgencyStatus
-                  ? 'جارٍ التحقق...'
-                  : 'إنشاء وكالة رسمية'}
+              {canViewMyAgency ? 'وكالتي' : 'إنشاء وكالة رسمية'}
             </span>
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-900 to-amber-500 flex items-center justify-center text-[#FCE9A6]">
               <ShieldCheck className="w-5 h-5" />
@@ -1486,78 +1412,6 @@ export const ProfilePage: React.FC = () => {
               <span>{saving ? 'جارٍ الحفظ...' : 'حفظ التعديلات'}</span>
             </button>
           </form>
-        </div>
-      )}
-
-      {showAgencyRequestForm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
-          onClick={() => setShowAgencyRequestForm(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="agency-request-title"
-            className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-[#101522] border border-amber-300/20 p-6 space-y-4 shadow-2xl text-white"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h3 id="agency-request-title" className="text-lg font-extrabold">
-                طلب إنشاء وكالة رسمية
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowAgencyRequestForm(false)}
-                className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 cursor-pointer"
-                aria-label="إغلاق"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form onSubmit={handleSubmitAgencyRequest} className="space-y-3">
-              <label className="block text-xs font-bold text-slate-200">
-                اسم الوكالة
-                <input
-                  type="text"
-                  required
-                  minLength={3}
-                  maxLength={48}
-                  value={agencyRequestName}
-                  onChange={(event) => setAgencyRequestName(event.target.value)}
-                  className="mt-1 w-full rounded-xl bg-black/20 border border-white/15 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-300"
-                />
-              </label>
-              <label className="block text-xs font-bold text-slate-200">
-                نبذة عن الوكالة
-                <textarea
-                  required
-                  maxLength={500}
-                  rows={4}
-                  value={agencyRequestDescription}
-                  onChange={(event) => setAgencyRequestDescription(event.target.value)}
-                  className="mt-1 w-full resize-y rounded-xl bg-black/20 border border-white/15 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-300"
-                />
-              </label>
-              <label className="block text-xs font-bold text-slate-200">
-                واتساب أو وسيلة تواصل
-                <input
-                  type="text"
-                  required
-                  maxLength={120}
-                  value={agencyRequestContact}
-                  onChange={(event) => setAgencyRequestContact(event.target.value)}
-                  className="mt-1 w-full rounded-xl bg-black/20 border border-white/15 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-300"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={submittingAgencyRequest}
-                className="gold-btn w-full min-h-[46px] rounded-2xl py-2.5 text-sm cursor-pointer disabled:opacity-60"
-              >
-                {submittingAgencyRequest ? 'جارٍ إرسال الطلب...' : 'إرسال الطلب'}
-              </button>
-            </form>
-          </div>
         </div>
       )}
 

@@ -9,10 +9,8 @@ import {
   Check,
   Clock,
   Copy,
-  History,
   MessageCircleHeart,
   Search,
-  Sparkles,
   Users,
 } from 'lucide-react';
 import { AgencyIcon, DiamondIcon, MicIcon } from '../components/AppIcons';
@@ -26,12 +24,18 @@ import {
   lookupAgencyByIdOrCodeInSupabase,
   submitHostJoinApplicationInSupabase,
 } from '../lib/sadaSocialService';
+import {
+  cancelPendingAgencyRequestInSupabase,
+  getAgencyRequestStatusInSupabase,
+  getPendingAgencyRequestInSupabase,
+  submitAgencyRequestInSupabase,
+} from '../lib/sadaAgencyRequestService';
 import { supabase } from '../lib/supabase';
 import type {
   Agency,
   AgencyHostSummary,
+  AgencyRequest,
   HostJoinApplication,
-  Transaction,
   User,
 } from '../types';
 import { AvatarWithFrame, VipTierBadge } from '../components/AvatarWithFrame';
@@ -43,7 +47,6 @@ interface AgencyOverviewResponse {
     hosts: AgencyHostSummary[];
     weeklyAgencyTotalDiamonds: number;
     pendingApplications: HostJoinApplication[];
-    commissionTransactions: Transaction[];
   } | null;
   pendingAgency: Agency | null;
   joinedAgency: Agency | null;
@@ -69,6 +72,17 @@ export const AgencyPage: React.FC = () => {
   const [searchParams] = useSearchParams();
 
   const [data, setData] = useState<AgencyOverviewResponse | null>(null);
+  const [officialAgencyStatus, setOfficialAgencyStatus] =
+    useState<'pending' | 'approved' | 'suspended' | null>(null);
+  const [officialAgencyRequest, setOfficialAgencyRequest] =
+    useState<AgencyRequest | null>(null);
+  const [officialAgencyForm, setOfficialAgencyForm] = useState({
+    agencyName: '',
+    description: '',
+    whatsappOrContact: '',
+  });
+  const [submittingOfficialRequest, setSubmittingOfficialRequest] = useState(false);
+  const [cancellingOfficialRequest, setCancellingOfficialRequest] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -86,11 +100,15 @@ export const AgencyPage: React.FC = () => {
   const loadOverview = useCallback(async () => {
     if (!user) return;
     try {
-      const [res, economySettings] = await Promise.all([
+      const [res, economySettings, agencyStatus, pendingRequest] = await Promise.all([
         getAgencyOverviewFromSupabase(user),
         getEconomySettingsFromSupabase(),
+        getAgencyRequestStatusInSupabase(user),
+        getPendingAgencyRequestInSupabase(user.id),
       ]);
       setData(res);
+      setOfficialAgencyStatus(agencyStatus);
+      setOfficialAgencyRequest(pendingRequest);
       setWeeklyAgencyTarget(economySettings.weeklyAgencyTarget);
       updateLocalUser(res.user);
       setError(null);
@@ -112,6 +130,18 @@ export const AgencyPage: React.FC = () => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sada_agencies' },
+        () => {
+          void loadOverview();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'sada_agency_requests',
+          filter: `user_id=eq.${user.id}`,
+        },
         () => {
           void loadOverview();
         }
@@ -196,6 +226,39 @@ export const AgencyPage: React.FC = () => {
     }
   };
 
+  const handleSubmitOfficialRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user || submittingOfficialRequest) return;
+    setSubmittingOfficialRequest(true);
+    setError(null);
+    setFeedback(null);
+    try {
+      await submitAgencyRequestInSupabase(user, officialAgencyForm);
+      setOfficialAgencyForm({ agencyName: '', description: '', whatsappOrContact: '' });
+      await loadOverview();
+      setFeedback('تم إرسال طلبك بنجاح، وهو الآن قيد مراجعة الإدارة العليا.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذّر إرسال طلب إنشاء الوكالة.');
+    } finally {
+      setSubmittingOfficialRequest(false);
+    }
+  };
+
+  const handleCancelOfficialRequest = async () => {
+    if (!user || cancellingOfficialRequest) return;
+    setCancellingOfficialRequest(true);
+    setError(null);
+    try {
+      await cancelPendingAgencyRequestInSupabase(user.id);
+      await loadOverview();
+      setFeedback('تم إلغاء طلب إنشاء الوكالة.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذّر إلغاء طلب الوكالة.');
+    } finally {
+      setCancellingOfficialRequest(false);
+    }
+  };
+
   const handleCopyCode = (code: string) => {
     navigator.clipboard?.writeText(code).catch(() => {});
     setCopiedCode(true);
@@ -235,7 +298,9 @@ export const AgencyPage: React.FC = () => {
       ? 'host-center'
       : myAgency
       ? 'my-agency'
-      : 'host-center';
+      : joinedAgency
+      ? 'host-center'
+      : 'my-agency';
 
   return (
     <div className="min-h-full bg-[#F5F6FA]">
@@ -257,12 +322,16 @@ export const AgencyPage: React.FC = () => {
             </div>
             <h1 className="text-xl sm:text-2xl font-black">
               {activeTab === 'my-agency'
-                ? 'وكالتي — متابعة المضيفين والتارجت الأسبوعي'
+                ? myAgency
+                  ? 'وكالتي — متابعة المضيفين والتارجت الأسبوعي'
+                  : 'إنشاء وكالة رسمية / وكالتي'
                 : 'مركز المضيف — الانضمام للوكالات المعتمدة'}
             </h1>
             <p className="text-xs text-slate-300">
               {activeTab === 'my-agency'
-                ? 'تتبّع التارجت الأسبوعي الإجمالي لوكالتك، وأداء المضيفين، والطلبات المعلّقة.'
+                ? myAgency
+                  ? 'تتبّع التارجت الأسبوعي الإجمالي لوكالتك، وأداء المضيفين، والطلبات المعلّقة.'
+                  : 'قدّم طلب تأسيس وكالة رسمية أو تابع حالة طلبك من قاعدة البيانات مباشرة.'
                 : 'ابحث عن أي وكالة برقمها أو كودها وتقدّم بطلب انضمام رسمي كمضيف معتمد.'}
             </p>
           </div>
@@ -404,23 +473,6 @@ export const AgencyPage: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4">
-                  <div className="flex items-center justify-between text-xs text-amber-800 font-bold">
-                    <span>
-                      عمولة الوكيل المعتمدة ({Math.round(myAgency.agency.commissionRate * 100)}%)
-                    </span>
-                    <Sparkles className="w-4 h-4 text-amber-600" />
-                  </div>
-                  <p className="mt-2 text-2xl font-black font-mono-num text-amber-900">
-                    <span className="inline-flex items-center gap-1">
-                      {myAgency.agency.totalCommissionDiamonds.toLocaleString('en-US')}
-                      <DiamondIcon className="w-5 h-5" />
-                    </span>
-                  </p>
-                  <span className="block text-[10px] text-amber-700 mt-0.5">
-                    تُحدد وتُصرف حصرياً من الإدارة العليا
-                  </span>
-                </div>
               </div>
             </section>
 
@@ -467,9 +519,9 @@ export const AgencyPage: React.FC = () => {
               </section>
             )}
 
-            {/* Hosts Directory & Weekly Targets + Commission Ledger */}
+            {/* Hosts Directory & Weekly Targets */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              <section className="lg:col-span-7 light-card rounded-3xl p-5 space-y-4">
+              <section className="lg:col-span-12 light-card rounded-3xl p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                     <Award className="w-5 h-5 text-emerald-600" />
@@ -553,55 +605,142 @@ export const AgencyPage: React.FC = () => {
                 )}
               </section>
 
-              <section className="lg:col-span-5 light-card rounded-3xl p-5 space-y-4">
-                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                  <History className="w-5 h-5 text-amber-600" />
-                  <span>سجل عمولات الوكيل</span>
-                </h3>
-
-                {myAgency.commissionTransactions.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-8 text-center">
-                    ستظهر هنا عمولات الوكالة المعتمدة فور صرفها من لوحة الإدارة العليا.
-                  </p>
-                ) : (
-                  <div className="space-y-2.5 max-h-[85vh] overflow-y-auto touch-pan-y pb-10 no-scrollbar">
-                    {myAgency.commissionTransactions.map((tx) => (
-                      <div
-                        key={tx.id}
-                        className="rounded-2xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 flex items-center justify-between gap-3 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-800 truncate">{tx.description}</p>
-                          <p className="text-[10px] text-slate-400 font-mono-num mt-0.5">
-                            {new Date(tx.timestamp).toLocaleString('ar-EG')}
-                          </p>
-                        </div>
-                        <span className="font-mono-num font-black text-emerald-700 shrink-0">
-                          +{tx.amount.toLocaleString('en-US')} <DiamondIcon className="inline w-3.5 h-3.5" />
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
             </div>
           </div>
         )}
 
-        {/* Notice if user is Admin without personal agency and opened my-agency tab */}
+        {/* Official agency request state is read from Supabase, never local storage. */}
         {activeTab === 'my-agency' && !myAgency && (
-          <div className="light-card rounded-3xl p-6 text-center space-y-3">
-            <p className="text-sm font-bold text-slate-700">
-              لا تملك وكالة شخصية باسمك حالياً. يمكنك تأسيس وكالة جديدة من قسم "مركز المضيف".
-            </p>
-            <button
-              type="button"
-              onClick={() => navigate('/profile')}
-              className="gold-btn min-h-[44px] rounded-2xl px-5 py-2.5 text-xs font-extrabold cursor-pointer"
+          officialAgencyStatus === 'pending' ? (
+            <section className="light-card rounded-3xl border border-amber-300 bg-gradient-to-br from-amber-50 to-white p-6 text-center shadow-sm">
+              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-2xl">
+                ⏳
+              </span>
+              <h2 className="mt-3 text-lg font-black text-slate-900">
+                طلبك لإنشاء وكالة رسمية قيد المراجعة
+              </h2>
+              <span className="mt-2 inline-flex rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-xs font-extrabold text-amber-900">
+                بانتظار موافقة الإدارة العليا ⏳
+              </span>
+              {officialAgencyRequest && (
+                <>
+                  <p className="mt-3 text-sm font-bold text-slate-700">
+                    {officialAgencyRequest.agencyName}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    أُرسل الطلب في{' '}
+                    {new Date(officialAgencyRequest.createdAt).toLocaleDateString('ar')}
+                  </p>
+                </>
+              )}
+              <button
+                type="button"
+                disabled={cancellingOfficialRequest}
+                onClick={() => void handleCancelOfficialRequest()}
+                className="mt-5 min-h-11 rounded-xl border border-rose-200 bg-rose-50 px-5 text-xs font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+              >
+                {cancellingOfficialRequest ? 'جارٍ إلغاء الطلب...' : 'إلغاء الطلب'}
+              </button>
+            </section>
+          ) : officialAgencyStatus === 'suspended' ? (
+            <section className="light-card rounded-3xl border border-rose-200 bg-rose-50 p-6 text-center">
+              <h2 className="text-lg font-black text-rose-900">وكالتك الرسمية معلّقة حالياً</h2>
+              <p className="mt-2 text-sm text-rose-800">
+                يرجى التواصل مع الإدارة العليا لمراجعة حالة الوكالة.
+              </p>
+            </section>
+          ) : officialAgencyStatus === 'approved' ? (
+            <section className="light-card rounded-3xl p-6 text-center">
+              <h2 className="text-lg font-black text-slate-900">
+                أنت عضو في وكالة معتمدة{joinedAgency ? `: ${joinedAgency.name}` : ''}
+              </h2>
+              <p className="mt-2 text-sm text-slate-600">
+                يمكنك متابعة بيانات عضويتك من مركز المضيف.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/agency?tab=host-center')}
+                className="gold-btn mt-4 min-h-11 rounded-xl px-5 text-xs font-extrabold"
+              >
+                فتح مركز المضيف
+              </button>
+            </section>
+          ) : (
+            <form
+              onSubmit={(event) => void handleSubmitOfficialRequest(event)}
+              className="light-card mx-auto w-full max-w-2xl rounded-3xl p-5 sm:p-6"
             >
-              الرجوع إلى شخصي
-            </button>
-          </div>
+              <div className="mb-4 flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                  <AgencyIcon className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 className="text-lg font-black text-slate-900">طلب إنشاء وكالة رسمية</h2>
+                  <p className="text-xs text-slate-500">
+                    أرسل بيانات الوكالة للمراجعة من الإدارة العليا.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <label className="block text-xs font-bold text-slate-700">
+                  اسم الوكالة
+                  <input
+                    type="text"
+                    required
+                    minLength={3}
+                    maxLength={48}
+                    value={officialAgencyForm.agencyName}
+                    onChange={(event) =>
+                      setOfficialAgencyForm((form) => ({
+                        ...form,
+                        agencyName: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
+                  />
+                </label>
+                <label className="block text-xs font-bold text-slate-700">
+                  نبذة عن الوكالة
+                  <textarea
+                    required
+                    maxLength={500}
+                    rows={4}
+                    value={officialAgencyForm.description}
+                    onChange={(event) =>
+                      setOfficialAgencyForm((form) => ({
+                        ...form,
+                        description: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
+                  />
+                </label>
+                <label className="block text-xs font-bold text-slate-700">
+                  واتساب أو وسيلة التواصل
+                  <input
+                    type="text"
+                    required
+                    maxLength={120}
+                    value={officialAgencyForm.whatsappOrContact}
+                    onChange={(event) =>
+                      setOfficialAgencyForm((form) => ({
+                        ...form,
+                        whatsappOrContact: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
+                  />
+                </label>
+              </div>
+              <button
+                type="submit"
+                disabled={submittingOfficialRequest}
+                className="emerald-btn mt-4 min-h-11 w-full rounded-xl text-sm font-extrabold disabled:opacity-60"
+              >
+                {submittingOfficialRequest ? 'جارٍ إرسال الطلب...' : 'إرسال طلب إنشاء وكالة'}
+              </button>
+            </form>
+          )
         )}
 
         {/* ==================== TAB 2: HOST CENTER ("مركز المضيف") ==================== */}

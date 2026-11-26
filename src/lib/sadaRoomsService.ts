@@ -300,6 +300,7 @@ export async function getUserActiveRoomsInSupabase(
       .from('sada_agencies')
       .select('id, owner_id')
       .eq('id', agencyId)
+      .eq('status', 'approved')
       .maybeSingle();
     if (error) {
       throw new Error(`تعذّر التحقق من وكالة المستخدم: ${error.message}`);
@@ -310,13 +311,20 @@ export async function getUserActiveRoomsInSupabase(
   if (!agency) {
     const { data, error } = await supabase
       .from('sada_agencies')
-      .select('id, owner_id')
-      .eq('owner_id', user.id)
-      .maybeSingle();
+      .select('id, owner_id, host_ids')
+      .eq('status', 'approved');
     if (error) {
       throw new Error(`تعذّر التحقق من وكالة المستخدم: ${error.message}`);
     }
-    agency = data;
+    const membership = (data || []).find(
+      (row) =>
+        String(row.owner_id) === user.id ||
+        (Array.isArray(row.host_ids) &&
+          row.host_ids.some((hostId) => String(hostId) === user.id))
+    );
+    if (membership) {
+      agency = { id: String(membership.id), owner_id: String(membership.owner_id) };
+    }
   }
 
   const agencyOwnerId = agency?.owner_id ? String(agency.owner_id) : '';
@@ -326,8 +334,7 @@ export async function getUserActiveRoomsInSupabase(
     .select(ROOM_COLUMNS)
     .in('host_id', hostIds)
     .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(30);
+    .order('created_at', { ascending: false });
   if (roomError) {
     throw new Error(`تعذّر البحث عن الغرف النشطة: ${roomError.message}`);
   }
@@ -344,11 +351,7 @@ export async function getUserActiveRoomsInSupabase(
       null
     : null;
   const personalRoom =
-    activeRooms.find(
-      (room) => room.hostId === user.id && room.hostId !== agencyOwnerId && !room.isAgency
-    ) ||
-    (agencyOwnerId ? null : activeRooms.find((room) => room.hostId === user.id && !room.isAgency)) ||
-    null;
+    activeRooms.find((room) => room.hostId === user.id && !room.isAgency) || null;
 
   return { personalRoom, agencyRoom };
 }
@@ -447,7 +450,11 @@ export async function createRoomInSupabase(
     timestamp: welcomeMsg.timestamp,
   });
   if (welcomeError) {
-    const { error: rollbackError } = await supabase.from('sada_rooms').delete().eq('id', roomId);
+    const { error: rollbackError } = await supabase
+      .from('sada_rooms')
+      .delete()
+      .not('id', 'is', null)
+      .eq('id', roomId);
     if (rollbackError) {
       throw new Error(
         `تعذّر حفظ رسالة الترحيب (${welcomeError.message}) أو التراجع عن إنشاء الغرفة (${rollbackError.message}).`
@@ -810,13 +817,20 @@ export async function joinRoomInSupabase(
   return { room: updated.room, entryEvent, extras: updated.extras };
 }
 
-export async function leaveRoomInSupabase(roomId: string, userId: string): Promise<void> {
-  const { data: roomRow } = await supabase
+export async function leaveRoomInSupabase(
+  roomId: string,
+  userId: string,
+  remainingListenersCount?: number
+): Promise<void> {
+  const { data: roomRow, error: roomError } = await supabase
     .from('sada_rooms')
     .select('listeners_count, seats')
     .eq('id', roomId)
     .maybeSingle();
 
+  if (roomError) {
+    throw new Error(`تعذّر تحميل حالة الغرفة عند المغادرة: ${roomError.message}`);
+  }
   if (!roomRow) return;
 
   const seats = Array.isArray(roomRow.seats) ? (roomRow.seats as Room['seats']) : [];
@@ -836,13 +850,20 @@ export async function leaveRoomInSupabase(roomId: string, userId: string): Promi
       : s
   );
 
-  await supabase
+  const { error: updateError } = await supabase
     .from('sada_rooms')
     .update({
-      listeners_count: Math.max(0, Number(roomRow.listeners_count || 1) - 1),
+      listeners_count:
+        typeof remainingListenersCount === 'number' &&
+        Number.isFinite(remainingListenersCount)
+          ? Math.max(0, Math.floor(remainingListenersCount))
+          : Math.max(0, Number(roomRow.listeners_count || 1) - 1),
       seats: updatedSeats,
     })
     .eq('id', roomId);
+  if (updateError) {
+    throw new Error(`تعذّر تحديث المايك وعدّاد المتواجدين عند المغادرة: ${updateError.message}`);
+  }
 }
 
 export async function updateRoomSeatInSupabase(

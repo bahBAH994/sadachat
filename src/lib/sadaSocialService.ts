@@ -1294,15 +1294,13 @@ export async function getAgencyOverviewFromSupabase(user: User): Promise<{
     weeklyDiamondsByUser.set(uid, (weeklyDiamondsByUser.get(uid) || 0) + amt);
   }
 
-  const ownedAgency =
-    agencies
-      .filter((agency) => agency.ownerId === freshUser.id)
-      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] || null;
-  const pendingAgency = ownedAgency?.status === 'pending' ? ownedAgency : null;
-  const myOwnedAgency =
-    ownedAgency && ownedAgency.status !== 'pending' && ownedAgency.status !== 'rejected'
-      ? ownedAgency
-      : null;
+  const ownedAgencies = agencies
+    .filter((agency) => agency.ownerId === freshUser.id)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const myOwnedAgency = ownedAgencies.find((agency) => agency.status === 'approved') || null;
+  const pendingAgency = myOwnedAgency
+    ? null
+    : ownedAgencies.find((agency) => agency.status === 'pending') || null;
   const myJoinedAgency =
     !myOwnedAgency && freshUser.agencyId
       ? agencies.find((a) => a.id === freshUser.agencyId && a.status === 'approved') || null

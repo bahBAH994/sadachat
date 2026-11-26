@@ -22,7 +22,7 @@ function rowToAgencyRequest(row: Record<string, unknown>): AgencyRequest {
 
 export async function getAgencyRequestStatusInSupabase(
   user: User
-): Promise<'pending' | 'approved' | null> {
+): Promise<'pending' | 'approved' | 'suspended' | null> {
   const { data: userRow, error: userError } = await supabase
     .from('sada_users')
     .select('agency_id')
@@ -32,28 +32,24 @@ export async function getAgencyRequestStatusInSupabase(
     throw new Error(`تعذّر التحقق من حالة وكالة المستخدم: ${userError.message}`);
   }
 
-  const agencyIds = new Set<string>();
-  if (userRow?.agency_id) agencyIds.add(String(userRow.agency_id));
-  const { data: ownedAgencies, error: ownedAgenciesError } = await supabase
+  const { data: agencyRows, error: agenciesError } = await supabase
     .from('sada_agencies')
-    .select('id, status')
-    .eq('owner_id', user.id);
-  if (ownedAgenciesError) {
-    throw new Error(`تعذّر التحقق من الوكالات المعتمدة: ${ownedAgenciesError.message}`);
+    .select('id, owner_id, host_ids, status');
+  if (agenciesError) {
+    throw new Error(`تعذّر التحقق من الوكالات: ${agenciesError.message}`);
   }
-  for (const agency of ownedAgencies || []) {
-    if (agency.status === 'approved') return 'approved';
-    agencyIds.add(String(agency.id));
+  const userAgencies = (agencyRows || []).filter(
+    (agency) =>
+      String(agency.id) === String(userRow?.agency_id || '') ||
+      String(agency.owner_id) === user.id ||
+      (Array.isArray(agency.host_ids) &&
+        agency.host_ids.some((hostId) => String(hostId) === user.id))
+  );
+  if (userAgencies.some((agency) => agency.status === 'approved')) {
+    return 'approved';
   }
-  if (agencyIds.size) {
-    const { data: memberships, error: membershipsError } = await supabase
-      .from('sada_agencies')
-      .select('status')
-      .in('id', Array.from(agencyIds));
-    if (membershipsError) {
-      throw new Error(`تعذّر التحقق من حالة الوكالة: ${membershipsError.message}`);
-    }
-    if (memberships?.some((agency) => agency.status === 'approved')) return 'approved';
+  if (userAgencies.some((agency) => agency.status === 'suspended')) {
+    return 'suspended';
   }
 
   const { data: pendingRequest, error: requestError } = await supabase
@@ -61,11 +57,46 @@ export async function getAgencyRequestStatusInSupabase(
     .select('id')
     .eq('user_id', user.id)
     .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (requestError) {
     throw new Error(`تعذّر التحقق من طلب الوكالة: ${requestError.message}`);
   }
   return pendingRequest ? 'pending' : null;
+}
+
+export async function getPendingAgencyRequestInSupabase(
+  userId: string
+): Promise<AgencyRequest | null> {
+  const { data, error } = await supabase
+    .from('sada_agency_requests')
+    .select(AGENCY_REQUEST_COLUMNS)
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`تعذّر تحميل طلب الوكالة قيد المراجعة: ${error.message}`);
+  }
+  return data ? rowToAgencyRequest(data) : null;
+}
+
+export async function cancelPendingAgencyRequestInSupabase(
+  userId: string
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('sada_agency_requests')
+    .delete()
+    .not('id', 'is', null)
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .select('id');
+  if (error) {
+    throw new Error(`تعذّر إلغاء طلب الوكالة: ${error.message}`);
+  }
+  if (!data?.length) throw new Error('لا يوجد طلب قيد المراجعة لإلغائه.');
 }
 
 export async function submitAgencyRequestInSupabase(
@@ -85,6 +116,9 @@ export async function submitAgencyRequestInSupabase(
   }
   if (currentStatus === 'approved') {
     throw new Error('لديك وكالة معتمدة بالفعل.');
+  }
+  if (currentStatus === 'suspended') {
+    throw new Error('وكالتك معلّقة حالياً. تواصل مع الإدارة العليا لمراجعة حالتها.');
   }
 
   const request = {
@@ -249,7 +283,7 @@ export async function reviewAgencyRequestInSupabase(
   } catch (error) {
     const [roomCleanup, userRestore, agencyCleanup] = await Promise.all([
       roomId
-        ? supabase.from('sada_rooms').delete().eq('id', roomId)
+        ? supabase.from('sada_rooms').delete().not('id', 'is', null).eq('id', roomId)
         : Promise.resolve({ error: null }),
       supabase
         .from('sada_users')
@@ -261,7 +295,7 @@ export async function reviewAgencyRequestInSupabase(
           host_agency_name: owner.hostAgencyName || null,
         })
         .eq('id', owner.id),
-      supabase.from('sada_agencies').delete().eq('id', agency.id),
+      supabase.from('sada_agencies').delete().not('id', 'is', null).eq('id', agency.id),
     ]);
     const rollbackError = roomCleanup.error || userRestore.error || agencyCleanup.error;
     if (rollbackError) {

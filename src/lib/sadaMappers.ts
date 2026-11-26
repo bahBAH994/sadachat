@@ -597,7 +597,11 @@ export async function ensureGlobalZeroResetInSupabase(): Promise<void> {
         .neq('id', '');
 
       // Clear old transaction history so support/gift levels start at 0
-      await supabase.from('sada_transactions').delete().neq('id', '');
+      await supabase
+        .from('sada_transactions')
+        .delete()
+        .not('id', 'is', null)
+        .neq('id', '');
 
       // Zero room gift totals and seat receivedDiamonds
       const { data: roomRows } = await supabase

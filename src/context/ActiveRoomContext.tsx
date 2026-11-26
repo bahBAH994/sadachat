@@ -45,7 +45,7 @@ import {
 } from '../lib/sadaRoomsService';
 import { refreshGameUserFromSupabase } from '../lib/sadaGamesService';
 import { supabase } from '../lib/supabase';
-import { safeGetItem, safeSetItem } from '../lib/safeStorage';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../lib/safeStorage';
 import type {
   GiftItem,
   GlobalAdminAnnouncement,
@@ -282,6 +282,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [exitModalOpen, setExitModalOpen] = useState<boolean>(false);
 
   const [presenceMembers, setPresenceMembers] = useState<RoomPresenceMember[]>([]);
+  const presenceMembersRef = useRef<RoomPresenceMember[]>([]);
   const [micActive, setMicActive] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
   const [manualSpeakPulse, setManualSpeakPulse] = useState(false);
@@ -600,45 +601,62 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const teardownActiveChannels = useCallback(async () => {
-    try {
-      cleanupMicMonitor();
-      stopMusicEngines();
-      const prevId = activeRoomIdRef.current;
-      activeRoomIdRef.current = null;
-      const presenceChannel = presenceChannelRef.current;
-      const roomChannel = roomChannelRef.current;
-      presenceChannelRef.current = null;
-      roomChannelRef.current = null;
-      const currentUserId = userRef.current?.id;
+    cleanupMicMonitor();
+    stopMusicEngines();
+    const prevId = activeRoomIdRef.current;
+    activeRoomIdRef.current = null;
+    const presenceChannel = presenceChannelRef.current;
+    const roomChannel = roomChannelRef.current;
+    presenceChannelRef.current = null;
+    roomChannelRef.current = null;
+    const currentUserId = userRef.current?.id;
+    let leaveError: unknown = null;
 
-      if (prevId && currentUserId) {
-        try {
-          await leaveRoomInSupabase(prevId, currentUserId);
-        } catch (err) {
-          console.warn('leaveRoomInSupabase error:', err);
-        }
+    if (prevId && currentUserId) {
+      try {
+        const connectedIds = new Set(
+          presenceMembersRef.current
+            .filter((member) => member.roomId === prevId)
+            .map((member) => member.userId)
+        );
+        connectedIds.add(currentUserId);
+        await leaveRoomInSupabase(
+          prevId,
+          currentUserId,
+          Math.max(0, connectedIds.size - 1)
+        );
+      } catch (err) {
+        leaveError = err;
+        console.warn('leaveRoomInSupabase error:', err);
       }
-      if (presenceChannel) {
-        try {
-          await presenceChannel.untrack();
-        } catch {
-          // ignore
-        }
-        try {
-          await supabase.removeChannel(presenceChannel);
-        } catch {
-          // ignore
-        }
+    }
+    if (presenceChannel) {
+      try {
+        await presenceChannel.untrack();
+      } catch (err) {
+        console.warn('Unable to untrack room presence:', err);
       }
-      if (roomChannel) {
-        try {
-          await supabase.removeChannel(roomChannel);
-        } catch {
-          // ignore
-        }
+      try {
+        await supabase.removeChannel(presenceChannel);
+      } catch (err) {
+        console.warn('Unable to remove room presence channel:', err);
       }
-    } catch {
-      // ignore any teardown failure
+    }
+    if (roomChannel) {
+      try {
+        await supabase.removeChannel(roomChannel);
+      } catch (err) {
+        console.warn('Unable to remove active room channel:', err);
+      }
+    }
+    presenceMembersRef.current = [];
+    setPresenceMembers([]);
+    if (leaveError) {
+      setError(
+        leaveError instanceof Error
+          ? `غادرت الغرفة، لكن تعذّر تحديث حالتها: ${leaveError.message}`
+          : 'غادرت الغرفة، لكن تعذّر تحديث حالتها.'
+      );
     }
   }, [cleanupMicMonitor, stopMusicEngines]);
 
@@ -654,13 +672,18 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setFullscreenGift(null);
     setSeatGiftReactions({});
     setSeatHaloEffects({});
+    safeRemoveItem(ACTIVE_ROOM_STORAGE_KEY);
 
     try {
       cleanupMicMonitor();
       stopMusicEngines();
-      void teardownActiveChannels();
-    } catch {
-      // ignore
+      await teardownActiveChannels();
+    } catch (leaveError) {
+      setError(
+        leaveError instanceof Error
+          ? `غادرت الغرفة، لكن تعذّر تحديث حالتها: ${leaveError.message}`
+          : 'غادرت الغرفة، لكن تعذّر تحديث حالتها.'
+      );
     }
   }, [cleanupMicMonitor, stopMusicEngines, teardownActiveChannels]);
 
@@ -938,6 +961,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                   }
                 });
               });
+              presenceMembersRef.current = membersInRoom;
               setPresenceMembers(membersInRoom);
             } catch {
               // ignore transient presence errors

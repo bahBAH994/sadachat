@@ -1002,6 +1002,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         const { error: deleteError } = await supabase
           .from('sada_private_messages')
           .delete()
+          .not('id', 'is', null)
           .eq('conversation_id', conversation.id);
         if (deleteError) throw new Error(deleteError.message);
 

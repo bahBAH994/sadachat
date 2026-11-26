@@ -1840,6 +1840,15 @@ BEGIN
 
   DELETE FROM public.sada_private_messages WHERE id IS NOT NULL;
   DELETE FROM public.sada_room_messages WHERE id IS NOT NULL;
+  IF to_regclass('public.sada_messages') IS NOT NULL THEN
+    EXECUTE 'DELETE FROM public.sada_messages WHERE id IS NOT NULL';
+  END IF;
+  IF to_regclass('public.sada_agency_follows') IS NOT NULL THEN
+    EXECUTE 'DELETE FROM public.sada_agency_follows WHERE id IS NOT NULL';
+  END IF;
+  IF to_regclass('public.sada_payment_requests') IS NOT NULL THEN
+    EXECUTE 'DELETE FROM public.sada_payment_requests WHERE id IS NOT NULL';
+  END IF;
   DELETE FROM public.sada_sessions WHERE token IS NOT NULL;
   DELETE FROM public.sada_device_locks WHERE device_uuid IS NOT NULL;
   DELETE FROM public.sada_security_logs WHERE id IS NOT NULL;

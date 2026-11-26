@@ -92,6 +92,17 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
 
   useEffect(() => {
     let active = true;
+    const showEliminationCountdown = (displayName: string) => {
+      let seconds = 3;
+      const updateCountdown = () => {
+        setNotice(`⚠️ سيتم إقصاء ${displayName} خلال ${seconds}...`);
+        seconds -= 1;
+        if (seconds > 0) {
+          remoteSpinTimeoutRef.current = window.setTimeout(updateCountdown, 1000);
+        }
+      };
+      updateCountdown();
+    };
     const loadRound = async () => {
       try {
         const activeRound = await getActiveRoomLuckyWheelRound(roomId);
@@ -117,7 +128,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
                 );
                 if (eliminated) {
                   setEliminatedPlayerId(eliminated.userId);
-                  setNotice(`⚠️ سيتم إقصاء ${eliminated.displayName} بعد ثلاث ثوانٍ`);
+                  showEliminationCountdown(eliminated.displayName);
                 }
               }, SPIN_DURATION_MS);
             }
@@ -163,7 +174,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
                   remoteSpinTimeoutRef.current = null;
                   setSpinning(false);
                   setEliminatedPlayerId(eliminated.userId);
-                  setNotice(`⚠️ سيتم إقصاء ${eliminated.displayName} بعد ثلاث ثوانٍ`);
+                  showEliminationCountdown(eliminated.displayName);
                 }, SPIN_DURATION_MS);
               }
             } else if (!nextRound.spinningPlayerId) {
@@ -310,17 +321,10 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
         setSpinning(false);
 
         setEliminatedPlayerId(eliminated.userId);
-        setNotice(`⚠️ سيتم إقصاء ${eliminated.displayName} بعد ثلاث ثوانٍ`);
-        try {
-          await onSendChat(`⚠️ سيتم إقصاء ${eliminated.displayName} من دولاب الإقصاء خلال 3 ثوانٍ.`);
-        } catch (chatError) {
-          setError(
-            chatError instanceof Error
-              ? `تعذّر إعلان الإقصاء في الشات: ${chatError.message}`
-              : 'تعذّر إعلان الإقصاء في الشات.'
-          );
+        for (let seconds = 3; seconds > 0; seconds -= 1) {
+          setNotice(`⚠️ سيتم إقصاء ${eliminated.displayName} خلال ${seconds}...`);
+          await wait(1000);
         }
-        await wait(3000);
         const next = await eliminateRoomLuckyWheelPlayer(
           started.id,
           user.id,
@@ -330,15 +334,6 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
         currentSpinRound = next;
         setEliminatedPlayerId(null);
         setNotice(`تم إقصاء ${eliminated.displayName}!`);
-        try {
-          await onSendChat(`🎡 تم إقصاء ${eliminated.displayName} من دولاب الإقصاء!`);
-        } catch (chatError) {
-          setError(
-            chatError instanceof Error
-              ? `تم الإقصاء لكن تعذّر إرسال إشعار الشات: ${chatError.message}`
-              : 'تم الإقصاء لكن تعذّر إرسال إشعار الشات.'
-          );
-        }
         alive = alive.filter((player) => player.userId !== eliminated.userId);
       }
 
@@ -353,7 +348,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
       );
       try {
         await onSendChat(
-          `🏆 تهانينا ${result.winnerName}! فاز بدولاب الإقصاء وربح ${result.payout.toLocaleString('en-US')} كوينز بعد خصم عمولة المنصة.`
+          `🏆 تهانينا ${result.winnerName}! فاز بالجائزة الكبرى في دولاب الإقصاء وقيمتها ${result.payout.toLocaleString('en-US')} كوينز.`
         );
       } catch (chatError) {
         setError(
