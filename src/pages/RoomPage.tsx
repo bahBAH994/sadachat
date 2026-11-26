@@ -3743,56 +3743,58 @@ export const RoomPage: React.FC = () => {
         />
       )}
 
-      {/* ROOM MUSIC PLAYER MODAL (Device Audio File Only) */}
-      {showMusicModal && (
-        <RoomMusicModal
-          isOnMic={Boolean(mySeat)}
-          musicState={musicState}
-          musicVolume={musicVolume}
-          musicMutedLocally={musicMutedLocally}
-          effectsMuted={effectsMuted}
-          onVolumeChange={(v) => {
-            setMusicVolume(v);
-            if (v > 0 && musicMutedLocally) setMusicMutedLocally(false);
-          }}
-          onToggleLocalMute={() => setMusicMutedLocally(!musicMutedLocally)}
-          onToggleEffectsMuted={() => {
-            const nextMuted = !effectsMuted;
-            setEffectsMuted(nextMuted);
-            showToast(
-              nextMuted
-                ? '🔇 تم كتم صوت مؤثرات الهدايا والألعاب'
-                : '🔊 تم تشغيل صوت مؤثرات الهدايا والألعاب'
-            );
-          }}
-          onPlayUploaded={playUploadedMusic}
-          onTogglePlayPause={toggleMusicPlayPause}
-          onStopMusic={stopRoomMusic}
-          onClimbMic={() => {
-            const free = (Array.isArray(room?.seats) ? room.seats : []).find(
-              (s) => !s?.userId && !s?.isLocked
-            );
-            if (free) void handleSeatInteraction(free);
-          }}
-          onClose={() => setShowMusicModal(false)}
-        />
-      )}
+          <>
+            {/* ROOM MUSIC PLAYER MODAL (Device Audio File Only) */}
+            {showMusicModal && (
+              <RoomMusicModal
+                isOnMic={Boolean(mySeat)}
+                musicState={musicState}
+                musicVolume={musicVolume}
+                musicMutedLocally={musicMutedLocally}
+                effectsMuted={effectsMuted}
+                onVolumeChange={(v) => {
+                  setMusicVolume(v);
+                  if (v > 0 && musicMutedLocally) setMusicMutedLocally(false);
+                }}
+                onToggleLocalMute={() => setMusicMutedLocally(!musicMutedLocally)}
+                onToggleEffectsMuted={() => {
+                  const nextMuted = !effectsMuted;
+                  setEffectsMuted(nextMuted);
+                  showToast(
+                    nextMuted
+                      ? '🔇 تم كتم صوت مؤثرات الهدايا والألعاب'
+                      : '🔊 تم تشغيل صوت مؤثرات الهدايا والألعاب'
+                  );
+                }}
+                onPlayUploaded={playUploadedMusic}
+                onTogglePlayPause={toggleMusicPlayPause}
+                onStopMusic={stopRoomMusic}
+                onClimbMic={() => {
+                  const free = (Array.isArray(room?.seats) ? room.seats : []).find(
+                    (s) => !s?.userId && !s?.isLocked
+                  );
+                  if (free) void handleSeatInteraction(free);
+                }}
+                onClose={() => setShowMusicModal(false)}
+              />
+            )}
 
-          {/* EXIT / KEEP MINIMIZED MODAL (Portaled at z-[999999] with pointer-events-auto) */}
-          {exitModalOpen && (
-            <RoomExitModal
-              roomTitle={room?.title || 'الغرفة'}
-              roomAvatar={room?.hostAvatar || ''}
-              isOnMic={Boolean(mySeat)}
-              isAgency={isAgency}
-              onCancel={() => {
-                setExitModalOpen(false);
-                if (!window.history.state?.inRoom) {
-                  window.history.pushState({ inRoom: true }, '');
-                }
-              }}
-            />
-          )}
+            {/* EXIT / KEEP MINIMIZED MODAL (Portaled at z-[999999] with pointer-events-auto) */}
+            {exitModalOpen && (
+              <RoomExitModal
+                roomTitle={room?.title || 'الغرفة'}
+                roomAvatar={room?.hostAvatar || ''}
+                isOnMic={Boolean(mySeat)}
+                isAgency={isAgency}
+                onCancel={() => {
+                  setExitModalOpen(false);
+                  if (!window.history.state?.inRoom) {
+                    window.history.pushState({ inRoom: true }, '');
+                  }
+                }}
+              />
+            )}
+          </>
         </>
       )}
       {shouldBlockAgencyRoom && (
