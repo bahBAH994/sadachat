@@ -854,10 +854,10 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
               </p>
             )}
           </>
-        </div>
-      </section>
-    </div>
-  );
+        
+      
+  
+  
 };
 
 interface RoomChatInputProps {
