@@ -854,15 +854,13 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
               </p>
             )}
           </>
-       
-    
-  )
-}
-      
-  
-  
+        )}
+      </section>
+    </div>
+  );
+};
 
-interface RoomChatInputProps 
+interface RoomChatInputProps {
   inputRef: any;
   roomContainerRef: any;
   insertEmojiRef: React.MutableRefObject<(emoji: string) => void>;
