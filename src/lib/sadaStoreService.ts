@@ -177,19 +177,13 @@ export async function getEquippedStoreAsset(
 export async function getEquippedRoomBackground(
   roomId: string
 ): Promise<EquippedStoreAsset | null> {
-  const { data, error } = await supabase.rpc('sada_get_equipped_room_background', {
-    p_room_id: roomId,
-  });
-  if (error) throw new Error(error.message);
-
-  const background = Array.isArray(data) ? data[0] : null;
-  if (!background) return null;
-  return {
-    category: 'backgrounds',
-    name: String(background.name),
-    assetUrl: String(background.asset_url),
-    assetPath: String(background.asset_path),
-  };
+  const { data: roomRow } = await supabase
+    .from('rooms')
+    .select('owner_id')
+    .eq('id', roomId)
+    .maybeSingle();
+  if (!roomRow?.owner_id) return null;
+  return getEquippedStoreAsset(String(roomRow.owner_id), 'backgrounds');
 }
 
 export async function purchaseStoreItem(userId: string, itemId: string): Promise<number> {

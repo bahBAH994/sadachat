@@ -356,57 +356,49 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
           referrerPolicy="no-referrer"
           onError={() => setFailed(true)}
           style={animateFrame ? undefined : { animation: 'none' }}
-          className={`relative z-10 ${dimClass} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
+          className={`relative z-10 ${dimClass} ${hasCustomFrame ? "scale-[0.74]" : ""} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
         />
       ) : (
         <div
-          className={`relative z-10 ${dimClass} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${vipRingVisualClass}`}
+          className={`relative z-10 ${dimClass} ${hasCustomFrame ? "scale-[0.74]" : ""} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${vipRingVisualClass}`}
         >
           <User className="w-1/2 h-1/2" />
         </div>
       )}
 
-      {frameUrl && (
+            {frameUrl && (
         <>
-          {/\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(frameUrl) ? (
-            <TransparentAssetVideo
-              src={frameUrl}
-              alt=""
-              onDominantColor={handleFrameColor}
-              className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.78] object-contain"
-            />
-          ) : (
-            <TransparentAssetImage
-              src={frameUrl}
-              alt=""
-              onDominantColor={handleFrameColor}
-              className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.78] object-contain"
-            />
-          )}
-          <span
+          <div
             aria-hidden="true"
-            className="absolute inset-0 z-[25] scale-[1.78] rounded-full pointer-events-none"
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.92] flex items-center justify-center"
             style={{
-              border: `1px solid ${frameColor}`,
-              boxShadow: `0 0 10px ${frameColor}88, 0 0 20px ${frameColor}66`,
+              filter: `drop-shadow(0 0 7px ${frameColor}) drop-shadow(0 0 14px ${frameColor}99) brightness(1.12)`,
             }}
-          />
+          >
+            {/\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(frameUrl) ? (
+              <TransparentAssetVideo
+                src={frameUrl}
+                alt=""
+                onDominantColor={handleFrameColor}
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <TransparentAssetImage
+                src={frameUrl}
+                alt=""
+                onDominantColor={handleFrameColor}
+                className="h-full w-full object-contain"
+              />
+            )}
+          </div>
           <span
             aria-hidden="true"
-            className="absolute inset-0 z-30 scale-[1.78] overflow-visible pointer-events-none"
+            className="absolute inset-0 z-30 scale-[1.92] overflow-visible pointer-events-none"
           >
-            <span className="absolute inset-0 overflow-hidden rounded-full">
-              <span
-                className="frame-shimmer-sweep absolute inset-y-0 w-1/3 -translate-x-full"
-                style={{
-                  backgroundImage: `linear-gradient(110deg, transparent, ${frameColor}bb, transparent)`,
-                }}
-              />
-            </span>
             {[
-              { left: '12%', top: '28%' },
-              { right: '10%', top: '17%' },
-              { right: '18%', bottom: '12%' },
+              { left: '10%', top: '24%' },
+              { right: '8%', top: '16%' },
+              { right: '16%', bottom: '10%' },
             ].map((position, index) => (
               <span
                 key={index}
@@ -414,8 +406,8 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
                 style={{
                   ...position,
                   color: frameColor,
-                  textShadow: `0 0 7px ${frameColor}, 0 0 13px ${frameColor}`,
-                  animationDelay: `${index * 0.3}s`,
+                  textShadow: `0 0 8px ${frameColor}, 0 0 14px ${frameColor}`,
+                  animationDelay: `${index * 0.35}s`,
                 }}
               >
                 ✦

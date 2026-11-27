@@ -607,7 +607,7 @@ export const ProfilePage: React.FC = () => {
 
           {/* Main Identity Row */}
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4 min-w-0">
+            <div className="flex items-center gap-7 pt-3 pr-3 min-w-0">
               {/* Circular Avatar + Golden Camera Icon */}
               <div className="relative shrink-0">
                 <AvatarWithFrame
@@ -617,7 +617,7 @@ export const ProfilePage: React.FC = () => {
                   frameUrl={equippedFrame?.assetUrl}
                   vipTier={vipInfo.key}
                   size="xl"
-                  customSizeClass="w-28 h-28"
+                  customSizeClass="w-20 h-20"
                 />
                 <button
                   type="button"
