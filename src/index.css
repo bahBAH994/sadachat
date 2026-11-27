@@ -467,6 +467,19 @@
   animation: frame-spark 1.4s ease-in-out infinite;
 }
 
+@keyframes frame-shimmer-sweep {
+  from {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  to {
+    transform: translateX(420%) skewX(-18deg);
+  }
+}
+
+.frame-shimmer-sweep {
+  animation: frame-shimmer-sweep 2.4s ease-in-out infinite;
+}
+
 .animate-frame-dragon-tail {
   animation: frame-dragon-tail 2s ease-in-out infinite;
 }

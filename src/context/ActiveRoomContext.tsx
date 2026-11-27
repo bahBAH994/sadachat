@@ -570,6 +570,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   );
 
   const roomChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const roomDataChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const activeRoomIdRef = useRef<string | null>(null);
   const restoredRoomKeyRef = useRef<string | null>(null);
@@ -610,8 +611,10 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     activeRoomIdRef.current = null;
     const presenceChannel = presenceChannelRef.current;
     const roomChannel = roomChannelRef.current;
+    const roomDataChannel = roomDataChannelRef.current;
     presenceChannelRef.current = null;
     roomChannelRef.current = null;
+    roomDataChannelRef.current = null;
     const currentUserId = userRef.current?.id;
     let leaveError: unknown = null;
 
@@ -650,6 +653,13 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         await supabase.removeChannel(roomChannel);
       } catch (err) {
         console.warn('Unable to remove active room channel:', err);
+      }
+    }
+    if (roomDataChannel) {
+      try {
+        await supabase.removeChannel(roomDataChannel);
+      } catch (err) {
+        console.warn('Unable to remove room data channel:', err);
       }
     }
     presenceMembersRef.current = [];
@@ -724,9 +734,11 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setWheelSegments(details.wheelSegments || []);
         setWheelCost(details.wheelCost || 200);
 
-        // Subscribe to room DB & broadcasts
-        const sbRoomChannel = supabase
-          .channel(`sada-room-${roomId}`)
+        // Keep database subscriptions unique while broadcasts share a room topic.
+        const roomDataChannel = supabase
+          .channel(
+            `sada-room-${roomId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+          )
           .on(
             'postgres_changes',
             {
@@ -870,6 +882,11 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               }
             }
           )
+          .subscribe();
+        roomDataChannelRef.current = roomDataChannel;
+
+        const sbRoomChannel = supabase
+          .channel(`sada-room-${roomId}`)
           .on('broadcast', { event: 'room:gift' }, ({ payload }) => {
             const giftData = payload as NonNullable<ActiveRoomContextValue['giftBanner']>;
             if (giftData?.gift && giftData.gift.category !== 'lucky') {

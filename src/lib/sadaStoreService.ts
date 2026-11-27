@@ -174,6 +174,24 @@ export async function getEquippedStoreAsset(
     : { category, name: 'إطار مرتدى', assetUrl: '', assetPath: '', frameId };
 }
 
+export async function getEquippedRoomBackground(
+  roomId: string
+): Promise<EquippedStoreAsset | null> {
+  const { data, error } = await supabase.rpc('sada_get_equipped_room_background', {
+    p_room_id: roomId,
+  });
+  if (error) throw new Error(error.message);
+
+  const background = Array.isArray(data) ? data[0] : null;
+  if (!background) return null;
+  return {
+    category: 'backgrounds',
+    name: String(background.name),
+    assetUrl: String(background.asset_url),
+    assetPath: String(background.asset_path),
+  };
+}
+
 export async function purchaseStoreItem(userId: string, itemId: string): Promise<number> {
   const { data, error } = await supabase.rpc('sada_purchase_store_item', {
     p_user_id: userId,

@@ -36,26 +36,38 @@ export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry })
       {entry?.entranceAssetUrl && (
         <motion.div
           key={`store-entrance_${entry.userId}_${entry.timestamp}`}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.35 }}
-          className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center"
+          initial={{ opacity: 0, scale: 0.76, y: 48 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 1.08, y: -24 }}
+          transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
+          className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center overflow-hidden"
           aria-label={`${entry.displayName} دخل الغرفة`}
         >
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(251,191,36,0.22)_0%,rgba(0,0,0,0.12)_48%,rgba(0,0,0,0.46)_100%)]"
+          />
           {/(\.mp4|\.webm|\.mov|\.m4v)(?:[?#]|$)/i.test(entry.entranceAssetUrl) ? (
-            <TransparentAssetVideo
+            <video
               src={entry.entranceAssetUrl}
-              alt=""
-              className="h-full w-full object-contain"
+              autoPlay
+              muted
+              playsInline
+              aria-hidden="true"
+              className="relative h-full w-full object-contain mix-blend-screen"
             />
           ) : (
             <TransparentAssetImage
               src={entry.entranceAssetUrl}
               alt=""
-              className="h-full w-full object-contain"
+              className="relative h-full w-full object-contain mix-blend-screen"
             />
           )}
+          <div className="absolute inset-x-0 bottom-[12%] flex justify-center px-4">
+            <div className="rounded-full border border-amber-200/60 bg-black/65 px-6 py-3 text-center text-sm font-black text-[#FFF7D6] shadow-[0_0_32px_rgba(251,191,36,0.5)] backdrop-blur-md sm:text-lg">
+              انضم الملك {entry.displayName} إلى الغرفة
+            </div>
+          </div>
         </motion.div>
       )}
       {entry && !entry.entranceAssetUrl && vipLevel === 'svip' && (

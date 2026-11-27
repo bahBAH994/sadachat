@@ -2696,16 +2696,42 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.sada_get_equipped_room_background(p_room_id TEXT)
+RETURNS TABLE(name TEXT, asset_url TEXT, asset_path TEXT)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+  SELECT item.name, item.asset_url, item.asset_path
+  FROM public.sada_rooms AS room
+  LEFT JOIN public.sada_agencies AS agency
+    ON agency.id = room.agency_id AND room.is_agency = TRUE
+  JOIN public.sada_user_store_items AS owned
+    ON owned.user_id = COALESCE(agency.owner_id, room.host_id)
+  JOIN public.sada_store_items AS item
+    ON item.id = owned.item_id
+  WHERE room.id = p_room_id
+    AND room.is_active = TRUE
+    AND item.category = 'backgrounds'
+    AND owned.is_equipped = TRUE
+    AND (owned.expires_at IS NULL OR owned.expires_at > NOW())
+  ORDER BY owned.acquired_at DESC
+  LIMIT 1;
+$$;
+
 REVOKE ALL ON FUNCTION public.sada_purchase_store_item(TEXT, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_set_store_item_equipped(TEXT, TEXT, BOOLEAN) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_expire_store_items(TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_remove_store_item_from_bag(TEXT, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_grant_store_item(TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_get_equipped_room_background(TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.sada_purchase_store_item(TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_set_store_item_equipped(TEXT, TEXT, BOOLEAN) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_expire_store_items(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_remove_store_item_from_bag(TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_grant_store_item(TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_get_equipped_room_background(TEXT) TO authenticated;
 
 -- ============================================================================
 -- تفعيل المزامنة الفورية (Supabase Realtime) للجداول التفاعلية

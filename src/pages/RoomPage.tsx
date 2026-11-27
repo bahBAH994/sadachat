@@ -57,6 +57,10 @@ import {
   isRoomAgencyOwnerOrHostFromData,
   isRoomOrAgencyOwnerFromData,
 } from '../lib/sadaRoomsService';
+import {
+  getEquippedRoomBackground,
+  type EquippedStoreAsset,
+} from '../lib/sadaStoreService';
 import type { RoomMessage, RoomSeat, User, VipTierKey } from '../types';
 import type {
   RoomSeatEmojiEvent,
@@ -1589,6 +1593,8 @@ export const RoomPage: React.FC = () => {
   const [showMusicModal, setShowMusicModal] = useState(false);
   const [seatActionTarget, setSeatActionTarget] = useState<RoomSeat | null>(null);
   const [roomOwnerId, setRoomOwnerId] = useState<string | null>(null);
+  const [equippedRoomBackground, setEquippedRoomBackground] =
+    useState<EquippedStoreAsset | null>(null);
   const [inlineSystemNotices, setInlineSystemNotices] = useState<
     Array<{ id: number; text: string; variant: 'success' | 'error' }>
   >([]);
@@ -1740,6 +1746,30 @@ export const RoomPage: React.FC = () => {
       );
     }, 2600);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setEquippedRoomBackground(null);
+    if (!room?.id || !room.hostId) return;
+
+    void getEquippedRoomBackground(room.id)
+      .then((background) => {
+        if (active) setEquippedRoomBackground(background);
+      })
+      .catch((backgroundError: unknown) => {
+        if (!active) return;
+        showToast(
+          backgroundError instanceof Error
+            ? backgroundError.message
+            : 'تعذّر تحميل خلفية الغرفة المرتداة.',
+          'error'
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [room?.hostId, room?.id, showToast]);
 
   useEffect(() => {
     if (!giftBanner) return;
@@ -2556,7 +2586,28 @@ export const RoomPage: React.FC = () => {
                 display: none !important;
               }
             `}</style>
-            <DragonStageBackdrop coverImage={room.backgroundImage} />
+            {equippedRoomBackground?.assetUrl ? (
+              /\.(mp4|webm)(?:[?#]|$)/i.test(equippedRoomBackground.assetUrl) ? (
+                <video
+                  src={resolveAsset(equippedRoomBackground.assetUrl)}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  aria-hidden="true"
+                  className="fixed inset-0 z-0 h-full w-full object-cover"
+                />
+              ) : (
+                <img
+                  src={resolveAsset(equippedRoomBackground.assetUrl)}
+                  alt=""
+                  aria-hidden="true"
+                  className="fixed inset-0 z-0 h-full w-full object-cover"
+                />
+              )
+            ) : (
+              <DragonStageBackdrop coverImage={room.backgroundImage} />
+            )}
           </div>
       <div
         aria-hidden="true"

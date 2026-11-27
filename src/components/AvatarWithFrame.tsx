@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { User } from 'lucide-react';
 import { resolveAsset } from '../lib/assets';
 import { getVipTierConfig, parseVipTierKey } from '../lib/sadaCatalog';
@@ -102,6 +102,8 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   onClick,
 }) => {
   const [failed, setFailed] = useState(false);
+  const [frameColor, setFrameColor] = useState('#FCE9A6');
+  const handleFrameColor = useCallback((color: string) => setFrameColor(color), []);
   const activeFrameId = frameId || 'frame_obsidian';
   const frameClass = (FRAME_CLASSES[activeFrameId] || FRAME_CLASSES.frame_obsidian)
     .split(' ')
@@ -365,19 +367,62 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
       )}
 
       {frameUrl && (
-        /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(frameUrl) ? (
-          <TransparentAssetVideo
-            src={frameUrl}
-            alt=""
-            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.55] object-contain"
+        <>
+          {/\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(frameUrl) ? (
+            <TransparentAssetVideo
+              src={frameUrl}
+              alt=""
+              onDominantColor={handleFrameColor}
+              className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.78] object-contain"
+            />
+          ) : (
+            <TransparentAssetImage
+              src={frameUrl}
+              alt=""
+              onDominantColor={handleFrameColor}
+              className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.78] object-contain"
+            />
+          )}
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 z-[25] scale-[1.78] rounded-full pointer-events-none"
+            style={{
+              border: `1px solid ${frameColor}`,
+              boxShadow: `0 0 10px ${frameColor}88, 0 0 20px ${frameColor}66`,
+            }}
           />
-        ) : (
-          <TransparentAssetImage
-            src={frameUrl}
-            alt=""
-            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.55] object-contain"
-          />
-        )
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 z-30 scale-[1.78] overflow-visible pointer-events-none"
+          >
+            <span className="absolute inset-0 overflow-hidden rounded-full">
+              <span
+                className="frame-shimmer-sweep absolute inset-y-0 w-1/3 -translate-x-full"
+                style={{
+                  backgroundImage: `linear-gradient(110deg, transparent, ${frameColor}bb, transparent)`,
+                }}
+              />
+            </span>
+            {[
+              { left: '12%', top: '28%' },
+              { right: '10%', top: '17%' },
+              { right: '18%', bottom: '12%' },
+            ].map((position, index) => (
+              <span
+                key={index}
+                className="absolute animate-frame-spark text-[9px] leading-none"
+                style={{
+                  ...position,
+                  color: frameColor,
+                  textShadow: `0 0 7px ${frameColor}, 0 0 13px ${frameColor}`,
+                  animationDelay: `${index * 0.3}s`,
+                }}
+              >
+                ✦
+              </span>
+            ))}
+          </span>
+        </>
       )}
 
       {/* VIP Corner Emblem Badge for md/lg/xl */}
