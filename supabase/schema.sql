@@ -166,6 +166,25 @@ ALTER TABLE public.sada_private_messages
 
 CREATE INDEX IF NOT EXISTS idx_sada_pm_conv ON public.sada_private_messages(conversation_id, created_at);
 
+-- 7.0.1. مكالمات الصوت الخاصة بين المستخدمين
+CREATE TABLE IF NOT EXISTS public.sada_private_calls (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  caller_id TEXT NOT NULL REFERENCES public.sada_users(id) ON DELETE CASCADE,
+  receiver_id TEXT NOT NULL REFERENCES public.sada_users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'ringing'
+    CHECK (status IN ('ringing', 'accepted', 'rejected', 'ended')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  accepted_at TIMESTAMPTZ,
+  ended_at TIMESTAMPTZ,
+  CHECK (caller_id <> receiver_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sada_private_calls_participants
+  ON public.sada_private_calls(caller_id, receiver_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sada_private_calls_recipients
+  ON public.sada_private_calls(receiver_id, caller_id, created_at DESC);
+
 -- 7.1. الدردشة الجماعية والمجموعات
 CREATE TABLE IF NOT EXISTS public.sada_groups (
   id TEXT PRIMARY KEY,
@@ -605,6 +624,7 @@ BEGIN
     'sada_rooms',
     'sada_room_messages',
     'sada_private_messages',
+    'sada_private_calls',
     'sada_gifts',
     'sada_transactions',
     'sada_agencies',
@@ -2376,6 +2396,7 @@ BEGIN
     'sada_rooms',
     'sada_room_messages',
     'sada_private_messages',
+    'sada_private_calls',
     'sada_transactions',
     'sada_agencies',
     'sada_agency_requests',

@@ -30,6 +30,7 @@ import { FloatingMinimizedRoom } from './components/FloatingMinimizedRoom';
 import { GlobalRoyalGiftTicker } from './components/GlobalRoyalGiftTicker';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { UserMiniProfileModal } from './components/UserMiniProfileModal';
+import { PrivateVoiceCallOverlay } from './components/PrivateVoiceCallOverlay';
 import { LoginPage } from './pages/LoginPage';
 import { LobbyPage } from './pages/LobbyPage';
 import { MeetPage } from './pages/MeetPage';
@@ -421,6 +422,7 @@ const AuthenticatedAppShell: React.FC = () => {
       <GlobalRoyalGiftTicker />
       <FloatingMinimizedRoom />
       <UserMiniProfileModal />
+      <PrivateVoiceCallOverlay />
       {showExitConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 p-5 backdrop-blur-sm">
           <section

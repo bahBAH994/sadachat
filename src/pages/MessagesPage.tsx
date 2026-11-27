@@ -11,6 +11,7 @@ import {
   MessageCircle,
   MoreVertical,
   Plus,
+  Phone,
   Search,
   Send,
   Smile,
@@ -66,6 +67,15 @@ interface GroupMessage {
   text: string;
   createdAt: string;
   sender?: User;
+}
+interface PrivateCallLog {
+  id: string;
+  caller_id: string;
+  receiver_id: string;
+  status: 'ringing' | 'accepted' | 'rejected' | 'ended';
+  created_at: string;
+  accepted_at: string | null;
+  ended_at: string | null;
 }
 
 const QUANTITIES = [1, 9, 25, 50, 100] as const;
@@ -830,6 +840,55 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     return recipients.find((r) => r.id === selectedPeerId) || null;
   }, [activeConversation, recipients, selectedPeerId]);
 
+  const [privateCallLogs, setPrivateCallLogs] = useState<PrivateCallLog[]>([]);
+  useEffect(() => {
+    if (!user?.id || !activePeer?.id || inboxFilter === 'المجموعات') {
+      setPrivateCallLogs([]);
+      return;
+    }
+    let active = true;
+    const loadCallLogs = async () => {
+      const { data, error: queryError } = await supabase
+        .from('sada_private_calls')
+        .select('id, caller_id, receiver_id, status, created_at, accepted_at, ended_at')
+        .or(`and(caller_id.eq.${user.id},receiver_id.eq.${activePeer.id}),and(caller_id.eq.${activePeer.id},receiver_id.eq.${user.id})`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (queryError) {
+        console.error('Unable to load private call history:', queryError.message);
+        return;
+      }
+      if (active) setPrivateCallLogs((data || []) as PrivateCallLog[]);
+    };
+    void loadCallLogs();
+    const channel = supabase
+      .channel(`sada-private-call-history-${user.id}-${activePeer.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sada_private_calls' },
+        () => void loadCallLogs()
+      )
+      .subscribe();
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [activePeer?.id, inboxFilter, user?.id]);
+
+  const conversationTimeline = useMemo(() => {
+    const messages = (activeConversation?.messages || []).map((message) => ({
+      type: 'message' as const,
+      createdAt: message.createdAt,
+      message,
+    }));
+    const calls = privateCallLogs
+      .filter((entry) => entry.status === 'rejected' || entry.status === 'ended')
+      .map((entry) => ({ type: 'call' as const, createdAt: entry.created_at, call: entry }));
+    return [...messages, ...calls].sort(
+      (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)
+    );
+  }, [activeConversation?.messages, privateCallLogs]);
+
   const filteredConversations = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return conversations.filter((c) => {
@@ -888,7 +947,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     }, 100);
 
     return () => window.clearTimeout(timeout);
-  }, [activeConversation?.messages, mobileChatOpen]);
+  }, [activeConversation?.messages, mobileChatOpen, privateCallLogs]);
 
   useEffect(() => {
     if (!user?.id || !selectedPeerId || !activeConversation) return;
@@ -1664,6 +1723,20 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
+                      disabled={blockedPeerIds.includes(activePeer.id)}
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent('sada:start-private-call', { detail: { peer: activePeer } })
+                        );
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#D4AF37]/40 bg-[#D4AF37]/10 text-amber-700 hover:bg-[#D4AF37]/20 disabled:opacity-40"
+                      aria-label={`اتصال صوتي بـ ${activePeer.displayName}`}
+                      title="اتصال صوتي"
+                    >
+                      <Phone className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
                       disabled={togglingFollow}
                       onClick={() => void handleToggleFollowPeer()}
                       className={`min-h-[38px] rounded-xl px-3 py-1.5 text-xs font-extrabold border flex items-center gap-1 cursor-pointer transition disabled:opacity-50 ${
@@ -1697,25 +1770,42 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
                 {/* Messages Feed */}
                 <div ref={messagesFeedRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-3 space-y-2">
-                  {!activeConversation || activeConversation.messages.length === 0 ? (
+                  {conversationTimeline.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-center px-6">
                       <p className="text-sm font-extrabold text-slate-800">
                         ابدأ محادثة خاصة مع {activePeer.displayName}
                       </p>
                     </div>
                   ) : (
-                    activeConversation.messages.map((m) => (
-                      <PrivateChatMessageItem
-                        key={m.id}
-                        message={m}
-                        isMine={m.senderId === user?.id}
-                        isRecipientOnline={Boolean(
-                          activePeer && onlineUserIds.includes(activePeer.id)
-                        )}
-                        isFemaleRecipient={user?.gender === 'female'}
-                        onImageClick={setZoomedImage}
-                      />
-                    ))
+                    conversationTimeline.map((item) => {
+                      if (item.type === 'call') {
+                        const duration = item.call.accepted_at && item.call.ended_at
+                          ? Math.max(0, Math.floor((Date.parse(item.call.ended_at) - Date.parse(item.call.accepted_at)) / 1000))
+                          : 0;
+                        const time = `${String(Math.floor(duration / 60)).padStart(2, '0')}:${String(duration % 60).padStart(2, '0')}`;
+                        const missed = !item.call.accepted_at;
+                        return (
+                          <div key={item.call.id} className="flex justify-center py-1">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-900">
+                              <Phone className="h-3.5 w-3.5" />
+                              {missed ? 'مكالمة فائتة' : `مكالمة صوتية • المدة ${time}`}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <PrivateChatMessageItem
+                          key={item.message.id}
+                          message={item.message}
+                          isMine={item.message.senderId === user?.id}
+                          isRecipientOnline={Boolean(
+                            activePeer && onlineUserIds.includes(activePeer.id)
+                          )}
+                          isFemaleRecipient={user?.gender === 'female'}
+                          onImageClick={setZoomedImage}
+                        />
+                      );
+                    })
                   )}
                   <div ref={endRef} />
                 </div>
