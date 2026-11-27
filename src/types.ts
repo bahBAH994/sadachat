@@ -72,6 +72,7 @@ export interface RoomEntryEvent {
   level: number;
   vipLevel?: VipTierKey;
   entryId?: 'entry_car_15d' | 'entry_legendary_30d' | null;
+  entranceAssetUrl?: string;
   entryName: string;
   timestamp: string;
 }

@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS public.sada_users (
   referral_count INTEGER NOT NULL DEFAULT 0,
   referral_spins INTEGER NOT NULL DEFAULT 0,
   frame_id TEXT NOT NULL DEFAULT 'frame_obsidian',
+  equipped_frame TEXT,
+  frame_url TEXT,
   unlocked_frames JSONB NOT NULL DEFAULT '["frame_obsidian"]'::jsonb,
   previous_permanent_frame_id TEXT,
   temp_frame_id TEXT,
@@ -54,6 +56,8 @@ CREATE INDEX IF NOT EXISTS idx_sada_users_agency ON public.sada_users(agency_id)
 ALTER TABLE public.sada_users
   ADD COLUMN IF NOT EXISTS svip_level SMALLINT CHECK (svip_level BETWEEN 1 AND 4),
   ADD COLUMN IF NOT EXISTS svip_expires_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS equipped_frame TEXT,
+  ADD COLUMN IF NOT EXISTS frame_url TEXT,
   ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- 2. جدول جلسات تسجيل الدخول

@@ -69,6 +69,7 @@ import { DragonStageBackdrop } from '../components/DragonStageBackdrop';
 import { FemaleVerifiedBadge } from '../components/FemaleVoiceVerificationCard';
 import { Fluent3DAsset } from '../components/Fluent3DAsset';
 import { RoomExitModal } from '../components/RoomExitModal';
+import { VipEntranceOverlay } from '../components/VipEntranceOverlay';
 import { RoomGamesModal } from '../components/RoomGamesModal';
 import { RoomMusicModal } from '../components/RoomMusicModal';
 import { RoomSettingsModal } from '../components/RoomSettingsModal';
@@ -1067,6 +1068,7 @@ interface RoomSeatItemProps {
   isHost: boolean;
   isHero5: boolean;
   vipLevel?: VipTierKey | null;
+  frameUrl?: string;
   sizeClass: string;
   seatEmoji?: RoomSeatEmojiEvent;
   seatGiftReaction?: SeatGiftReactionEvent;
@@ -1084,6 +1086,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
     isHost,
     isHero5,
     vipLevel,
+    frameUrl,
     sizeClass,
     seatEmoji,
     seatGiftReaction,
@@ -1180,6 +1183,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
               src={seat.avatarUrl}
               alt={seat.displayName || 'متحدث'}
               frameId={seat.frameId}
+              frameUrl={frameUrl}
               vipTier={resolvedVip}
               size={isHero5 ? 'lg' : 'md'}
               customSizeClass={sizeClass}
@@ -1511,6 +1515,7 @@ export const RoomPage: React.FC = () => {
     supportAndPlayLeaderboard,
     giftBanner,
     wheelBanner,
+    entryBanner,
     flyingGifts,
     tier1SideNotices,
     mediumCelebrationGift,
@@ -2102,6 +2107,7 @@ export const RoomPage: React.FC = () => {
       {
         avatarUrl?: string;
         frameId?: string;
+        frameUrl?: string;
         gender?: User['gender'];
         level?: number;
         vipLevel?: VipTierKey;
@@ -2114,6 +2120,7 @@ export const RoomPage: React.FC = () => {
           map.set(s.userId, {
             avatarUrl: s.avatarUrl || undefined,
             frameId: s.frameId || undefined,
+            frameUrl: undefined,
             level: s.level ?? undefined,
             vipLevel: s.vipLevel || undefined,
             displayName: s.displayName || undefined,
@@ -2126,6 +2133,7 @@ export const RoomPage: React.FC = () => {
       map.set(p.userId, {
         avatarUrl: p.avatarUrl || prev?.avatarUrl,
         frameId: p.frameId || prev?.frameId,
+        frameUrl: p.frameUrl || prev?.frameUrl,
         gender: p.gender || prev?.gender,
         level: p.level ?? prev?.level,
         vipLevel: p.vipLevel && p.vipLevel !== 'none' ? p.vipLevel : prev?.vipLevel,
@@ -2137,7 +2145,8 @@ export const RoomPage: React.FC = () => {
       const prev = map.get(user.id);
       map.set(user.id, {
         avatarUrl: user.avatarUrl || prev?.avatarUrl,
-        frameId: equippedFrameId || prev?.frameId,
+        frameId: prev?.frameId || equippedFrameId,
+        frameUrl: prev?.frameUrl,
         gender: user.gender,
         level: user.level,
         vipLevel: myVip !== 'none' ? myVip : prev?.vipLevel,
@@ -2476,10 +2485,11 @@ export const RoomPage: React.FC = () => {
         vipLevel={seatLookup?.vipLevel || seat.vipLevel || 'none'}
         sizeClass={micSeats.length === 6 && seat.seatIndex === 0 ? 'w-12 h-12' : 'w-11 h-11'}
         seat={
-          seat.userId === user?.id && equippedFrameId
-            ? { ...seat, frameId: equippedFrameId }
+          seat.userId === user?.id && (seatLookup?.frameId || equippedFrameId)
+            ? { ...seat, frameId: seatLookup?.frameId || equippedFrameId || seat.frameId }
             : seat
         }
+        frameUrl={seatLookup?.frameUrl}
         seatEmoji={seat.userId ? seatEmojis[seat.userId] : undefined}
         seatGiftReaction={seat.userId ? seatGiftReactions[seat.userId] : undefined}
         seatHaloActive={Boolean(seat.userId && seatHaloEffects[seat.userId])}
@@ -3191,6 +3201,7 @@ export const RoomPage: React.FC = () => {
 
       {/* TIER 3 FULLSCREEN 4.5-SECOND ROYAL GIFT CINEMA OVERLAY */}
       <DragonCinemaOverlay event={fullscreenGift} hostName={room.hostName} />
+      <VipEntranceOverlay entry={entryBanner} />
 
       {/* SEAT INTERACTION SHEET */}
       <AnimatePresence>

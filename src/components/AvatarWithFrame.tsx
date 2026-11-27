@@ -65,6 +65,7 @@ interface AvatarWithFrameProps {
   src?: string | null;
   alt: string;
   frameId?: string | null;
+  frameUrl?: string | null;
   vipTier?: VipTierKey | string | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   customSizeClass?: string;
@@ -90,6 +91,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   src,
   alt,
   frameId = 'frame_obsidian',
+  frameUrl,
   vipTier,
   size = 'md',
   customSizeClass,
@@ -100,6 +102,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   const activeFrameId = frameId || 'frame_obsidian';
   const frameClass = FRAME_CLASSES[activeFrameId] || FRAME_CLASSES.frame_obsidian;
   const frame3D = FRAME_3D_BADGE[activeFrameId];
+  const hasCustomFrame = Boolean(frameUrl);
   const ornaments = ORNAMENT_SIZE[size === 'xl' ? 'xl' : size === 'lg' ? 'lg' : 'md'];
   const resolved = resolveAsset(src);
 
@@ -115,8 +118,9 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
       ? 'w-4 h-4 text-[9px] -top-0.5 -right-0.5'
       : 'hidden';
 
-  const vipRingVisualClass =
-    resolvedVip === 'svip'
+  const vipRingVisualClass = hasCustomFrame
+    ? ''
+    : resolvedVip === 'svip'
       ? 'vip-frame-svip ring-2 ring-[#FEF08A]'
       : resolvedVip === 'vip3'
       ? 'vip-frame-gold'
@@ -144,7 +148,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
       )}
 
       {/* VIP 1: Metallic Bronze Rim */}
-      {resolvedVip === 'vip1' && (
+      {!hasCustomFrame && resolvedVip === 'vip1' && (
         <span
           aria-hidden="true"
           className="absolute -inset-[2.5px] rounded-full pointer-events-none opacity-95"
@@ -156,7 +160,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
       )}
 
       {/* VIP 2: Chrome Silver Frame with Animated Moving Light Sheen */}
-      {resolvedVip === 'vip2' && (
+      {!hasCustomFrame && resolvedVip === 'vip2' && (
         <span
           aria-hidden="true"
           className="absolute -inset-[3px] rounded-full overflow-hidden pointer-events-none"
@@ -172,7 +176,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
       )}
 
       {/* VIP 3: Royal Gold Frame with Crown & Glowing Wings */}
-      {resolvedVip === 'vip3' && (
+      {!hasCustomFrame && resolvedVip === 'vip3' && (
         <>
           <span
             aria-hidden="true"
@@ -232,7 +236,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
       )}
 
       {/* SVIP: 360° Rotating Diamond & Fire Animated Frame */}
-      {resolvedVip === 'svip' && (
+      {!hasCustomFrame && resolvedVip === 'svip' && (
         <>
           <span
             aria-hidden="true"
@@ -266,7 +270,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
       )}
 
       {/* Store 3D frames retain their ornaments outside the circular portrait. */}
-      {frame3D && resolvedVip === 'none' && (
+      {!hasCustomFrame && frame3D && resolvedVip === 'none' && (
         <>
           <span
             aria-hidden="true"
@@ -343,6 +347,28 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
         >
           <User className="w-1/2 h-1/2" />
         </div>
+      )}
+
+      {frameUrl && (
+        /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(frameUrl) ? (
+          <video
+            src={frameUrl}
+            aria-hidden="true"
+            autoPlay
+            muted
+            loop
+            playsInline
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.35] object-contain mix-blend-screen animate-equipped-frame"
+          />
+        ) : (
+          <img
+            src={frameUrl}
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.35] object-contain mix-blend-screen animate-equipped-frame"
+          />
+        )
       )}
 
       {/* VIP Corner Emblem Badge for md/lg/xl */}

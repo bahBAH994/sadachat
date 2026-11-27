@@ -38,6 +38,7 @@ import {
   USER_COLUMNS,
 } from './sadaMappers';
 import { enrichUserWithVipTotals, invalidateUserVipCache } from './sadaVipService';
+import { getEquippedStoreAsset } from './sadaStoreService';
 import { supabase } from './supabase';
 
 export function createEmptyRoomExtras(): RoomExtrasConfig {
@@ -685,6 +686,12 @@ export async function joinRoomInSupabase(
       vipUser.tempEntryExpiresAt &&
       Date.now() < new Date(vipUser.tempEntryExpiresAt).getTime()
   );
+  const equippedEntrance = await getEquippedStoreAsset(vipUser.id, 'entrances').catch(
+    (error) => {
+      console.warn('Unable to load equipped room entrance:', error);
+      return null;
+    }
+  );
 
   // If user is VIP1/2/3/SVIP, emit styled VIP entry bar in chat; otherwise keep standard join notice
   if (vipInfo.key === 'none') {
@@ -767,7 +774,11 @@ export async function joinRoomInSupabase(
   }
 
   let entryEvent: RoomEntryEvent | null = null;
-  if (vipInfo.key === 'svip' || vipInfo.key === 'vip3' || vipInfo.key === 'vip2') {
+  if (
+    vipInfo.key === 'svip' ||
+    vipInfo.key === 'vip3' ||
+    vipInfo.key === 'vip2'
+  ) {
     entryEvent = {
       userId: vipUser.id,
       displayName: vipUser.displayName,
@@ -776,12 +787,14 @@ export async function joinRoomInSupabase(
       level: vipUser.level,
       vipLevel: vipInfo.key,
       entryId: hasValidStoreEntry ? vipUser.activeEntryId : null,
+      entranceAssetUrl: equippedEntrance?.assetUrl,
       entryName:
-        vipInfo.key === 'svip'
+        equippedEntrance?.name ||
+        (vipInfo.key === 'svip'
           ? `👑 تشرف الغرفة بحضور الإمبراطور ${vipUser.displayName}!`
           : vipInfo.key === 'vip3'
           ? `دخولية VIP 3 الذهبية الملكية`
-          : `دخولية VIP 2 الفضية السماوية`,
+          : `دخولية VIP 2 الفضية السماوية`),
       timestamp: nowJoinIso,
     };
   } else if (hasValidStoreEntry && vipUser.activeEntryId) {
@@ -793,6 +806,7 @@ export async function joinRoomInSupabase(
       level: vipUser.level,
       vipLevel: vipInfo.key,
       entryId: vipUser.activeEntryId,
+      entranceAssetUrl: equippedEntrance?.assetUrl,
       entryName: vipUser.activeEntryName || 'دخولية ملكية',
       timestamp: nowJoinIso,
     };
@@ -828,6 +842,19 @@ export async function joinRoomInSupabase(
       type: entryChatMsg.type,
       timestamp: entryChatMsg.timestamp,
     });
+  } else if (equippedEntrance) {
+    entryEvent = {
+      userId: vipUser.id,
+      displayName: vipUser.displayName,
+      avatarUrl: vipUser.avatarUrl,
+      frameId: vipUser.frameId,
+      level: vipUser.level,
+      vipLevel: vipInfo.key,
+      entryId: null,
+      entranceAssetUrl: equippedEntrance.assetUrl,
+      entryName: equippedEntrance.name,
+      timestamp: nowJoinIso,
+    };
   }
 
   const updated = await getRoomDetailsFromSupabase(roomId);

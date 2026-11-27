@@ -53,6 +53,10 @@ import {
   getHostTasksOverviewFromSupabase,
 } from '../lib/sadaWalletService';
 import {
+  getEquippedStoreAsset,
+  type EquippedStoreAsset,
+} from '../lib/sadaStoreService';
+import {
   createRoomInSupabase,
   getUserActiveRoomsInSupabase,
 } from '../lib/sadaRoomsService';
@@ -153,6 +157,7 @@ export const ProfilePage: React.FC = () => {
   const [userFollows, setUserFollows] = useState<Record<string, string[]>>({});
   const [userVisitors, setUserVisitors] = useState<Record<string, string[]>>({});
   const [giftLevels, setGiftLevels] = useState({ sendLevel: 1, receiveLevel: 1 });
+  const [equippedFrame, setEquippedFrame] = useState<EquippedStoreAsset | null>(null);
 
   // Social users modal
   const [socialModalKind, setSocialModalKind] = useState<SocialListKind | null>(null);
@@ -245,6 +250,30 @@ export const ProfilePage: React.FC = () => {
       void supabase.removeChannel(channel);
     };
   }, [loadProfileSocialAndUser, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let active = true;
+    setEquippedFrame(null);
+    void getEquippedStoreAsset(user.id, 'frames')
+      .then((frame) => {
+        if (active) setEquippedFrame(frame);
+      })
+      .catch((error) => {
+        if (active) {
+          setFeedback({
+            type: 'err',
+            text:
+              error instanceof Error
+                ? `تعذّر تحميل الإطار المرتدى: ${error.message}`
+                : 'تعذّر تحميل الإطار المرتدى.',
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   const socialCounts = useMemo(() => {
     if (!user?.id) return { friends: 0, followers: 0, following: 0, visitors: 0 };
@@ -584,7 +613,8 @@ export const ProfilePage: React.FC = () => {
                 <AvatarWithFrame
                   src={pendingAvatarUrl || user.avatarUrl}
                   alt={user.displayName}
-                  frameId={user.frameId}
+                  frameId={equippedFrame?.frameId || user.frameId}
+                  frameUrl={equippedFrame?.assetUrl}
                   vipTier={vipInfo.key}
                   size="xl"
                   customSizeClass="w-28 h-28"

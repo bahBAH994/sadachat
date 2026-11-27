@@ -44,6 +44,7 @@ import {
   voteRoomContestInSupabase,
 } from '../lib/sadaRoomsService';
 import { refreshGameUserFromSupabase } from '../lib/sadaGamesService';
+import { getEquippedStoreAsset } from '../lib/sadaStoreService';
 import { supabase } from '../lib/supabase';
 import { safeGetItem, safeRemoveItem, safeSetItem } from '../lib/safeStorage';
 import type {
@@ -69,6 +70,7 @@ export interface RoomPresenceMember {
   displayName: string;
   avatarUrl: string;
   frameId?: string;
+  frameUrl?: string;
   gender?: User['gender'];
   level?: number;
   vipLevel?: VipTierKey;
@@ -471,14 +473,15 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       entryTimerRef.current = null;
     }
     setEntryBanner(ev);
-    const duration =
-      ev.vipLevel === 'svip'
+    const duration = ev.entranceAssetUrl
+      ? 4000
+      : ev.vipLevel === 'svip'
         ? 3500
         : ev.vipLevel === 'vip3'
-        ? 3500
-        : ev.vipLevel === 'vip2'
-        ? 3200
-        : 4500;
+          ? 3500
+          : ev.vipLevel === 'vip2'
+            ? 3200
+            : 4500;
     entryTimerRef.current = window.setTimeout(() => {
       setEntryBanner((prev) =>
         prev && prev.userId === ev.userId && prev.timestamp === ev.timestamp ? null : prev
@@ -975,21 +978,38 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               .on('presence', { event: 'leave' }, syncRoomPresence)
               .subscribe((status) => {
                 if (status === 'SUBSCRIBED' && presenceChannelRef.current) {
-                  try {
-                    const activeUser = userRef.current || currentUser;
-                    void presenceChannelRef.current.track({
-                      roomId,
-                      userId: activeUser.id,
-                      displayName: activeUser.displayName,
-                      avatarUrl: activeUser.avatarUrl,
-                      frameId: activeUser.frameId,
-                      gender: activeUser.gender,
-                      level: activeUser.level,
-                      vipLevel: getUserVipTierInfo(activeUser).key,
-                    });
-                  } catch {
-                    // ignore presence track errors
-                  }
+                  const activeUser = userRef.current || currentUser;
+                  void (async () => {
+                    let frameUrl: string | undefined;
+                    let frameId = activeUser.frameId;
+                    try {
+                      const equippedFrame = await getEquippedStoreAsset(
+                        activeUser.id,
+                        'frames'
+                      );
+                      frameUrl = equippedFrame?.assetUrl || undefined;
+                      frameId = equippedFrame?.frameId || frameId;
+                    } catch (error) {
+                      console.warn('Unable to load equipped room frame:', error);
+                    }
+
+                    if (presenceChannelRef.current !== lobbyPresenceChannel) return;
+                    try {
+                      await lobbyPresenceChannel.track({
+                        roomId,
+                        userId: activeUser.id,
+                        displayName: activeUser.displayName,
+                        avatarUrl: activeUser.avatarUrl,
+                        frameId,
+                        frameUrl,
+                        gender: activeUser.gender,
+                        level: activeUser.level,
+                        vipLevel: getUserVipTierInfo(activeUser).key,
+                      });
+                    } catch {
+                      // ignore presence track errors
+                    }
+                  })();
                 }
               });
           }

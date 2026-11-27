@@ -13,7 +13,7 @@ export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry })
   const vipLevel = entry?.vipLevel || 'none';
 
   useEffect(() => {
-    if (!entry) return;
+    if (!entry || entry.entranceAssetUrl) return;
     let stopConfetti: (() => void) | undefined;
 
     if (vipLevel === 'svip') {
@@ -32,7 +32,35 @@ export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry })
 
   return (
     <AnimatePresence>
-      {entry && vipLevel === 'svip' && (
+      {entry?.entranceAssetUrl && (
+        <motion.div
+          key={`store-entrance_${entry.userId}_${entry.timestamp}`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.35 }}
+          className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center"
+          aria-label={`${entry.displayName} دخل الغرفة`}
+        >
+          {/(\.mp4|\.webm|\.mov|\.m4v)(?:[?#]|$)/i.test(entry.entranceAssetUrl) ? (
+            <video
+              src={entry.entranceAssetUrl}
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="h-full w-full object-contain mix-blend-screen"
+            />
+          ) : (
+            <img
+              src={entry.entranceAssetUrl}
+              alt=""
+              className="h-full w-full object-contain mix-blend-screen"
+            />
+          )}
+        </motion.div>
+      )}
+      {entry && !entry.entranceAssetUrl && vipLevel === 'svip' && (
         <motion.div
           key={`svip_${entry.userId}_${entry.timestamp}`}
           initial={{ opacity: 0 }}
@@ -92,7 +120,7 @@ export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry })
         </motion.div>
       )}
 
-      {entry && vipLevel === 'vip3' && (
+      {entry && !entry.entranceAssetUrl && vipLevel === 'vip3' && (
         <motion.div
           key={`vip3_${entry.userId}_${entry.timestamp}`}
           initial={{ opacity: 0, y: -24, scale: 0.9 }}
@@ -142,7 +170,7 @@ export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry })
         </motion.div>
       )}
 
-      {entry && vipLevel === 'vip2' && (
+      {entry && !entry.entranceAssetUrl && vipLevel === 'vip2' && (
         <motion.div
           key={`vip2_${entry.userId}_${entry.timestamp}`}
           initial={{ opacity: 0, x: 48, scale: 0.94 }}
@@ -174,26 +202,30 @@ export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry })
         </motion.div>
       )}
 
-      {entry && vipLevel !== 'svip' && vipLevel !== 'vip3' && vipLevel !== 'vip2' && (
-        <motion.div
-          key={`store_${entry.userId}_${entry.timestamp}`}
-          initial={{ opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -40 }}
-          className="mb-1.5 rounded-2xl border border-amber-300/80 bg-gradient-to-r from-[#3E2405]/95 to-[#171209]/95 px-3 py-2 flex items-center gap-2.5 shadow-[0_0_25px_rgba(251,191,36,0.5)] shrink-0"
-        >
-          <Fluent3DAsset
-            glyph={entry.entryId === 'entry_legendary_30d' ? '🐉' : '🚘'}
-            alt="دخولية ملكية"
-            priority
-            sizeClass="w-8 h-8"
-            fallbackTextClass="text-2xl"
-          />
-          <p className="text-xs font-extrabold text-[#FCE9A6] truncate">
-            دخولية ملكية: شرّف {entry.displayName} الوكالة!
-          </p>
-        </motion.div>
-      )}
+      {entry &&
+        !entry.entranceAssetUrl &&
+        vipLevel !== 'svip' &&
+        vipLevel !== 'vip3' &&
+        vipLevel !== 'vip2' && (
+          <motion.div
+            key={`store_${entry.userId}_${entry.timestamp}`}
+            initial={{ opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -40 }}
+            className="mb-1.5 rounded-2xl border border-amber-300/80 bg-gradient-to-r from-[#3E2405]/95 to-[#171209]/95 px-3 py-2 flex items-center gap-2.5 shadow-[0_0_25px_rgba(251,191,36,0.5)] shrink-0"
+          >
+            <Fluent3DAsset
+              glyph={entry.entryId === 'entry_legendary_30d' ? '🐉' : '🚘'}
+              alt="دخولية ملكية"
+              priority
+              sizeClass="w-8 h-8"
+              fallbackTextClass="text-2xl"
+            />
+            <p className="text-xs font-extrabold text-[#FCE9A6] truncate">
+              دخولية ملكية: شرّف {entry.displayName} الوكالة!
+            </p>
+          </motion.div>
+        )}
     </AnimatePresence>
   );
 };

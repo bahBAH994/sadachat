@@ -20,6 +20,14 @@ export interface OwnedStoreItem extends StoreItem {
   equipped: boolean;
 }
 
+export interface EquippedStoreAsset {
+  category: StoreCategory;
+  name: string;
+  assetUrl: string;
+  assetPath: string;
+  frameId?: string;
+}
+
 const STORE_ASSETS_BUCKET = 'store-assets';
 const DATA_URL_ASSET_PREFIX = 'data:';
 
@@ -89,13 +97,98 @@ export async function getMyStoreItems(
   }));
 }
 
+export async function getEquippedStoreAsset(
+  userId: string,
+  category: StoreCategory
+): Promise<EquippedStoreAsset | null> {
+  const { data, error } = await supabase
+    .from('sada_user_store_items')
+    .select(
+      'is_equipped, item:sada_store_items!inner(id, category, name, asset_url, asset_path)'
+    )
+    .eq('user_id', userId)
+    .eq('is_equipped', true)
+    .eq('item.category', category)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (data?.item) {
+    const item = data.item as Record<string, unknown>;
+    return {
+      category,
+      name: String(item.name),
+      assetUrl: String(item.asset_url),
+      assetPath: String(item.asset_path),
+    };
+  }
+
+  if (category !== 'frames') return null;
+
+  const { data: userFrame, error: userFrameError } = await supabase
+    .from('sada_users')
+    .select('equipped_frame, frame_url')
+    .eq('id', userId)
+    .maybeSingle();
+  if (userFrameError && userFrameError.code !== '42703') {
+    throw new Error(userFrameError.message);
+  }
+  if (!userFrame) return null;
+
+  const frameUrl =
+    typeof userFrame.frame_url === 'string' && userFrame.frame_url.trim()
+      ? userFrame.frame_url
+      : typeof userFrame.equipped_frame === 'string' &&
+          /^(https?:|data:|blob:)/i.test(userFrame.equipped_frame)
+        ? userFrame.equipped_frame
+        : null;
+  if (frameUrl) {
+    return {
+      category,
+      name: 'إطار مرتدى',
+      assetUrl: frameUrl,
+      assetPath: frameUrl,
+    };
+  }
+
+  const frameId =
+    typeof userFrame.equipped_frame === 'string' && userFrame.equipped_frame.trim()
+      ? userFrame.equipped_frame
+      : undefined;
+  if (!frameId) return null;
+
+  const { data: storeFrame, error: storeFrameError } = await supabase
+    .from('sada_store_items')
+    .select('name, asset_url, asset_path')
+    .eq('id', frameId)
+    .eq('category', 'frames')
+    .maybeSingle();
+  if (storeFrameError) throw new Error(storeFrameError.message);
+  return storeFrame
+    ? {
+        category,
+        name: String(storeFrame.name),
+        assetUrl: String(storeFrame.asset_url),
+        assetPath: String(storeFrame.asset_path),
+      }
+    : { category, name: 'إطار مرتدى', assetUrl: '', assetPath: '', frameId };
+}
+
 export async function purchaseStoreItem(userId: string, itemId: string): Promise<number> {
   const { data, error } = await supabase.rpc('sada_purchase_store_item', {
     p_user_id: userId,
     p_item_id: itemId,
   });
   if (error) throw new Error(error.message);
-  const coins = Number((data as { coins?: unknown } | null)?.coins);
+  const result = data as
+    | { success?: unknown; new_coins?: unknown; coins?: unknown; message?: unknown }
+    | null;
+  if (result?.success === false) {
+    throw new Error(
+      typeof result.message === 'string' ? result.message : 'تعذّر إتمام الشراء.'
+    );
+  }
+  const coins = Number(result?.new_coins ?? result?.coins);
   if (!Number.isFinite(coins)) throw new Error('تعذّر تحديث رصيد الكوينز بعد الشراء.');
   return coins;
 }

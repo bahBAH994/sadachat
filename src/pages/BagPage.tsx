@@ -174,7 +174,7 @@ export const BagPage: React.FC = () => {
                   key={item.id}
                   className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
                 >
-                  <div className="flex h-48 items-center justify-center bg-slate-100">
+                  <div className="flex h-48 items-center justify-center bg-[#0F1117]">
                     {isVideo ? (
                       <video
                         src={item.assetUrl}
