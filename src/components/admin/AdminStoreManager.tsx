@@ -64,14 +64,19 @@ export const AdminStoreManager: React.FC = () => {
     setSaving(true);
     setMessage(null);
     try {
-      await addStoreItem({ category, name: name.trim(), priceCoins: parsedPrice, file });
+      const addedItem = await addStoreItem({
+        category,
+        name: name.trim(),
+        priceCoins: parsedPrice,
+        file,
+      });
+      setItems((current) => [addedItem, ...current]);
       setName('');
       setPriceCoins('');
       setFile(null);
       const input = document.getElementById('admin-store-asset') as HTMLInputElement | null;
       if (input) input.value = '';
       setMessage({ type: 'ok', text: 'تمت إضافة العنصر إلى المتجر.' });
-      await loadItems();
     } catch (error) {
       setMessage({
         type: 'err',

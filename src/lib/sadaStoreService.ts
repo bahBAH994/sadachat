@@ -20,7 +20,23 @@ export interface OwnedStoreItem extends StoreItem {
   equipped: boolean;
 }
 
-const STORE_ASSETS_BUCKET = 'sada-store-assets';
+const STORE_ASSETS_BUCKET = 'store-assets';
+const DATA_URL_ASSET_PREFIX = 'data:';
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('تعذّرت قراءة الملف كبيانات محلية.'));
+        return;
+      }
+      resolve(reader.result);
+    };
+    reader.onerror = () => reject(new Error('تعذّرت قراءة الملف كبيانات محلية.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 function mapStoreItem(row: Record<string, unknown>): StoreItem {
   return {
@@ -113,36 +129,88 @@ export async function addStoreItem(input: {
   name: string;
   priceCoins: number;
   file: File;
-}): Promise<void> {
+}): Promise<StoreItem> {
   if (!input.file.type.startsWith('image/') && !input.file.type.startsWith('video/')) {
     throw new Error('اختر ملف صورة أو فيديو متحركاً صالحاً.');
   }
   const itemId = genId('store');
   const safeFileName = input.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const assetPath = `${itemId}/${safeFileName}`;
+  const storagePath = `${itemId}/${safeFileName}`;
   const storage = supabase.storage.from(STORE_ASSETS_BUCKET);
-  const { error: uploadError } = await storage.upload(assetPath, input.file, {
-    contentType: input.file.type,
-    upsert: false,
-  });
-  if (uploadError) throw new Error(uploadError.message);
+  let uploadedToStorage = false;
+  let assetUrl: string;
+  let assetPath = storagePath;
+  let uploadError: Error | null = null;
+  try {
+    const upload = await storage.upload(storagePath, input.file, {
+      contentType: input.file.type,
+      upsert: false,
+    });
+    uploadError = upload.error;
+  } catch (error) {
+    uploadError = error instanceof Error ? error : new Error(String(error));
+  }
 
-  const { data: publicUrl } = storage.getPublicUrl(assetPath);
-  const { error: insertError } = await supabase.from('sada_store_items').insert({
-    id: itemId,
-    category: input.category,
-    name: input.name.trim(),
-    price_coins: input.priceCoins,
-    asset_url: publicUrl.publicUrl,
-    asset_path: assetPath,
-  });
+  if (uploadError) {
+    let createBucketError: Error | null = null;
+    try {
+      const createBucket = await supabase.storage.createBucket(STORE_ASSETS_BUCKET, {
+        public: true,
+      });
+      createBucketError = createBucket.error;
+    } catch (error) {
+      createBucketError = error instanceof Error ? error : new Error(String(error));
+    }
+
+    try {
+      const retry = await storage.upload(storagePath, input.file, {
+        contentType: input.file.type,
+        upsert: false,
+      });
+      uploadError = retry.error;
+    } catch (error) {
+      uploadError = error instanceof Error ? error : new Error(String(error));
+    }
+    if (uploadError) {
+      console.warn('Cloud store asset upload failed; using a data URL fallback.', {
+        uploadError,
+        createBucketError,
+      });
+    }
+  }
+
+  if (!uploadError) {
+    uploadedToStorage = true;
+    const { data: publicUrl } = storage.getPublicUrl(storagePath);
+    assetUrl = publicUrl.publicUrl;
+  } else {
+    assetUrl = await readFileAsDataUrl(input.file);
+    assetPath = `${DATA_URL_ASSET_PREFIX}${storagePath}`;
+  }
+
+  const { data, error: insertError } = await supabase
+    .from('sada_store_items')
+    .insert({
+      id: itemId,
+      category: input.category,
+      name: input.name.trim(),
+      price_coins: input.priceCoins,
+      asset_url: assetUrl,
+      asset_path: assetPath,
+    })
+    .select('*')
+    .single();
   if (insertError) {
-    const { error: cleanupError } = await storage.remove([assetPath]);
-    if (cleanupError) {
-      console.error('Unable to remove uploaded store asset after item insert failed:', cleanupError);
+    if (uploadedToStorage) {
+      const { error: cleanupError } = await storage.remove([storagePath]);
+      if (cleanupError) {
+        console.error('Unable to remove uploaded store asset after item insert failed:', cleanupError);
+      }
     }
     throw new Error(insertError.message);
   }
+
+  return mapStoreItem(data as Record<string, unknown>);
 }
 
 export async function deleteStoreItem(itemId: string): Promise<void> {
@@ -160,8 +228,11 @@ export async function deleteStoreItem(itemId: string): Promise<void> {
     .eq('id', itemId);
   if (deleteError) throw new Error(deleteError.message);
 
-  const { error: storageError } = await supabase.storage
-    .from(STORE_ASSETS_BUCKET)
-    .remove([String(item.asset_path)]);
-  if (storageError) throw new Error(`حُذف العنصر، لكن تعذّر حذف ملفه: ${storageError.message}`);
+  const assetPath = String(item.asset_path);
+  if (!assetPath.startsWith(DATA_URL_ASSET_PREFIX)) {
+    const { error: storageError } = await supabase.storage
+      .from(STORE_ASSETS_BUCKET)
+      .remove([assetPath]);
+    if (storageError) throw new Error(`حُذف العنصر، لكن تعذّر حذف ملفه: ${storageError.message}`);
+  }
 }

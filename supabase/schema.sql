@@ -2497,18 +2497,18 @@ CREATE POLICY "sada_user_store_items_read_own" ON public.sada_user_store_items
   USING (user_id = auth.uid()::TEXT);
 
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('sada-store-assets', 'sada-store-assets', TRUE)
+VALUES ('store-assets', 'store-assets', TRUE)
 ON CONFLICT (id) DO UPDATE SET public = TRUE;
 
 DROP POLICY IF EXISTS "sada_store_assets_public_read" ON storage.objects;
 CREATE POLICY "sada_store_assets_public_read" ON storage.objects
   FOR SELECT TO anon, authenticated
-  USING (bucket_id = 'sada-store-assets');
+  USING (bucket_id = 'store-assets');
 DROP POLICY IF EXISTS "sada_store_assets_admin_insert" ON storage.objects;
 CREATE POLICY "sada_store_assets_admin_insert" ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (
-    bucket_id = 'sada-store-assets'
+    bucket_id = 'store-assets'
     AND EXISTS (
       SELECT 1 FROM public.sada_users AS app_user
       WHERE app_user.id = auth.uid()::TEXT AND app_user.is_admin = TRUE
@@ -2518,7 +2518,7 @@ DROP POLICY IF EXISTS "sada_store_assets_admin_delete" ON storage.objects;
 CREATE POLICY "sada_store_assets_admin_delete" ON storage.objects
   FOR DELETE TO authenticated
   USING (
-    bucket_id = 'sada-store-assets'
+    bucket_id = 'store-assets'
     AND EXISTS (
       SELECT 1 FROM public.sada_users AS app_user
       WHERE app_user.id = auth.uid()::TEXT AND app_user.is_admin = TRUE
