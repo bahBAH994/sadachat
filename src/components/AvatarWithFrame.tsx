@@ -104,7 +104,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   const [failed, setFailed] = useState(false);
   const [frameColor, setFrameColor] = useState('#FCE9A6');
   const handleFrameColor = useCallback((color: string) => setFrameColor(color), []);
-  const activeFrameId = frameId || 'frame_obsidian';
+  const activeFrameId = frameUrl ? 'frame_obsidian' : (frameId || 'frame_obsidian');
   const frameClass = (FRAME_CLASSES[activeFrameId] || FRAME_CLASSES.frame_obsidian)
     .split(' ')
     .filter((className) => animateFrame || !className.startsWith('animate-'))
@@ -356,11 +356,11 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
           referrerPolicy="no-referrer"
           onError={() => setFailed(true)}
           style={animateFrame ? undefined : { animation: 'none' }}
-          className={`relative z-10 ${dimClass} ${hasCustomFrame ? "scale-[0.74]" : ""} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
+          className={`relative z-10 ${dimClass} ${hasCustomFrame ? "scale-[0.76]" : ""} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
         />
       ) : (
         <div
-          className={`relative z-10 ${dimClass} ${hasCustomFrame ? "scale-[0.74]" : ""} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${vipRingVisualClass}`}
+          className={`relative z-10 ${dimClass} ${hasCustomFrame ? "scale-[0.76]" : ""} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${vipRingVisualClass}`}
         >
           <User className="w-1/2 h-1/2" />
         </div>
@@ -370,9 +370,9 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
         <>
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.92] flex items-center justify-center"
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[2.05] flex items-center justify-center"
             style={{
-              filter: `drop-shadow(0 0 7px ${frameColor}) drop-shadow(0 0 14px ${frameColor}99) brightness(1.12)`,
+              filter: `drop-shadow(0 0 4px ${frameColor}77)`,
             }}
           >
             {/\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(frameUrl) ? (
@@ -380,20 +380,20 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
                 src={frameUrl}
                 alt=""
                 onDominantColor={handleFrameColor}
-                className="h-full w-full object-contain"
+                className="h-full w-full object-contain mix-blend-screen"
               />
             ) : (
               <TransparentAssetImage
                 src={frameUrl}
                 alt=""
                 onDominantColor={handleFrameColor}
-                className="h-full w-full object-contain"
+                className="h-full w-full object-contain mix-blend-screen"
               />
             )}
           </div>
           <span
             aria-hidden="true"
-            className="absolute inset-0 z-30 scale-[1.92] overflow-visible pointer-events-none"
+            className="absolute inset-0 z-30 scale-[2.05] overflow-visible pointer-events-none"
           >
             {[
               { left: '10%', top: '24%' },

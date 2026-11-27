@@ -1172,7 +1172,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
           )}
 
           {/* TOP 1 Winged Golden Crown Aura */}
-          {isTop1 && (
+          {isTop1 && !frameUrl && (
             <span
               aria-hidden="true"
               className="absolute -inset-2 pointer-events-none flex items-center justify-between text-amber-300 text-xs"
@@ -1290,7 +1290,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
           </AnimatePresence>
 
           {/* TOP 1 Crest Pill */}
-          {isTop1 && (
+          {isTop1 && !frameUrl && (
             <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 text-[#070913] text-[7px] font-extrabold leading-tight shadow z-10 whitespace-nowrap">
               TOP1
             </span>
