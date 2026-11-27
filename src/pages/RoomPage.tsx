@@ -267,7 +267,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
   );
 
   useEffect(() => {
-    const channel = supabase.channel(`room-lucky-wheel:${roomId}`);
+    const channel = supabase.channel(`room-lucky-wheel-RoomPage:${roomId}`);
     channelRef.current = channel;
 
     channel

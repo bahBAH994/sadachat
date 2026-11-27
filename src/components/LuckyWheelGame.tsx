@@ -142,7 +142,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
     };
     void loadRound();
     const channel = supabase
-      .channel(`room-lucky-wheel:${roomId}`)
+      .channel(`room-lucky-wheel-LuckyWheelGame:${roomId}`)
       .on(
         'postgres_changes',
         {
