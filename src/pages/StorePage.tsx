@@ -136,6 +136,10 @@ export const StorePage: React.FC = () => {
             {items.map((item) => {
               const isOwned = ownedIds.includes(item.id);
               const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(item.assetPath);
+              const isFrameOrEntrance = item.category !== 'backgrounds';
+              const artworkClass = `h-full w-full object-contain ${
+                isFrameOrEntrance ? 'mix-blend-screen brightness-110 contrast-125' : ''
+              }`;
               return (
                 <article
                   key={item.id}
@@ -145,7 +149,7 @@ export const StorePage: React.FC = () => {
                     {isVideo ? (
                       <video
                         src={item.assetUrl}
-                        className="h-full w-full object-contain"
+                        className={artworkClass}
                         autoPlay
                         muted
                         loop
@@ -155,7 +159,7 @@ export const StorePage: React.FC = () => {
                       <img
                         src={item.assetUrl}
                         alt={item.name}
-                        className="h-full w-full object-contain"
+                        className={artworkClass}
                         loading="lazy"
                       />
                     )}

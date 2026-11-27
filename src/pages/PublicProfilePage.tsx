@@ -5,7 +5,6 @@ import { AvatarWithFrame, VipTierBadge, VipUserName } from '../components/Avatar
 import { GenderBadge } from '../components/GenderBadge';
 import { ARAB_COUNTRIES, getUserVipTierInfo } from '../lib/sadaCatalog';
 import { getUserPublicProfileFromSupabase } from '../lib/sadaAuth';
-import { safeGetItem } from '../lib/safeStorage';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types';
 
@@ -50,10 +49,7 @@ export const PublicProfilePage: React.FC = () => {
     };
   }, [id]);
 
-  const frameId =
-    profile?.id === currentUser?.id
-      ? safeGetItem('sada_equipped_frame') || profile?.frameId
-      : profile?.frameId;
+  const frameId = profile?.frameId;
   const country = profile?.country
     ? ARAB_COUNTRIES.find((item) => item.code === profile.country)
     : undefined;

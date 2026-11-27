@@ -132,6 +132,10 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
     <div
       onClick={onClick}
       className={`relative inline-flex items-center justify-center shrink-0 ${
+        activeFrameId !== 'frame_obsidian' && resolvedVip === 'none'
+          ? 'animate-frame-pulse-glow'
+          : ''
+      } ${
         onClick ? 'cursor-pointer hover:scale-105 transition-transform' : ''
       }`}
     >
@@ -266,7 +270,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
         <>
           <span
             aria-hidden="true"
-            className={`absolute -inset-[5px] rounded-full pointer-events-none opacity-95 ${
+            className={`absolute inset-0 scale-[1.35] rounded-full pointer-events-none opacity-95 ${
               activeFrameId === 'frame_galaxy_sovereign'
                 ? 'animate-frame-galaxy-ring'
                 : activeFrameId === 'frame_imperial_dragon'

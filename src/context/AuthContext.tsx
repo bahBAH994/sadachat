@@ -13,11 +13,9 @@ import {
   loginOrRegisterWithSupabase,
   logoutFromSupabase,
 } from '../lib/sadaAuth';
-import { safeGetItem, safeRemoveItem, safeSetItem } from '../lib/safeStorage';
 import { supabase } from '../lib/supabase';
 import type { User } from '../types';
 
-const CACHED_USER_STORAGE_KEY = 'sada_cached_user_v1';
 const BOOT_SAFETY_TIMEOUT_MS = 2500;
 
 interface AuthPayload {
@@ -43,29 +41,6 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-function readCachedUser(): User | null {
-  try {
-    const raw = safeGetItem(CACHED_USER_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as User;
-    return parsed?.id && parsed?.email ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function persistCachedUser(user: User | null): void {
-  try {
-    if (!user) {
-      safeRemoveItem(CACHED_USER_STORAGE_KEY);
-    } else {
-      safeSetItem(CACHED_USER_STORAGE_KEY, JSON.stringify(user));
-    }
-  } catch {
-    // ignore storage errors
-  }
-}
 
 function areUsersEqualMeaningfully(a: User | null, b: User | null): boolean {
   if (a === b) return true;
@@ -102,10 +77,8 @@ function areUsersEqualMeaningfully(a: User | null, b: User | null): boolean {
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const initialCachedUser = useMemo(() => readCachedUser(), []);
-  const [user, setUser] = useState<User | null>(initialCachedUser);
-  // If we already have a cached user, enter immediately and verify silently in background
-  const [loading, setLoading] = useState(!initialCachedUser);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const [deviceUuid] = useState(() => getOrCreateDeviceUuid());
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
 
@@ -117,7 +90,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const skipNextAuthEventRef = useRef<boolean>(false);
 
   const commitUserSilently = useCallback((next: User | null) => {
-    persistCachedUser(next);
     setUser((prev) => (areUsersEqualMeaningfully(prev, next) ? prev : next));
   }, []);
 

@@ -74,7 +74,6 @@ import { RoomMusicModal } from '../components/RoomMusicModal';
 import { RoomSettingsModal } from '../components/RoomSettingsModal';
 import { Royal3DDieFaceBadge } from '../components/Royal3DDice';
 import { TieredGiftEffectsOverlay } from '../components/TieredGiftEffectsOverlay';
-import { safeGetItem } from '../lib/safeStorage';
 import { supabase } from '../lib/supabase';
 import { playWheelPegTick } from '../lib/sadaAudio';
 import {
@@ -2047,7 +2046,7 @@ export const RoomPage: React.FC = () => {
     seatRefs.current[seatIndex] = el;
   }, []);
   const equippedFrameId = user
-    ? safeGetItem('sada_equipped_frame') || user.frameId
+    ? user.frameId
     : undefined;
   const canApproveMicRequests = canManageRoomActions;
   const canJoinMicWithoutApproval =

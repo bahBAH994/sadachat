@@ -759,26 +759,30 @@ export const ProfilePage: React.FC = () => {
             <span className="text-[11px] font-extrabold text-slate-200">محفظة الألماس</span>
           </button>
         </section>
-        <section className="rounded-3xl bg-gradient-to-br from-[#171522] to-[#101522] border border-amber-300/20 p-3 grid grid-cols-2 divide-x divide-x-reverse divide-amber-300/20 shadow-lg">
-          <div className="pl-2 text-right space-y-1">
-            <span className="block text-[11px] text-slate-400 font-bold">رصيد الكوينز</span>
-            <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2 text-xl font-black text-[#FCE9A6] font-mono-num"><CoinIcon className="w-5 h-5 text-[#D4AF37]" />{user.coins.toLocaleString('en-US')}</span>
-              <button
-                type="button"
-                onClick={() => navigate('/wallet')}
-                className="gold-btn flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg font-black"
-                aria-label="الشحن VIP"
-                title="الشحن VIP"
-              >
-                +
-              </button>
-            </div>
+        <section className="relative grid grid-cols-2 rounded-3xl border border-amber-300/20 bg-gradient-to-br from-[#171522] to-[#101522] p-3 shadow-lg">
+          <div className="flex flex-col items-center justify-center gap-1 border-e border-amber-300/20 text-center">
+            <span className="text-[11px] font-bold text-slate-400">رصيد الكوينز</span>
+            <span className="flex items-center justify-center gap-2 text-xl font-black font-mono-num text-[#FCE9A6]">
+              <CoinIcon className="h-5 w-5 text-[#D4AF37]" />
+              {user.coins.toLocaleString('en-US')}
+            </span>
           </div>
-          <div className="pr-3 text-right space-y-1">
-            <span className="block text-[11px] text-slate-400 font-bold">رصيد الألماس</span>
-            <span className="flex items-center gap-2 text-xl font-black text-white font-mono-num"><DiamondIcon className="w-5 h-5 text-[#D4AF37]" />{user.diamonds.toLocaleString('en-US')}</span>
+          <div className="flex flex-col items-center justify-center gap-1 text-center">
+            <span className="text-[11px] font-bold text-slate-400">رصيد الألماس</span>
+            <span className="flex items-center justify-center gap-2 text-xl font-black font-mono-num text-white">
+              <DiamondIcon className="h-5 w-5 text-[#D4AF37]" />
+              {user.diamonds.toLocaleString('en-US')}
+            </span>
           </div>
+          <button
+            type="button"
+            onClick={() => navigate('/wallet')}
+            className="gold-btn absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-lg font-black"
+            aria-label="الشحن VIP"
+            title="الشحن VIP"
+          >
+            +
+          </button>
         </section>
       </div>
 

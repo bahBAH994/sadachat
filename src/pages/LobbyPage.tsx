@@ -1196,13 +1196,17 @@ export const LobbyPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setMainTab('party');
-                  setActiveChip('الوكالات');
+                  if (activeChip === 'الغرف الخاصة') {
+                    setSelectedCountry(COUNTRY_FILTERS[0]);
+                  } else {
+                    setMainTab('party');
+                    setActiveChip('الوكالات');
+                  }
                   setSearch('');
                 }}
                 className="emerald-btn rounded-xl px-5 py-2 text-xs cursor-pointer"
               >
-                عرض جميع الوكالات
+                {activeChip === 'الغرف الخاصة' ? 'عرض جميع الغرف' : 'عرض جميع الوكالات'}
               </button>
             </div>
           ) : (

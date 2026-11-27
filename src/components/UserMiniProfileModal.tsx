@@ -26,7 +26,6 @@ import {
   parseVipTierKey,
 } from '../lib/sadaCatalog';
 import { getPlatformState } from '../lib/sadaMappers';
-import { safeGetItem } from '../lib/safeStorage';
 import {
   getFollowStatus,
   getUserGiftLevelsFromSupabase,
@@ -95,7 +94,6 @@ export const UserMiniProfileModal: React.FC = () => {
     displayName: fetchedUser?.displayName || previewUser?.displayName || 'عضو صَدَى',
     avatarUrl: fetchedUser?.avatarUrl || previewUser?.avatarUrl || 'host_male',
     frameId:
-      (selectedUserId === currentUser?.id ? safeGetItem('sada_equipped_frame') : null) ||
       fetchedUser?.frameId ||
       previewUser?.frameId ||
       'frame_obsidian',

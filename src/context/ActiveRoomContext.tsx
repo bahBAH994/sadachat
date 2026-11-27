@@ -1038,7 +1038,28 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const restoreKey = `${user.id}:${savedRoomId}`;
     if (restoredRoomKeyRef.current === restoreKey) return;
     restoredRoomKeyRef.current = restoreKey;
-    void enterRoom(savedRoomId);
+    let active = true;
+    void (async () => {
+      const { data, error: roomLookupError } = await supabase
+        .from('sada_rooms')
+        .select('id, is_active')
+        .eq('id', savedRoomId)
+        .maybeSingle();
+      if (!active) return;
+      if (roomLookupError) {
+        setError(`تعذّر التحقق من الغرفة المحفوظة: ${roomLookupError.message}`);
+        return;
+      }
+      if (!data || data.is_active !== true) {
+        safeRemoveItem(ACTIVE_ROOM_STORAGE_KEY);
+        restoredRoomKeyRef.current = null;
+        return;
+      }
+      void enterRoom(savedRoomId);
+    })();
+    return () => {
+      active = false;
+    };
   }, [enterRoom, user?.id]);
 
   // Auto-eject if kicked from agency by manager

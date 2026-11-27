@@ -24,6 +24,12 @@ export const BagPage: React.FC = () => {
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
   );
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const loadBag = useCallback(async () => {
     if (!user?.id) return;
@@ -47,6 +53,9 @@ export const BagPage: React.FC = () => {
   }, [loadBag]);
 
   if (!user) return null;
+  const visibleItems = items.filter(
+    (item) => !item.expiresAt || new Date(item.expiresAt).getTime() > now
+  );
 
   const handleEquip = async (item: OwnedStoreItem) => {
     setBusyId(item.id);
@@ -145,14 +154,21 @@ export const BagPage: React.FC = () => {
               <div key={key} className="h-56 animate-pulse rounded-3xl bg-white" />
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <div className="rounded-3xl border border-slate-200 bg-white px-5 py-12 text-center text-sm font-bold text-slate-600">
             لا توجد عناصر مضافة في هذا القسم حالياً
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {items.map((item) => {
+            {visibleItems.map((item) => {
               const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(item.assetPath);
+              const isFrameOrEntrance = item.category !== 'backgrounds';
+              const artworkClass = `h-full w-full object-contain ${
+                isFrameOrEntrance ? 'mix-blend-screen brightness-110 contrast-125' : ''
+              }`;
+              const remainingDays = item.expiresAt
+                ? Math.ceil((new Date(item.expiresAt).getTime() - now) / 86_400_000)
+                : null;
               return (
                 <article
                   key={item.id}
@@ -162,7 +178,7 @@ export const BagPage: React.FC = () => {
                     {isVideo ? (
                       <video
                         src={item.assetUrl}
-                        className="h-full w-full object-contain"
+                        className={artworkClass}
                         autoPlay
                         muted
                         loop
@@ -172,7 +188,7 @@ export const BagPage: React.FC = () => {
                       <img
                         src={item.assetUrl}
                         alt={item.name}
-                        className="h-full w-full object-contain"
+                        className={artworkClass}
                         loading="lazy"
                       />
                     )}
@@ -192,6 +208,11 @@ export const BagPage: React.FC = () => {
                       <span>{item.source === 'reward' ? 'مكافأة' : 'شراء من المتجر'}</span>
                       <span>{item.priceCoins.toLocaleString('en-US')} كوينز</span>
                     </div>
+                    {remainingDays !== null && (
+                      <p className="w-fit rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-extrabold text-amber-800">
+                        متبقي {remainingDays} {remainingDays === 1 ? 'يوم' : 'يوماً'}
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"

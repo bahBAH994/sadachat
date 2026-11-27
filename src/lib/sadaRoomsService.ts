@@ -385,6 +385,7 @@ export async function createRoomInSupabase(
       .select('id, is_active')
       .eq('host_id', user.id)
       .eq('is_agency', false)
+      .eq('is_active', true)
       .order('created_at', { ascending: false })
       .limit(1);
     if (existingError) {

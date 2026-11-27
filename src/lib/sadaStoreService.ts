@@ -15,6 +15,7 @@ export interface StoreItem {
 
 export interface OwnedStoreItem extends StoreItem {
   acquiredAt: string;
+  expiresAt: string | null;
   source: 'purchase' | 'reward';
   equipped: boolean;
 }
@@ -47,12 +48,18 @@ export async function getMyStoreItems(
   userId: string,
   category?: StoreCategory
 ): Promise<OwnedStoreItem[]> {
+  const { error: expiryError } = await supabase.rpc('sada_expire_store_items', {
+    p_user_id: userId,
+  });
+  if (expiryError) throw new Error(expiryError.message);
+
   let query = supabase
     .from('sada_user_store_items')
     .select(
-      'acquired_at, source, is_equipped, item:sada_store_items!inner(id, category, name, price_coins, asset_url, asset_path, created_at)'
+      'acquired_at, expires_at, source, is_equipped, item:sada_store_items!inner(id, category, name, price_coins, asset_url, asset_path, created_at)'
     )
     .eq('user_id', userId)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order('acquired_at', { ascending: false });
   if (category) query = query.eq('item.category', category);
   const { data, error } = await query;
@@ -60,6 +67,7 @@ export async function getMyStoreItems(
   return (data || []).map((row) => ({
     ...mapStoreItem(row.item as Record<string, unknown>),
     acquiredAt: String(row.acquired_at),
+    expiresAt: row.expires_at ? String(row.expires_at) : null,
     source: row.source as OwnedStoreItem['source'],
     equipped: Boolean(row.is_equipped),
   }));

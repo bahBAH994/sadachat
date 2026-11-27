@@ -2448,8 +2448,16 @@ CREATE TABLE IF NOT EXISTS public.sada_user_store_items (
   source TEXT NOT NULL CHECK (source IN ('purchase', 'reward')),
   is_equipped BOOLEAN NOT NULL DEFAULT FALSE,
   acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
   PRIMARY KEY (user_id, item_id)
 );
+
+ALTER TABLE public.sada_user_store_items
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+UPDATE public.sada_user_store_items
+SET expires_at = acquired_at + INTERVAL '30 days'
+WHERE source = 'purchase' AND expires_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_sada_user_store_items_user
   ON public.sada_user_store_items(user_id, acquired_at DESC);
@@ -2557,8 +2565,8 @@ BEGIN
     RAISE EXCEPTION 'رصيد الكوينز غير كافٍ أو الحساب غير متاح.';
   END IF;
 
-  INSERT INTO public.sada_user_store_items (user_id, item_id, source)
-  VALUES (p_user_id, p_item_id, 'purchase');
+  INSERT INTO public.sada_user_store_items (user_id, item_id, source, expires_at)
+  VALUES (p_user_id, p_item_id, 'purchase', NOW() + INTERVAL '30 days');
   INSERT INTO public.sada_transactions
     (id, user_id, type, amount, currency, description, timestamp)
   VALUES (
@@ -2597,7 +2605,8 @@ BEGIN
   FROM public.sada_store_items AS item
   JOIN public.sada_user_store_items AS owned
     ON owned.item_id = item.id AND owned.user_id = p_user_id
-  WHERE item.id = p_item_id;
+  WHERE item.id = p_item_id
+    AND (owned.expires_at IS NULL OR owned.expires_at > NOW());
   IF item_category IS NULL THEN
     RAISE EXCEPTION 'العنصر غير موجود في حقيبتك.';
   END IF;
@@ -2614,6 +2623,26 @@ BEGIN
   UPDATE public.sada_user_store_items
   SET is_equipped = p_equipped
   WHERE user_id = p_user_id AND item_id = p_item_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_expire_store_items(p_user_id TEXT)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+BEGIN
+  IF auth.uid() IS NULL OR auth.uid()::TEXT <> p_user_id THEN
+    RAISE EXCEPTION 'لا يمكن تعديل حقيبة مستخدم آخر.';
+  END IF;
+
+  UPDATE public.sada_user_store_items
+  SET is_equipped = FALSE
+  WHERE user_id = p_user_id
+    AND expires_at IS NOT NULL
+    AND expires_at <= NOW()
+    AND is_equipped = TRUE;
 END;
 $$;
 
@@ -2665,10 +2694,12 @@ $$;
 
 REVOKE ALL ON FUNCTION public.sada_purchase_store_item(TEXT, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_set_store_item_equipped(TEXT, TEXT, BOOLEAN) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_expire_store_items(TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_remove_store_item_from_bag(TEXT, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.sada_grant_store_item(TEXT, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.sada_purchase_store_item(TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_set_store_item_equipped(TEXT, TEXT, BOOLEAN) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_expire_store_items(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_remove_store_item_from_bag(TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_grant_store_item(TEXT, TEXT) TO authenticated;
 
