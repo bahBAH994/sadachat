@@ -1,52 +1,46 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Briefcase,
-  CheckCircle2,
-  Coins,
-  Crown,
-  Gem,
-  Image as ImageIcon,
-  Sparkles,
-} from 'lucide-react';
+import { CheckCircle2, Coins, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
-  getUserVipTierInfo,
-  STORE_3D_ITEMS,
-  STORE_COIN_ITEMS,
-  STORE_LUXURY_BACKGROUNDS,
-} from '../lib/sadaCatalog';
-import {
-  applyRoomBackgroundToMyRoomInSupabase,
-  equipStoreOrBagItemInSupabase,
-  getStoreAndBagOverviewFromSupabase,
-} from '../lib/sadaWalletService';
-import type { FrameItem } from '../types';
-import { AvatarWithFrame } from '../components/AvatarWithFrame';
+  getMyStoreItems,
+  removeStoreItemFromBag,
+  setStoreItemEquipped,
+  type OwnedStoreItem,
+  type StoreCategory,
+} from '../lib/sadaStoreService';
+
+const BAG_TABS: Array<{ id: StoreCategory; label: string }> = [
+  { id: 'frames', label: 'إطارات' },
+  { id: 'entrances', label: 'دخوليات' },
+  { id: 'backgrounds', label: 'خلفيات' },
+];
 
 export const BagPage: React.FC = () => {
-  const { user, updateLocalUser } = useAuth();
-  const navigate = useNavigate();
-
-  const [frames, setFrames] = useState<FrameItem[]>([]);
-  const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<StoreCategory>('frames');
+  const [items, setItems] = useState<OwnedStoreItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
   );
 
   const loadBag = useCallback(async () => {
     if (!user?.id) return;
+    setLoading(true);
+    setItems([]);
+    setFeedback(null);
     try {
-      const data = await getStoreAndBagOverviewFromSupabase(user.id);
-      updateLocalUser(data.user);
-      setFrames(data.frames);
-      setOwnedBackgrounds(data.ownedBackgrounds);
+      setItems(await getMyStoreItems(user.id, activeTab));
+    } catch (error) {
+      setFeedback({
+        type: 'err',
+        text: error instanceof Error ? error.message : 'تعذّر تحميل الحقيبة.',
+      });
     } finally {
       setLoading(false);
     }
-  }, [user?.id, updateLocalUser]);
+  }, [user?.id, activeTab]);
 
   useEffect(() => {
     void loadBag();
@@ -54,234 +48,182 @@ export const BagPage: React.FC = () => {
 
   if (!user) return null;
 
-  const unlockedItems = frames.filter((f) => user.unlockedFrames.includes(f.id));
-  const ownedBgItems = STORE_LUXURY_BACKGROUNDS.filter((bg) =>
-    ownedBackgrounds.includes(bg.id)
-  );
-  const allStoreMeta = [...STORE_3D_ITEMS, ...STORE_COIN_ITEMS];
-
-  const handleEquip = async (itemId: string) => {
-    setBusy(true);
+  const handleEquip = async (item: OwnedStoreItem) => {
+    setBusyId(item.id);
     setFeedback(null);
     try {
-      const updated = await equipStoreOrBagItemInSupabase(user, itemId);
-      updateLocalUser(updated);
+      await setStoreItemEquipped(user.id, item.id, !item.equipped);
+      setItems((current) =>
+        current.map((owned) =>
+          owned.category === item.category
+            ? { ...owned, equipped: owned.id === item.id ? !item.equipped : false }
+            : owned
+        )
+      );
       setFeedback({
         type: 'ok',
-        text: 'تم تفعيل العنصر وتحديث إطلالتك على المايك بنجاح!',
+        text: item.equipped
+          ? `تم إلغاء ارتداء «${item.name}».`
+          : `تم ارتداء «${item.name}».`,
       });
-    } catch (err) {
+    } catch (error) {
       setFeedback({
         type: 'err',
-        text: err instanceof Error ? err.message : 'تعذّر تفعيل العنصر.',
+        text: error instanceof Error ? error.message : 'تعذّر تحديث العنصر.',
       });
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   };
 
-  const handleApplyBackground = async (bgId: string, bgName: string) => {
-    setBusy(true);
+  const handleDelete = async (item: OwnedStoreItem) => {
+    if (!window.confirm(`هل تريد حذف «${item.name}» نهائياً من حقيبتك؟`)) return;
+    setBusyId(item.id);
     setFeedback(null);
     try {
-      await applyRoomBackgroundToMyRoomInSupabase(user, bgId);
-      setFeedback({
-        type: 'ok',
-        text: `تم تطبيق خلفية "${bgName}" على غرفتك الصوتية بنجاح!`,
-      });
-    } catch (err) {
+      await removeStoreItemFromBag(user.id, item.id);
+      setItems((current) => current.filter((owned) => owned.id !== item.id));
+      setFeedback({ type: 'ok', text: `تم حذف «${item.name}» من حقيبتك.` });
+    } catch (error) {
       setFeedback({
         type: 'err',
-        text: err instanceof Error ? err.message : 'تعذّر تطبيق الخلفية على غرفتك.',
+        text: error instanceof Error ? error.message : 'تعذّر حذف العنصر.',
       });
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   };
 
   return (
-    <div className="min-h-full bg-[#F5F6FA]">
-      <div className="max-w-4xl mx-auto px-4 pt-4 space-y-5">
-        {/* Crisp Bag & Coins Header */}
-        <section className="rounded-3xl bg-gradient-to-br from-[#0F172A] via-[#132238] to-[#064E3B] p-5 sm:p-6 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/20 border border-amber-300/40 px-3 py-1 text-[11px] font-bold text-[#FCE9A6]">
-              <Briefcase className="w-3.5 h-3.5" />
-              <span>الحقيبة الملكية — ممتلكاتي</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold">
-              الإطارات، الدخوليات، وخلفيات الغرف المملوكة
-            </h1>
-            <p className="text-xs text-slate-300">
-              فعّل إطاراتك 3D ودخولياتك وخلفيات القصور الفخمة التي اقتنيتها في صَدَى.
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-white/10 border border-white/15 px-5 py-3 text-center shrink-0">
-            <span className="block text-[11px] text-amber-200 font-bold">رصيد الكوينز</span>
-            <div className="flex items-center justify-center gap-1.5 mt-1">
-              <Coins className="w-5 h-5 text-amber-300" />
-              <span className="text-2xl font-black font-mono-num text-[#FCE9A6]">
-                {user.coins.toLocaleString('en-US')}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* Quick Link to Diamond Wallet */}
-        <div className="light-card rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-            <Gem className="w-4 h-4 text-sky-500" />
-            <span>هل تبحث عن تحويل أرباح الألماس أو سحب USDT؟</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/diamond-wallet')}
-            className="rounded-xl bg-sky-50 hover:bg-sky-100 border border-sky-200 px-3.5 py-1.5 text-xs font-extrabold text-sky-700 cursor-pointer"
-          >
-            فتح محفظة الألماس المستقلة ←
-          </button>
+    <div className="min-h-full bg-[#F5F6FA] pb-28">
+      <div className="mx-auto max-w-4xl space-y-4 px-4 pt-4">
+        <div className="flex items-center justify-between rounded-2xl border border-[#D4AF37]/25 bg-white px-4 py-3 shadow-sm">
+          <span className="text-sm font-extrabold text-slate-700">رصيد الكوينز</span>
+          <span className="inline-flex items-center gap-2 text-lg font-black text-amber-700">
+            <Coins className="h-5 w-5 text-[#D4AF37]" />
+            {user.coins.toLocaleString('en-US')}
+          </span>
         </div>
+
+        <nav
+          aria-label="أقسام الحقيبة"
+          className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm"
+        >
+          {BAG_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              aria-pressed={activeTab === tab.id}
+              className={`min-h-[44px] rounded-xl px-2 text-sm font-extrabold transition ${
+                activeTab === tab.id
+                  ? 'bg-[#D4AF37] text-slate-950'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
 
         {feedback && (
           <div
-            className={`rounded-2xl px-4 py-3 text-xs font-bold border ${
+            role="status"
+            className={`rounded-xl border px-4 py-3 text-sm font-bold ${
               feedback.type === 'ok'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                : 'bg-rose-50 border-rose-200 text-rose-700'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-rose-200 bg-rose-50 text-rose-700'
             }`}
           >
             {feedback.text}
           </div>
         )}
 
-        {user.activeEntryName && (
-          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
-              <div>
-                <p className="text-xs font-extrabold text-amber-950">
-                  الدخولية المفعلة حالياً: {user.activeEntryName}
-                </p>
-                <p className="text-[11px] text-amber-700">
-                  تظهر تلقائياً عند دخولك أي وكالة صوتية!
-                </p>
-              </div>
-            </div>
+        {loading ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[1, 2].map((key) => (
+              <div key={key} className="h-56 animate-pulse rounded-3xl bg-white" />
+            ))}
           </div>
-        )}
-
-        {/* Owned 3D Frames & Entrances */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
-              <Crown className="w-5 h-5 text-amber-500" />
-              <span>إطاراتي ودخولياتي ({unlockedItems.length})</span>
-            </h2>
+        ) : items.length === 0 ? (
+          <div className="rounded-3xl border border-slate-200 bg-white px-5 py-12 text-center text-sm font-bold text-slate-600">
+            لا توجد عناصر مضافة في هذا القسم حالياً
           </div>
-
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[1, 2].map((i) => (
-                <div key={i} className="light-card rounded-3xl h-28 animate-pulse" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {unlockedItems.map((frame) => {
-                const isEquipped = user.frameId === frame.id;
-                const storeMeta = allStoreMeta.find((s) => s.id === frame.id);
-                return (
-                  <div
-                    key={frame.id}
-                    className="light-card rounded-3xl p-4 flex items-center gap-3.5"
-                  >
-                    <AvatarWithFrame
-                      src={user.avatarUrl}
-                      alt={frame.name}
-                      frameId={frame.id}
-                      vipTier={getUserVipTierInfo(user).key}
-                      size="md"
-                    />
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-1">
-                        {storeMeta && <span>{storeMeta.badgeGlyph}</span>}
-                        <h3 className="text-sm font-extrabold text-slate-900 truncate">
-                          {frame.name}
-                        </h3>
-                      </div>
-                      <p className="text-[11px] text-slate-500 line-clamp-2">
-                        {frame.description}
-                      </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {items.map((item) => {
+              const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(item.assetPath);
+              return (
+                <article
+                  key={item.id}
+                  className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+                >
+                  <div className="flex h-48 items-center justify-center bg-slate-100">
+                    {isVideo ? (
+                      <video
+                        src={item.assetUrl}
+                        className="h-full w-full object-contain"
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                      />
+                    ) : (
+                      <img
+                        src={item.assetUrl}
+                        alt={item.name}
+                        className="h-full w-full object-contain"
+                        loading="lazy"
+                      />
+                    )}
+                  </div>
+                  <div className="space-y-3 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="truncate text-base font-extrabold text-slate-900">
+                        {item.name}
+                      </h2>
+                      {item.equipped && (
+                        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+                          مرتدى
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>{item.source === 'reward' ? 'مكافأة' : 'شراء من المتجر'}</span>
+                      <span>{item.priceCoins.toLocaleString('en-US')} كوينز</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        disabled={isEquipped || busy}
-                        onClick={() => handleEquip(frame.id)}
-                        className={`mt-1 min-h-[36px] rounded-xl px-3.5 py-1.5 text-[11px] font-extrabold cursor-pointer transition inline-flex items-center gap-1 ${
-                          isEquipped
-                            ? 'bg-emerald-50 border border-emerald-300 text-emerald-700'
-                            : 'emerald-btn'
-                        }`}
+                        disabled={busyId === item.id}
+                        onClick={() => void handleEquip(item)}
+                        className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-[#D4AF37] px-2 text-xs font-extrabold text-slate-950 disabled:opacity-60"
                       >
-                        {isEquipped ? (
+                        {item.equipped ? (
                           <>
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>مُفعّل الآن</span>
+                            <CheckCircle2 className="h-4 w-4" />
+                            إلغاء الارتداء
                           </>
                         ) : (
-                          <span>تفعيل وارتداء</span>
+                          'ارتداء'
                         )}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === item.id}
+                        onClick={() => void handleDelete(item)}
+                        className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-2 text-xs font-extrabold text-rose-700 disabled:opacity-60"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        حذف
                       </button>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* Owned Luxury Room Backgrounds */}
-        <section className="space-y-3">
-          <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
-            <ImageIcon className="w-5 h-5 text-emerald-600" />
-            <span>خلفيات الوكالات المملوكة ({ownedBgItems.length})</span>
-          </h2>
-
-          {ownedBgItems.length === 0 ? (
-            <div className="light-card rounded-3xl p-6 text-center space-y-3">
-              <p className="text-xs font-bold text-slate-600">
-                لم تشترِ أي خلفية وكالة فخمة بعد. يمكنك اقتناء خلفيات القصور الفاخرة من المتجر بـ 5,000 كوينز!
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {ownedBgItems.map((bg) => (
-                <div
-                  key={bg.id}
-                  className="light-card rounded-3xl overflow-hidden border border-slate-200 flex flex-col justify-between"
-                >
-                  <div className={`${bg.previewClass} h-24 p-3.5 text-white flex items-end justify-between`}>
-                    <span className="text-xs font-black">{bg.name}</span>
-                    <span className="text-xl">{bg.badgeGlyph}</span>
-                  </div>
-                  <div className="p-3.5 bg-white space-y-2.5">
-                    <p className="text-[11px] text-slate-500 line-clamp-2">{bg.subtitle}</p>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => handleApplyBackground(bg.id, bg.name)}
-                      className="emerald-btn w-full min-h-[38px] rounded-xl text-xs font-extrabold cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>تطبيق على غرفتي</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
+                </article>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

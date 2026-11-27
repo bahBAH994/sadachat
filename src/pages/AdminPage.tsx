@@ -31,6 +31,7 @@ import {
   AdminUsersTab,
   type AdminUserRoleChoice,
 } from '../components/admin/AdminUsersTab';
+import { AdminStoreManager } from '../components/admin/AdminStoreManager';
 import { resolveAsset } from '../lib/assets';
 import { supabase } from '../lib/supabase';
 import {
@@ -210,6 +211,7 @@ type AdminTab =
   | 'rooms_agencies'
   | 'agency_requests'
   | 'economy'
+  | 'store'
   | 'gifts_announcements'
   | 'usdt'
   | 'competitions'
@@ -1277,6 +1279,7 @@ export const AdminPage: React.FC = () => {
       badge: pendingAgencyRequestCount,
     },
     { id: 'economy', label: 'الأسعار والاقتصاد' },
+    { id: 'store', label: 'إدارة المتجر' },
     { id: 'gifts_announcements', label: 'الهدايا والإعلانات' },
     { id: 'usdt', label: 'طلبات الشحن والسحب', badge: pendingPaymentCount },
     { id: 'competitions', label: 'المسابقات' },
@@ -1429,6 +1432,7 @@ export const AdminPage: React.FC = () => {
           </div>
         ) : (
           <>
+            {tab === 'store' && <AdminStoreManager />}
             {/* TAB 1: OVERVIEW ("نظرة عامة") */}
             {tab === 'overview' && (
               <section className="space-y-5">

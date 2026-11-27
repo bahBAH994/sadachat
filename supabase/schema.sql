@@ -2430,6 +2430,248 @@ GRANT EXECUTE ON FUNCTION public.sada_get_my_grand_competition_share() TO authen
 GRANT EXECUTE ON FUNCTION public.sada_admin_save_grand_competition(TEXT, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sada_admin_reset_grand_competition_cycle() TO authenticated;
 
+-- 28. كتالوج المتجر وممتلكات المستخدمين
+CREATE TABLE IF NOT EXISTS public.sada_store_items (
+  id TEXT PRIMARY KEY,
+  category TEXT NOT NULL CHECK (category IN ('frames', 'entrances', 'backgrounds')),
+  name TEXT NOT NULL CHECK (char_length(btrim(name)) BETWEEN 1 AND 100),
+  price_coins BIGINT NOT NULL CHECK (price_coins >= 0),
+  asset_url TEXT NOT NULL,
+  asset_path TEXT NOT NULL,
+  created_by TEXT NOT NULL DEFAULT auth.uid()::TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.sada_user_store_items (
+  user_id TEXT NOT NULL REFERENCES public.sada_users(id) ON DELETE CASCADE,
+  item_id TEXT NOT NULL REFERENCES public.sada_store_items(id) ON DELETE CASCADE,
+  source TEXT NOT NULL CHECK (source IN ('purchase', 'reward')),
+  is_equipped BOOLEAN NOT NULL DEFAULT FALSE,
+  acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sada_user_store_items_user
+  ON public.sada_user_store_items(user_id, acquired_at DESC);
+
+ALTER TABLE public.sada_store_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sada_user_store_items ENABLE ROW LEVEL SECURITY;
+GRANT SELECT ON public.sada_store_items TO anon, authenticated, service_role;
+GRANT INSERT, DELETE ON public.sada_store_items TO authenticated;
+GRANT SELECT ON public.sada_user_store_items TO authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.sada_user_store_items FROM anon, authenticated;
+
+DROP POLICY IF EXISTS "sada_store_items_read" ON public.sada_store_items;
+CREATE POLICY "sada_store_items_read" ON public.sada_store_items
+  FOR SELECT TO anon, authenticated, service_role USING (TRUE);
+DROP POLICY IF EXISTS "sada_store_items_admin_insert" ON public.sada_store_items;
+CREATE POLICY "sada_store_items_admin_insert" ON public.sada_store_items
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    created_by = auth.uid()::TEXT
+    AND EXISTS (
+      SELECT 1 FROM public.sada_users AS app_user
+      WHERE app_user.id = auth.uid()::TEXT AND app_user.is_admin = TRUE
+    )
+  );
+DROP POLICY IF EXISTS "sada_store_items_admin_delete" ON public.sada_store_items;
+CREATE POLICY "sada_store_items_admin_delete" ON public.sada_store_items
+  FOR DELETE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.sada_users AS app_user
+      WHERE app_user.id = auth.uid()::TEXT AND app_user.is_admin = TRUE
+    )
+  );
+DROP POLICY IF EXISTS "sada_user_store_items_read_own" ON public.sada_user_store_items;
+CREATE POLICY "sada_user_store_items_read_own" ON public.sada_user_store_items
+  FOR SELECT TO authenticated
+  USING (user_id = auth.uid()::TEXT);
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('sada-store-assets', 'sada-store-assets', TRUE)
+ON CONFLICT (id) DO UPDATE SET public = TRUE;
+
+DROP POLICY IF EXISTS "sada_store_assets_public_read" ON storage.objects;
+CREATE POLICY "sada_store_assets_public_read" ON storage.objects
+  FOR SELECT TO anon, authenticated
+  USING (bucket_id = 'sada-store-assets');
+DROP POLICY IF EXISTS "sada_store_assets_admin_insert" ON storage.objects;
+CREATE POLICY "sada_store_assets_admin_insert" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'sada-store-assets'
+    AND EXISTS (
+      SELECT 1 FROM public.sada_users AS app_user
+      WHERE app_user.id = auth.uid()::TEXT AND app_user.is_admin = TRUE
+    )
+  );
+DROP POLICY IF EXISTS "sada_store_assets_admin_delete" ON storage.objects;
+CREATE POLICY "sada_store_assets_admin_delete" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'sada-store-assets'
+    AND EXISTS (
+      SELECT 1 FROM public.sada_users AS app_user
+      WHERE app_user.id = auth.uid()::TEXT AND app_user.is_admin = TRUE
+    )
+  );
+
+CREATE OR REPLACE FUNCTION public.sada_purchase_store_item(
+  p_user_id TEXT,
+  p_item_id TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_id TEXT := auth.uid()::TEXT;
+  item public.sada_store_items%ROWTYPE;
+  next_coins BIGINT;
+BEGIN
+  IF caller_id IS NULL OR caller_id <> p_user_id THEN
+    RAISE EXCEPTION 'لا يمكن شراء عنصر لحساب آخر.';
+  END IF;
+
+  SELECT * INTO item
+  FROM public.sada_store_items
+  WHERE id = p_item_id
+  FOR UPDATE;
+  IF item.id IS NULL THEN
+    RAISE EXCEPTION 'العنصر غير موجود في المتجر.';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.sada_user_store_items
+    WHERE user_id = p_user_id AND item_id = p_item_id
+  ) THEN
+    RAISE EXCEPTION 'أنت تمتلك هذا العنصر بالفعل.';
+  END IF;
+
+  UPDATE public.sada_users
+  SET coins = coins - item.price_coins
+  WHERE id = p_user_id AND coins >= item.price_coins AND is_banned = FALSE
+  RETURNING coins INTO next_coins;
+  IF next_coins IS NULL THEN
+    RAISE EXCEPTION 'رصيد الكوينز غير كافٍ أو الحساب غير متاح.';
+  END IF;
+
+  INSERT INTO public.sada_user_store_items (user_id, item_id, source)
+  VALUES (p_user_id, p_item_id, 'purchase');
+  INSERT INTO public.sada_transactions
+    (id, user_id, type, amount, currency, description, timestamp)
+  VALUES (
+    'tx_' || replace(gen_random_uuid()::TEXT, '-', ''),
+    p_user_id,
+    'store_purchase',
+    -item.price_coins,
+    'coins',
+    'شراء عنصر من المتجر: ' || item.name,
+    NOW()
+  );
+
+  RETURN jsonb_build_object('coins', next_coins);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_set_store_item_equipped(
+  p_user_id TEXT,
+  p_item_id TEXT,
+  p_equipped BOOLEAN
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_id TEXT := auth.uid()::TEXT;
+  item_category TEXT;
+BEGIN
+  IF caller_id IS NULL OR caller_id <> p_user_id THEN
+    RAISE EXCEPTION 'لا يمكن تعديل حقيبة مستخدم آخر.';
+  END IF;
+
+  SELECT item.category INTO item_category
+  FROM public.sada_store_items AS item
+  JOIN public.sada_user_store_items AS owned
+    ON owned.item_id = item.id AND owned.user_id = p_user_id
+  WHERE item.id = p_item_id;
+  IF item_category IS NULL THEN
+    RAISE EXCEPTION 'العنصر غير موجود في حقيبتك.';
+  END IF;
+
+  IF p_equipped THEN
+    UPDATE public.sada_user_store_items AS owned
+    SET is_equipped = FALSE
+    FROM public.sada_store_items AS item
+    WHERE owned.user_id = p_user_id
+      AND owned.item_id = item.id
+      AND item.category = item_category;
+  END IF;
+
+  UPDATE public.sada_user_store_items
+  SET is_equipped = p_equipped
+  WHERE user_id = p_user_id AND item_id = p_item_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_remove_store_item_from_bag(
+  p_user_id TEXT,
+  p_item_id TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  caller_id TEXT := auth.uid()::TEXT;
+BEGIN
+  IF caller_id IS NULL OR caller_id <> p_user_id THEN
+    RAISE EXCEPTION 'لا يمكن تعديل حقيبة مستخدم آخر.';
+  END IF;
+
+  DELETE FROM public.sada_user_store_items
+  WHERE user_id = p_user_id AND item_id = p_item_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'العنصر غير موجود في حقيبتك.';
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sada_grant_store_item(
+  p_user_id TEXT,
+  p_item_id TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+BEGIN
+  IF auth.uid() IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public.sada_users AS app_user
+    WHERE app_user.id = auth.uid()::TEXT AND app_user.is_admin = TRUE
+  ) THEN
+    RAISE EXCEPTION 'هذه العملية متاحة للإدارة فقط.';
+  END IF;
+  INSERT INTO public.sada_user_store_items (user_id, item_id, source)
+  VALUES (p_user_id, p_item_id, 'reward')
+  ON CONFLICT (user_id, item_id) DO NOTHING;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.sada_purchase_store_item(TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_set_store_item_equipped(TEXT, TEXT, BOOLEAN) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_remove_store_item_from_bag(TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.sada_grant_store_item(TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.sada_purchase_store_item(TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_set_store_item_equipped(TEXT, TEXT, BOOLEAN) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_remove_store_item_from_bag(TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sada_grant_store_item(TEXT, TEXT) TO authenticated;
+
 -- ============================================================================
 -- تفعيل المزامنة الفورية (Supabase Realtime) للجداول التفاعلية
 -- ============================================================================
