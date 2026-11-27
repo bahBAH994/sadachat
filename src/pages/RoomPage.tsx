@@ -172,7 +172,7 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
 }) => {
   const { user, updateLocalUser } = useAuth();
   const [round, setRound] = useState<RoomWheelRound | null>(null);
-  const [entryFee, setEntryFee] = useState(1000);
+  const [entryFee, setEntryFee] = useState(200);
   const [economySettings, setEconomySettings] = useState<EconomySettings | null>(null);
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
@@ -188,7 +188,6 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
       .then((settings) => {
         if (!active) return;
         setEconomySettings(settings);
-        setEntryFee(settings.wheelEntryFee);
       })
       .catch((loadError: unknown) => {
         if (active) {
@@ -682,6 +681,24 @@ const RoomWheelGame: React.FC<RoomWheelGameProps> = ({
         {!round ? (
           <div className="space-y-3 rounded-2xl bg-black/25 p-3">
             <p className="text-sm font-bold text-white">أنشئ جولة واختر قيمة الدخول</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[200, 500, 1000].map((fee) => (
+                <button
+                  key={fee}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setEntryFee(fee)}
+                  aria-pressed={entryFee === fee}
+                  className={`rounded-xl border px-2 py-2 text-sm font-extrabold ${
+                    entryFee === fee
+                      ? 'border-[#FCE9A6] bg-[#D4AF37] text-[#070913]'
+                      : 'border-white/15 bg-white/5 text-white'
+                  }`}
+                >
+                  {fee.toLocaleString('en-US')} كوينز
+                </button>
+              ))}
+            </div>
             <div className="rounded-xl border border-[#FCE9A6]/30 bg-black/30 px-3 py-2 text-sm font-extrabold text-[#FCE9A6]">
               رسوم الدخول: {entryFee.toLocaleString('en-US')} كوينز
             </div>

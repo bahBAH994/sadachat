@@ -95,28 +95,16 @@ export interface AdminOverviewPayload {
   };
 }
 
-export async function resetApplicationDataInSupabase(): Promise<void> {
-  const { data, error } = await supabase.rpc(
-    'sada_admin_reset_all_except_super_admin'
-  );
+export async function resetApplicationDataInSupabase(adminId: string): Promise<void> {
+  const { error } = await supabase.rpc('reset_all_app_data', {
+    keep_admin_id: adminId,
+  });
   if (error) {
     throw new Error(`تعذّر تصفير بيانات التطبيق في Supabase: ${error.message}`);
   }
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('لم تُرجع قاعدة البيانات تأكيداً لعملية التصفير.');
-  }
-  if ((data as Record<string, unknown>).status !== 'reset') {
-    throw new Error('لم تؤكد قاعدة البيانات اكتمال عملية التصفير.');
-  }
 
-  safeClearKeysMatching((key) => /agency|room|message|chat/i.test(key));
-  const resetState = await getPlatformState({ forceRefresh: true });
-  await savePlatformState({
-    settings: {
-      ...resetState.settings,
-      globalZeroResetV1Applied: true,
-    },
-  });
+  safeClearKeysMatching((key) => /agency|room|message|chat|temp|draft/i.test(key));
+  await getPlatformState({ forceRefresh: true });
 }
 
 export async function getAdminOverviewFromSupabase(): Promise<AdminOverviewPayload> {
@@ -1593,9 +1581,15 @@ export async function payHostMonthlyPayrollInSupabase(
   const monthStart = new Date(`${month}-01T00:00:00.000Z`);
   if (!Number.isFinite(monthStart.getTime())) throw new Error('شهر كشف الرواتب غير صالح.');
 
-  const [state, { data: userRow, error: userError }, { data: transactions, error: txError }] =
+  const [
+    state,
+    economySettings,
+    { data: userRow, error: userError },
+    { data: transactions, error: txError },
+  ] =
     await Promise.all([
       getPlatformState({ forceRefresh: true }),
+      getEconomySettingsFromSupabase(),
       supabase.from('sada_users').select('id, is_host, is_agent').eq('id', userId).maybeSingle(),
       supabase
         .from('sada_transactions')
@@ -1621,7 +1615,7 @@ export async function payHostMonthlyPayrollInSupabase(
   const target = Math.max(1, Number(state.settings.hostMonthlyTargetDiamonds || 100000));
   const diamondsPerUsdt = Math.max(1, Number(state.settings.hostDiamondsPerUsdt || 1000));
   const capRate = Math.max(0, Math.min(1, Number(state.settings.hostRechargePayoutCapRate ?? 0.5)));
-  const coinsPerUsdt = Math.max(1, Number(state.settings.usdtToCoinsRate || 1000));
+  const coinsPerUsdt = economySettings.usdtToCoinsRate;
   const rechargeCapUsdt = Math.floor((chargedCoins / coinsPerUsdt) * capRate);
   const amountUsdt =
     earnedDiamonds >= target

@@ -14,7 +14,6 @@ import {
   getRechargeRewardTier,
   getUserVipTierInfo,
   isFemaleVoiceLocked,
-  MIN_WITHDRAW_USDT,
   STORE_3D_ITEMS,
   STORE_COIN_ITEMS,
   STORE_LUXURY_BACKGROUNDS,
@@ -117,19 +116,24 @@ export async function getWalletOverviewFromSupabase(userId: string) {
       (f) => !f.isTemporary || user.unlockedFrames.includes(f.id)
     ) as FrameItem[],
     adminTrc20Address: ADMIN_USDT_TRC20_ADDRESS,
-    usdtToCoinsRate: state.settings.usdtToCoinsRate,
-    diamondToCoinsRate: economySettings.diamondConversionRate,
+    usdtToCoinsRate: economySettings.usdtToCoinsRate,
+    usdtToSypRate: economySettings.usdtToSypRate,
+    diamondToCoinsRate: economySettings.diamondToCoinRate / 100,
     roomBackgroundPrice: economySettings.roomBackgroundPrice,
-    agencyBackgroundPrice: economySettings.agencyBackgroundPrice,
+    agencyBackgroundPrices: {
+      classic: economySettings.agencyBackgroundClassicPrice,
+      gold: economySettings.agencyBackgroundGoldPrice,
+      royal: economySettings.agencyBackgroundRoyalPrice,
+    },
     rewardTiers: state.settings.rechargeRewardTiers,
     usdtDeposits: (depRows || []).map(rowToDeposit) as UsdtDepositRequest[],
     usdtWithdrawals: (wdRows || []).map(rowToWithdrawal) as UsdtWithdrawalRequest[],
     withdrawalEligibility: {
       eligible: eligibility.eligible,
       roleLabel: eligibility.roleLabel,
-      minUsdt: MIN_WITHDRAW_USDT,
-      diamondsPerUsdt: state.settings.diamondsPerUsdt,
-      coinsPerUsdt: state.settings.coinsPerUsdtWithdraw,
+      minUsdt: economySettings.minWithdrawUsdt,
+      diamondsPerUsdt: economySettings.diamondsPerUsdt,
+      coinsPerUsdt: economySettings.usdtToCoinsRate,
     },
   };
 }
@@ -139,8 +143,8 @@ export async function submitUsdtDepositInSupabase(
   payload: { amountUsdt: number; txId: string; proofImage: string }
 ): Promise<{ deposit: UsdtDepositRequest; user: User }> {
   const cleanAmount = Number(payload.amountUsdt);
-  if (!Number.isFinite(cleanAmount) || cleanAmount < 10) {
-    throw new Error('الحد الأدنى للشحن عبر USDT (TRC20) هو 10 دولار.');
+  if (!Number.isFinite(cleanAmount) || cleanAmount < 1) {
+    throw new Error('يجب أن يكون مبلغ الشحن أكبر من صفر.');
   }
   const cleanTxId = (payload.txId || '').trim();
   if (cleanTxId.length < 8) {
@@ -163,9 +167,12 @@ export async function submitUsdtDepositInSupabase(
     throw new Error('يرجى إرفاق صورة إثبات التحويل واضحة.');
   }
 
-  const state = await getPlatformState();
+  const [state, economySettings] = await Promise.all([
+    getPlatformState(),
+    getEconomySettingsFromSupabase(),
+  ]);
   const tier = getRechargeRewardTier(cleanAmount, state.settings.rechargeRewardTiers);
-  const baseCoins = Math.round(cleanAmount * state.settings.usdtToCoinsRate);
+  const baseCoins = Math.round(cleanAmount * economySettings.usdtToCoinsRate);
   const bonusCoins = tier ? Math.round(baseCoins * tier.bonusRate) : 0;
   const coinsCredited = baseCoins + bonusCoins;
   const now = new Date().toISOString();
@@ -248,16 +255,16 @@ export async function submitUsdtWithdrawalInSupabase(
     );
   }
 
-  const state = await getPlatformState();
+  const economySettings = await getEconomySettingsFromSupabase();
   const rate =
     currency === 'diamonds'
-      ? state.settings.diamondsPerUsdt
-      : state.settings.coinsPerUsdtWithdraw;
-  const minSourceAmount = MIN_WITHDRAW_USDT * rate;
+      ? economySettings.diamondsPerUsdt
+      : economySettings.usdtToCoinsRate;
+  const minSourceAmount = economySettings.minWithdrawUsdt * rate;
 
   if (cleanSourceAmount < minSourceAmount) {
     throw new Error(
-      `الحد الأدنى للسحب هو ${MIN_WITHDRAW_USDT} USDT (${minSourceAmount.toLocaleString(
+      `الحد الأدنى للسحب هو ${economySettings.minWithdrawUsdt} USDT (${minSourceAmount.toLocaleString(
         'en-US'
       )} ${currency === 'diamonds' ? 'ألماسة' : 'كوينز'}).`
     );
@@ -341,15 +348,15 @@ export async function convertDiamondsToCoinsInSupabase(
     throw new Error('رصيد الألماس مقفل لحين إتمام التوثيق الصوتي واعتماد الإدارة.');
   }
   const amount = Math.floor(Number(diamonds) || 0);
-  if (amount < 10) {
-    throw new Error('الحد الأدنى للتحويل هو 10 ألماسات.');
+  if (amount < 1) {
+    throw new Error('أدخل كمية ألماس صحيحة للتحويل.');
   }
   if (freshUser.diamonds < amount) {
     throw new Error('رصيد الألماس غير كافٍ.');
   }
 
   const economySettings = await getEconomySettingsFromSupabase();
-  const gainedCoins = Math.round(amount * economySettings.diamondConversionRate);
+  const gainedCoins = Math.round(amount * economySettings.diamondToCoinRate / 100);
   const now = new Date().toISOString();
 
   freshUser.diamonds -= amount;
@@ -568,7 +575,10 @@ export async function getStoreAndBagOverviewFromSupabase(userId: string) {
     totalRechargedCoins,
     storeItems: [],
     coinStoreItems: [],
-    luxuryBackgrounds: [],
+    luxuryBackgrounds: STORE_LUXURY_BACKGROUNDS.map((background) => ({
+      ...background,
+      priceCoins: walletData.agencyBackgroundPrices[background.tier],
+    })),
     ownedBackgrounds,
     hostTasks: rawTask,
   };
@@ -681,7 +691,11 @@ export async function purchaseRoomBackgroundInSupabase(
     throw new Error('أنت تمتلك هذه الخلفية الفخمة بالفعل في حقيبتك.');
   }
 
-  const backgroundPrice = economySettings.agencyBackgroundPrice;
+  const backgroundPrice = {
+    classic: economySettings.agencyBackgroundClassicPrice,
+    gold: economySettings.agencyBackgroundGoldPrice,
+    royal: economySettings.agencyBackgroundRoyalPrice,
+  }[bg.tier];
   if (freshUser.coins < backgroundPrice) {
     throw new Error(
       `رصيد الكوينز غير كافٍ. سعر الخلفية ${backgroundPrice.toLocaleString('en-US')} كوينز.`

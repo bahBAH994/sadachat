@@ -26,10 +26,9 @@ export function isSuperAdminUser(
 }
 
 export const ADMIN_USDT_TRC20_ADDRESS = 'TFXPytN94bSAUzD893hjpSwp6DGWqGkGSa';
-export const USDT_TO_COINS_RATE = 1000;
-export const DIAMONDS_PER_USDT = 100;
-export const COINS_PER_USDT_WITHDRAW = 1000;
-export const MIN_WITHDRAW_USDT = 5;
+export const USDT_TO_COINS_RATE = 10000;
+export const DIAMONDS_PER_USDT = 10000;
+export const COINS_PER_USDT_WITHDRAW = 10000;
 export const PM_MESSAGE_COST = 150;
 export const PM_REPLY_DIAMONDS = 38;
 export const LUCKY_WHEEL_COST = 200;
@@ -174,7 +173,35 @@ export function formatCompactMetric(value: number, upperCaseK = false): string {
   return String(Math.round(num));
 }
 
-export const STORE_LUXURY_BACKGROUNDS: StoreBackgroundItem[] = [];
+export const STORE_LUXURY_BACKGROUNDS: StoreBackgroundItem[] = [
+  {
+    id: 'agency_background_classic',
+    name: 'القاعة الكلاسيكية',
+    subtitle: 'تصميم أنيق وهادئ لوكالتك.',
+    priceCoins: 10000,
+    badgeGlyph: '🏛️',
+    previewClass: 'bg-gradient-to-br from-slate-800 via-slate-700 to-[#171522]',
+    tier: 'classic',
+  },
+  {
+    id: 'agency_background_gold',
+    name: 'القاعة الذهبية',
+    subtitle: 'لمسات ذهبية فاخرة تليق بوكالتك.',
+    priceCoins: 25000,
+    badgeGlyph: '✨',
+    previewClass: 'bg-gradient-to-br from-[#72520D] via-[#D4AF37] to-[#2B2009]',
+    tier: 'gold',
+  },
+  {
+    id: 'agency_background_royal',
+    name: 'القاعة الملكية VIP',
+    subtitle: 'أعلى درجات الفخامة الملكية.',
+    priceCoins: 50000,
+    badgeGlyph: '👑',
+    previewClass: 'bg-gradient-to-br from-[#29124A] via-[#6D28D9] to-[#D4AF37]',
+    tier: 'royal',
+  },
+];
 
 export const ROOM_BACKGROUNDS: Array<{
   id: string;
@@ -1143,7 +1170,7 @@ export function createDefaultPlatformSettings(): PlatformSettings {
     usdtToCoinsRate: USDT_TO_COINS_RATE,
     coinsPerUsdtWithdraw: COINS_PER_USDT_WITHDRAW,
     diamondsPerUsdt: DIAMONDS_PER_USDT,
-    diamondToCoinsRate: 2,
+    diamondToCoinsRate: 0.5,
     defaultAgencyCommissionRate: 0.1,
     minAgencyCommissionRate: 0.05,
     maxAgencyCommissionRate: 0.35,

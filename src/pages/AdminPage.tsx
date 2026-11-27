@@ -179,12 +179,21 @@ function getShamCashRequests(settings: PlatformSettings): ShamCashRequest[] {
     : [];
 }
 
-function getShamCashCoins(request: ShamCashRequest, settings: PlatformSettings): number {
-  const rate =
+function normalizeArabicDigits(value: string): string {
+  return value.replace(/[٠-٩]/g, (digit) =>
+    String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
+  );
+}
+
+function getShamCashCoins(
+  request: ShamCashRequest,
+  economySettings: EconomySettings
+): number {
+  const amountUsdt =
     request.currency === 'USD'
-      ? Number(settings.shamCashUsdCoinsRate || 1000)
-      : Number(settings.shamCashSypCoinsPerThousand || 100) / 1000;
-  return Math.max(0, Math.floor(request.amount * rate));
+      ? request.amount
+      : request.amount / economySettings.usdtToSypRate;
+  return Math.round(amountUsdt * economySettings.usdtToCoinsRate);
 }
 
 function getShamCashSetting(
@@ -442,8 +451,8 @@ export const AdminPage: React.FC = () => {
     setResettingApplication(true);
     setNotice(null);
     try {
-      await resetApplicationDataInSupabase();
-      showOk('تم تصفير بيانات التطبيق بنجاح');
+      await resetApplicationDataInSupabase(user.id);
+      showOk('تم تصفير بيانات التطبيق بنجاح، مع الإبقاء على حساب الإدارة.');
       await Promise.all([refreshUser(), loadOverview(true)]);
     } catch (err) {
       showErr(err, 'تعذّر تصفير بيانات التطبيق.');
@@ -794,8 +803,10 @@ export const AdminPage: React.FC = () => {
     status: 'approved' | 'rejected'
   ) => {
     try {
-      const state = await getPlatformState({ forceRefresh: true });
-      const coins = Number(shamCashCoinDrafts[request.id] ?? getShamCashCoins(request, state.settings));
+      const economySettings = await getEconomySettingsFromSupabase();
+      const coins = Number(
+        shamCashCoinDrafts[request.id] ?? getShamCashCoins(request, economySettings)
+      );
       await reviewShamCashRequestInSupabase(
         request.id,
         status,
@@ -1169,7 +1180,7 @@ export const AdminPage: React.FC = () => {
         0,
         Math.min(1, Number(data.settings.hostRechargePayoutCapRate ?? 0.5))
       );
-      const coinsPerUsdt = Math.max(1, Number(data.settings.usdtToCoinsRate || 1000));
+      const coinsPerUsdt = data.economySettings.usdtToCoinsRate;
       return data.users.filter((member) => member.isHost).map((member) => {
           const pendingWithdrawal = (data?.usdtWithdrawals || [])
             .filter(
@@ -1316,6 +1327,12 @@ export const AdminPage: React.FC = () => {
       ref={adminScrollRef}
       tabIndex={0}
       onKeyDown={handleAdminKeyDown}
+      onChangeCapture={(event: React.ChangeEvent<HTMLDivElement>) => {
+        const target = event.target;
+        if (target instanceof HTMLInputElement && target.inputMode === 'decimal') {
+          target.value = normalizeArabicDigits(target.value);
+        }
+      }}
       className="w-full min-h-full focus:outline-none"
     >
       {/* Top Sticky Responsive Header & Organized Tabs */}
@@ -1558,7 +1575,7 @@ export const AdminPage: React.FC = () => {
 
                     <div className="flex flex-wrap items-center gap-2">
                       <input
-                        type="number"
+                        type="text" inputMode="decimal"
                         min={0}
                         value={poolInput}
                         onChange={(e) => setPoolInput(e.target.value)}
@@ -2422,7 +2439,7 @@ export const AdminPage: React.FC = () => {
                               <div className="flex items-center gap-1.5 bg-[#070913]/85 border border-[#D4AF37]/25 rounded-xl px-2.5 py-1.5">
                                 <span className="text-[11px] text-slate-400">العمولة %</span>
                                 <input
-                                  type="number"
+                                  type="text" inputMode="decimal"
                                   min={0}
                                   max={50}
                                   value={pctDraft}
@@ -2721,11 +2738,11 @@ export const AdminPage: React.FC = () => {
                                   {request.type === 'deposit' ? 'كوينز تضاف' : 'كوينز تخصم'}
                                 </span>
                                 <input
-                                  type="number"
+                                  type="text" inputMode="decimal"
                                   min={1}
                                   value={
                                     shamCashCoinDrafts[request.id] ??
-                                    getShamCashCoins(request, data.settings)
+                                    getShamCashCoins(request, data.economySettings)
                                   }
                                   onChange={(e) =>
                                     setShamCashCoinDrafts((current) => ({
@@ -2915,7 +2932,7 @@ export const AdminPage: React.FC = () => {
                         جائزة الكوينز
                       </label>
                       <input
-                        type="number"
+                        type="text" inputMode="decimal"
                         value={compCoins}
                         onChange={(e) => setCompCoins(e.target.value)}
                         dir="ltr"
@@ -2927,7 +2944,7 @@ export const AdminPage: React.FC = () => {
                         جائزة الألماس
                       </label>
                       <input
-                        type="number"
+                        type="text" inputMode="decimal"
                         value={compDiamonds}
                         onChange={(e) => setCompDiamonds(e.target.value)}
                         dir="ltr"
@@ -3235,24 +3252,31 @@ export const AdminPage: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {(
                     [
-                      ['weeklyAgencyTarget', 'التارجت الأسبوعي للوكالة (ألماس)', 1, 0],
-                      ['agencyBackgroundPrice', 'سعر خلفية الوكالة (كوينز)', 1, 0],
-                      ['roomBackgroundPrice', 'سعر خلفية الغرفة (كوينز)', 1, 0],
-                      ['agencyCommissionPct', 'عمولة الوكيل (%)', 0, 0.1],
-                      ['wheelCommissionPct', 'عمولة دولاب الإقصاء (%)', 0, 0.1],
-                      ['wheelEntryFee', 'رسوم دخول الدولاب (كوينز)', 1, 0],
-                      ['diamondConversionRate', 'تحويل الألماس إلى كوينز', 0.01, 0.01],
+                      ['weeklyAgencyTarget', 'التارجت الأسبوعي للوكالة (ألماس)'],
+                      ['usdtToSypRate', 'سعر 1 دولار / USDT بالليرة السورية'],
+                      ['diamondsPerUsdt', 'ألماس لكل 1 USDT عند السحب'],
+                      ['minWithdrawUsdt', 'الحد الأدنى للسحب (USDT)'],
+                      ['usdtToCoinsRate', 'كوينز مقابل كل 1 USDT عند الشحن'],
+                      ['diamondToCoinRate', 'معدل تحويل الألماس إلى كوينز (%)'],
+                      ['roomBackgroundPrice', 'سعر خلفية الغرفة (كوينز)'],
+                      ['agencyBackgroundClassicPrice', 'خلفية الوكالة الكلاسيكية (كوينز)'],
+                      ['agencyBackgroundGoldPrice', 'خلفية الوكالة الذهبية (كوينز)'],
+                      ['agencyBackgroundRoyalPrice', 'خلفية الوكالة الملكية VIP (كوينز)'],
+                      ['agencyCommissionPct', 'عمولة الوكيل (%)'],
+                      ['wheelCommissionPct', 'عمولة دولاب الإقصاء (%)'],
                     ] as const
-                  ).map(([key, label, min, step]) => (
+                  ).map(([key, label]) => (
                     <label key={key} className="space-y-1.5 text-xs">
                       <span className="block text-slate-300">{label}</span>
                       <input
-                        type="number"
-                        min={min}
-                        step={step || 1}
-                        value={economyDraft[key]}
+                        type="text"
+                        inputMode="decimal"
+                        value={Number.isFinite(economyDraft[key]) ? economyDraft[key] : ''}
                         onChange={(event) =>
-                          updateEconomyDraft(key, Number(event.target.value))
+                          updateEconomyDraft(
+                            key,
+                            event.target.value === '' ? Number.NaN : Number(event.target.value)
+                          )
                         }
                         dir="ltr"
                         className="w-full min-h-[42px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
@@ -3330,7 +3354,7 @@ export const AdminPage: React.FC = () => {
                     <label className="space-y-1.5">
                       <span className="block text-slate-300">التارغت الشهري لكل مضيف (ألماس)</span>
                       <input
-                        type="number"
+                        type="text" inputMode="decimal"
                         min={1}
                         value={settingsDraft.hostMonthlyTargetDiamonds ?? 100000}
                         onChange={(e) =>
@@ -3346,7 +3370,7 @@ export const AdminPage: React.FC = () => {
                     <label className="space-y-1.5">
                       <span className="block text-slate-300">ألماس لكل 1 USDT</span>
                       <input
-                        type="number"
+                        type="text" inputMode="decimal"
                         min={1}
                         value={settingsDraft.hostDiamondsPerUsdt ?? 1000}
                         onChange={(e) =>
@@ -3362,7 +3386,7 @@ export const AdminPage: React.FC = () => {
                     <label className="space-y-1.5">
                       <span className="block text-slate-300">الحد الأعلى للصرف من قيمة الشحن (%)</span>
                       <input
-                        type="number"
+                        type="text" inputMode="decimal"
                         min={0}
                         max={100}
                         value={Math.round((settingsDraft.hostRechargePayoutCapRate ?? 0.5) * 100)}
@@ -3380,7 +3404,7 @@ export const AdminPage: React.FC = () => {
                     <label className="space-y-1.5">
                       <span className="block text-slate-300">عمولة الوكيل الشهرية (%)</span>
                       <input
-                        type="number"
+                        type="text" inputMode="decimal"
                         min={0}
                         max={50}
                         value={Math.round((settingsDraft.agencyPayrollCommissionRate ?? 0.1) * 100)}
@@ -3396,142 +3420,32 @@ export const AdminPage: React.FC = () => {
                       />
                     </label>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <label className="space-y-1.5">
-                      <span className="block text-slate-300">كوينز لكل 1 دولار شام كاش</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={settingsDraft.shamCashUsdCoinsRate ?? 1000}
-                        onChange={(e) =>
-                          setSettingsDraft({
-                            ...settingsDraft,
-                            shamCashUsdCoinsRate: Math.max(1, Number(e.target.value) || 1000),
-                          })
-                        }
-                        dir="ltr"
-                        className="w-full min-h-[40px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
-                      />
-                    </label>
-                    <label className="space-y-1.5">
-                      <span className="block text-slate-300">كوينز لكل 1,000 ليرة سورية</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={settingsDraft.shamCashSypCoinsPerThousand ?? 100}
-                        onChange={(e) =>
-                          setSettingsDraft({
-                            ...settingsDraft,
-                            shamCashSypCoinsPerThousand:
-                              Math.max(1, Number(e.target.value) || 100),
-                          })
-                        }
-                        dir="ltr"
-                        className="w-full min-h-[40px] rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 text-white font-mono-num"
-                      />
-                    </label>
-                  </div>
                 </section>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <section className="royal-glass rounded-3xl p-5 space-y-3.5">
                     <div className="flex items-center gap-2 text-[#FCE9A6]">
                       <CoinIcon className="w-5 h-5" />
-                      <h2 className="text-sm font-extrabold">أسعار صرف الكوينز والألماس</h2>
+                      <h2 className="text-sm font-extrabold">تكلفة الرسائل الخاصة</h2>
                     </div>
 
                     <div className="space-y-2.5 text-xs">
-                      <div>
-                        <label className="block text-slate-300 mb-1">
-                          سعر شحن 1 USDT → كوينز
-                        </label>
-                        <input
-                          type="number"
-                          min={100}
-                          value={settingsDraft.usdtToCoinsRate}
-                          onChange={(e) =>
-                            setSettingsDraft({
-                              ...settingsDraft,
-                              usdtToCoinsRate: Number(e.target.value) || 1000,
-                            })
-                          }
-                          dir="ltr"
-                          className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-white font-mono-num text-left"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-300 mb-1">
-                          تكلفة الرسالة الخاصة المدفوعة (كوينز)
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          step={1}
-                          value={settingsDraft.pmMessageCost}
-                          onChange={(e) =>
-                            setSettingsDraft({
-                              ...settingsDraft,
-                              pmMessageCost: Math.max(1, Math.floor(Number(e.target.value) || 1)),
-                            })
-                          }
-                          dir="ltr"
-                          className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-white font-mono-num text-left"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-300 mb-1">
-                          كوينز مطلوبة لسحب 1 USDT
-                        </label>
-                        <input
-                          type="number"
-                          min={100}
-                          value={settingsDraft.coinsPerUsdtWithdraw}
-                          onChange={(e) =>
-                            setSettingsDraft({
-                              ...settingsDraft,
-                              coinsPerUsdtWithdraw: Number(e.target.value) || 1000,
-                            })
-                          }
-                          dir="ltr"
-                          className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-white font-mono-num text-left"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-300 mb-1">
-                          ألماس مطلوب لسحب 1 USDT
-                        </label>
-                        <input
-                          type="number"
-                          min={10}
-                          value={settingsDraft.diamondsPerUsdt}
-                          onChange={(e) =>
-                            setSettingsDraft({
-                              ...settingsDraft,
-                              diamondsPerUsdt: Number(e.target.value) || 100,
-                            })
-                          }
-                          dir="ltr"
-                          className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-white font-mono-num text-left"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-300 mb-1">
-                          تحويل 1 ألماسة → كوينز
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          step="0.5"
-                          value={settingsDraft.diamondToCoinsRate}
-                          onChange={(e) =>
-                            setSettingsDraft({
-                              ...settingsDraft,
-                              diamondToCoinsRate: Number(e.target.value) || 2,
-                            })
-                          }
-                          dir="ltr"
-                          className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-white font-mono-num text-left"
-                        />
-                      </div>
+                      <label className="block text-slate-300 mb-1">
+                        تكلفة الرسالة الخاصة المدفوعة (كوينز)
+                      </label>
+                      <input
+                        type="text" inputMode="decimal"
+                        min={1}
+                        step={1}
+                        value={settingsDraft.pmMessageCost}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            pmMessageCost: Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                          })
+                        }
+                        dir="ltr"
+                        className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3 py-2 text-white font-mono-num text-left"
+                      />
                     </div>
                   </section>
 
@@ -3547,7 +3461,7 @@ export const AdminPage: React.FC = () => {
                           العمولة الافتراضية للوكيل (%)
                         </label>
                         <input
-                          type="number"
+                          type="text" inputMode="decimal"
                           min={1}
                           max={50}
                           value={Math.round(settingsDraft.defaultAgencyCommissionRate * 100)}
@@ -3567,7 +3481,7 @@ export const AdminPage: React.FC = () => {
                           الحد الأدنى لعمولة الوكيل (%)
                         </label>
                         <input
-                          type="number"
+                          type="text" inputMode="decimal"
                           min={1}
                           max={50}
                           value={Math.round(settingsDraft.minAgencyCommissionRate * 100)}
@@ -3587,7 +3501,7 @@ export const AdminPage: React.FC = () => {
                           الحد الأعلى لعمولة الوكيل (%)
                         </label>
                         <input
-                          type="number"
+                          type="text" inputMode="decimal"
                           min={1}
                           max={60}
                           value={Math.round(settingsDraft.maxAgencyCommissionRate * 100)}
@@ -3617,7 +3531,7 @@ export const AdminPage: React.FC = () => {
                           نسبة تحويل الهدايا إلى ألماس للمستلم (%)
                         </label>
                         <input
-                          type="number"
+                          type="text" inputMode="decimal"
                           min={10}
                           max={100}
                           value={Math.round(settingsDraft.giftDiamondsRatio * 100)}
@@ -3645,7 +3559,7 @@ export const AdminPage: React.FC = () => {
                           ألماس مكافأة الرد على الرسالة الخاصة
                         </label>
                         <input
-                          type="number"
+                          type="text" inputMode="decimal"
                           min={0}
                           value={settingsDraft.pmReplyDiamonds}
                           onChange={(e) =>
@@ -3663,7 +3577,7 @@ export const AdminPage: React.FC = () => {
                           تكلفة تدوير دولاب الحظ داخل الغرف (كوينز)
                         </label>
                         <input
-                          type="number"
+                          type="text" inputMode="decimal"
                           min={10}
                           value={settingsDraft.roomWheelCost}
                           onChange={(e) =>
@@ -3728,7 +3642,7 @@ export const AdminPage: React.FC = () => {
                                 الحد الأدنى ($)
                               </label>
                               <input
-                                type="number"
+                                type="text" inputMode="decimal"
                                 min={1}
                                 value={tier.minUsdt}
                                 onChange={(e) => {
@@ -3751,7 +3665,7 @@ export const AdminPage: React.FC = () => {
                                 المدة (أيام)
                               </label>
                               <input
-                                type="number"
+                                type="text" inputMode="decimal"
                                 min={1}
                                 value={tier.days}
                                 onChange={(e) => {
@@ -3774,7 +3688,7 @@ export const AdminPage: React.FC = () => {
                                 بونص كوينز (%)
                               </label>
                               <input
-                                type="number"
+                                type="text" inputMode="decimal"
                                 min={0}
                                 max={100}
                                 value={Math.round(tier.bonusRate * 100)}
@@ -3842,7 +3756,7 @@ export const AdminPage: React.FC = () => {
                           <div>
                             <label className="block text-[10px] text-slate-400">كوينز</label>
                             <input
-                              type="number"
+                              type="text" inputMode="decimal"
                               min={0}
                               value={seg.coinsAmount || 0}
                               onChange={(e) => {
@@ -3860,7 +3774,7 @@ export const AdminPage: React.FC = () => {
                           <div>
                             <label className="block text-[10px] text-slate-400">XP</label>
                             <input
-                              type="number"
+                              type="text" inputMode="decimal"
                               min={0}
                               value={seg.xpAmount || 0}
                               onChange={(e) => {
@@ -3878,7 +3792,7 @@ export const AdminPage: React.FC = () => {
                           <div>
                             <label className="block text-[10px] text-slate-400">الوزن</label>
                             <input
-                              type="number"
+                              type="text" inputMode="decimal"
                               min={1}
                               value={seg.weight}
                               onChange={(e) => {
@@ -3944,7 +3858,7 @@ export const AdminPage: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-2">
                             <input
-                              type="number"
+                              type="text" inputMode="decimal"
                               min={5}
                               max={90}
                               value={val}

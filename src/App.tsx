@@ -49,6 +49,7 @@ import { GamesCenterPage } from './pages/GamesCenterPage';
 import { AdminPage } from './pages/AdminPage';
 import { SvipPage } from './pages/SvipPage';
 import { GrandCompetitionPage } from './pages/GrandCompetitionPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 const clearPersistedRoomAgencyState = () => {
   const isRoomOrAgencyKey = (key: string) => /room|agency/i.test(key);
@@ -397,6 +398,7 @@ const AuthenticatedAppShell: React.FC = () => {
             <Route path="/my-level" element={<MyLevelPage />} />
             <Route path="/wallet" element={<WalletPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/profile/:id" element={<PublicProfilePage />} />
             <Route path="/svip" element={<SvipPage />} />
             <Route path="/messages" element={<MessagesPage />} />

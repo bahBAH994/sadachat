@@ -114,6 +114,9 @@ export async function createRoomLuckyWheelRound(
   creatorId: string,
   entryFee: number
 ): Promise<RoomLuckyWheelRound> {
+  if (![200, 500, 1000].includes(entryFee)) {
+    throw new Error('رسوم الدخول المتاحة هي 200 أو 500 أو 1,000 كوينز.');
+  }
   const data = await callRoundRpc('sada_create_room_lucky_wheel', {
     p_room_id: roomId,
     p_creator_id: creatorId,

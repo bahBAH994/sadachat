@@ -34,7 +34,7 @@ interface LuckyWheelGameProps {
   onClose: () => void;
 }
 
-const ENTRY_FEES = [100, 500, 1000, 5000];
+const ENTRY_FEES = [200, 500, 1000];
 const SPIN_DURATION_MS = 2500;
 const SECTOR_COLORS = [
   '#7C2D12',
@@ -76,7 +76,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
 }) => {
   const { user, updateLocalUser } = useAuth();
   const [round, setRound] = useState<RoomLuckyWheelRound | null>(null);
-  const [entryFee, setEntryFee] = useState(100);
+  const [entryFee, setEntryFee] = useState(200);
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [addingCompetitor, setAddingCompetitor] = useState(false);
@@ -451,7 +451,7 @@ export const LuckyWheelGame: React.FC<LuckyWheelGameProps> = ({
         {!round ? (
           <div className="space-y-3 rounded-2xl bg-black/25 p-3">
             <p className="text-sm font-bold text-white">أنشئ جولة واختر قيمة الدخول</p>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {ENTRY_FEES.map((fee) => (
                 <button
                   key={fee}

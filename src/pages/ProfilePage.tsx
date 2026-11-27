@@ -29,7 +29,6 @@ import {
   MicIcon,
   AgencyIcon,
   PartyIcon,
-  ProfileIcon,
   SettingsIcon,
 } from '../components/AppIcons';
 import { useAuth } from '../context/AuthContext';
@@ -38,7 +37,6 @@ import { AVATAR_CHOICES } from '../lib/assets';
 import { getUserPublicProfileFromSupabase, updateProfileInSupabase } from '../lib/sadaAuth';
 import {
   ARAB_COUNTRIES,
-  VIP_TIER_CONFIGS,
   formatShortNumericId,
   getUserVipTierInfo,
   isSuperAdminUser,
@@ -784,6 +782,29 @@ export const ProfilePage: React.FC = () => {
         </section>
       </div>
 
+      <section
+        aria-label="مستويات عضوية VIP"
+        className="mx-auto w-full max-w-3xl shrink-0 border-y border-amber-300/20 bg-gradient-to-r from-[#171522] via-[#201A0D] to-[#101522] px-4 py-2.5"
+      >
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-black text-[#FCE9A6]">عضوية VIP الملكية</span>
+          <CrownIcon className="h-4 w-4 text-[#D4AF37]" />
+        </div>
+        <div className="grid grid-cols-4 gap-1.5 text-center">
+          {[
+            ['VIP 1', '100,000'],
+            ['VIP 2', '250,000'],
+            ['VIP 3', '500,000'],
+            ['SVIP', '1,000,000'],
+          ].map(([label, amount]) => (
+            <div key={label} className="rounded-lg border border-[#D4AF37]/20 bg-black/20 py-1">
+              <span className="block text-[10px] font-black text-[#FCE9A6]">{label}</span>
+              <span className="block text-[9px] font-mono-num text-slate-300">{amount}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y">
       <div className="max-w-3xl mx-auto px-4 pt-3 pb-6 space-y-4">
         {feedback && (
@@ -852,28 +873,6 @@ export const ProfilePage: React.FC = () => {
               />
             </div>
 
-            <div className="grid grid-cols-4 gap-1.5 pt-1">
-              {VIP_TIER_CONFIGS.filter((t) => t.key !== 'none').map((tier) => {
-                const unlocked = vipInfo.rank >= tier.rank;
-                return (
-                  <div
-                    key={tier.key}
-                    className={`rounded-xl px-2 py-1.5 text-center border transition ${
-                      unlocked
-                        ? 'bg-amber-400/10 border-amber-300/30 text-[#FCE9A6]'
-                        : 'bg-white/5 border-white/10 text-slate-500'
-                    }`}
-                  >
-                    <p className="text-[10px] font-black truncate">
-                      {tier.badgeGlyph} {tier.shortLabel}
-                    </p>
-                    <p className="text-[9px] font-mono-num opacity-90">
-                      {tier.minScore.toLocaleString('en-US')}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         </section>
 
@@ -945,18 +944,11 @@ export const ProfilePage: React.FC = () => {
         <section className="rounded-3xl bg-gradient-to-br from-[#171522] to-[#101522] border border-amber-300/20 p-4 grid grid-cols-3 divide-x divide-x-reverse divide-amber-300/20 text-center">
           <button
             type="button"
-            onClick={() => {
-              setDisplayName(user.displayName);
-              setBio(user.bio);
-              setAvatarUrl(pendingAvatarUrl || user.avatarUrl);
-              setGender(user.gender || 'male');
-              setIsHost(Boolean(user.isHost));
-              setShowEditModal(true);
-            }}
+            onClick={() => navigate('/settings')}
             className="flex flex-col items-center gap-1.5 text-slate-300 hover:text-[#FCE9A6] cursor-pointer transition"
           >
-            <ProfileIcon className="w-5 h-5" />
-            <span className="text-xs font-bold">الحساب</span>
+            <SettingsIcon className="w-5 h-5 text-[#D4AF37]" />
+            <span className="text-xs font-bold">الإعدادات</span>
           </button>
 
           <button

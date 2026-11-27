@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS public.sada_users (
   is_banned BOOLEAN NOT NULL DEFAULT FALSE,
   device_uuid TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  preferences JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
 CREATE INDEX IF NOT EXISTS idx_sada_users_email ON public.sada_users(email);
@@ -52,7 +53,8 @@ CREATE INDEX IF NOT EXISTS idx_sada_users_device ON public.sada_users(device_uui
 CREATE INDEX IF NOT EXISTS idx_sada_users_agency ON public.sada_users(agency_id);
 ALTER TABLE public.sada_users
   ADD COLUMN IF NOT EXISTS svip_level SMALLINT CHECK (svip_level BETWEEN 1 AND 4),
-  ADD COLUMN IF NOT EXISTS svip_expires_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS svip_expires_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- 2. جدول جلسات تسجيل الدخول
 CREATE TABLE IF NOT EXISTS public.sada_sessions (
@@ -452,21 +454,65 @@ CREATE TABLE IF NOT EXISTS public.sada_platform_state (
 
 CREATE TABLE IF NOT EXISTS public.sada_economy_settings (
   id TEXT PRIMARY KEY DEFAULT 'global' CHECK (id = 'global'),
-  weekly_agency_target BIGINT NOT NULL DEFAULT 10000 CHECK (weekly_agency_target > 0),
+  weekly_agency_target BIGINT NOT NULL DEFAULT 100000 CHECK (weekly_agency_target > 0),
   agency_background_price BIGINT NOT NULL DEFAULT 50000 CHECK (agency_background_price > 0),
-  room_background_price BIGINT NOT NULL DEFAULT 25000 CHECK (room_background_price > 0),
-  agency_commission_pct NUMERIC(5, 2) NOT NULL DEFAULT 10.00
+  agency_background_classic_price BIGINT NOT NULL DEFAULT 10000 CHECK (agency_background_classic_price > 0),
+  agency_background_gold_price BIGINT NOT NULL DEFAULT 25000 CHECK (agency_background_gold_price > 0),
+  agency_background_royal_price BIGINT NOT NULL DEFAULT 50000 CHECK (agency_background_royal_price > 0),
+  room_background_price BIGINT NOT NULL DEFAULT 5000 CHECK (room_background_price > 0),
+  agency_commission_pct NUMERIC(5, 2) NOT NULL DEFAULT 15.00
     CHECK (agency_commission_pct BETWEEN 0 AND 100),
   wheel_commission_pct NUMERIC(5, 2) NOT NULL DEFAULT 10.00
     CHECK (wheel_commission_pct BETWEEN 0 AND 100),
-  wheel_entry_fee BIGINT NOT NULL DEFAULT 1000 CHECK (wheel_entry_fee > 0),
+  wheel_entry_fee BIGINT NOT NULL DEFAULT 200 CHECK (wheel_entry_fee IN (200, 500, 1000)),
   diamond_conversion_rate NUMERIC(10, 2) NOT NULL DEFAULT 2.00
-    CHECK (diamond_conversion_rate > 0)
+    CHECK (diamond_conversion_rate > 0),
+  diamonds_per_usdt BIGINT NOT NULL DEFAULT 10000 CHECK (diamonds_per_usdt > 0),
+  min_withdraw_usdt NUMERIC(10, 2) NOT NULL DEFAULT 10 CHECK (min_withdraw_usdt > 0),
+  usdt_to_coins_rate BIGINT NOT NULL DEFAULT 10000 CHECK (usdt_to_coins_rate > 0),
+  usdt_to_syp_rate BIGINT NOT NULL DEFAULT 15200 CHECK (usdt_to_syp_rate > 0),
+  diamond_to_coin_rate NUMERIC(5, 2) NOT NULL DEFAULT 50 CHECK (diamond_to_coin_rate > 0)
 );
+
+ALTER TABLE public.sada_economy_settings
+  ADD COLUMN IF NOT EXISTS agency_background_classic_price BIGINT NOT NULL DEFAULT 10000 CHECK (agency_background_classic_price > 0),
+  ADD COLUMN IF NOT EXISTS agency_background_gold_price BIGINT NOT NULL DEFAULT 25000 CHECK (agency_background_gold_price > 0),
+  ADD COLUMN IF NOT EXISTS agency_background_royal_price BIGINT NOT NULL DEFAULT 50000 CHECK (agency_background_royal_price > 0),
+  ADD COLUMN IF NOT EXISTS diamonds_per_usdt BIGINT NOT NULL DEFAULT 10000 CHECK (diamonds_per_usdt > 0),
+  ADD COLUMN IF NOT EXISTS min_withdraw_usdt NUMERIC(10, 2) NOT NULL DEFAULT 10 CHECK (min_withdraw_usdt > 0),
+  ADD COLUMN IF NOT EXISTS usdt_to_coins_rate BIGINT NOT NULL DEFAULT 10000 CHECK (usdt_to_coins_rate > 0),
+  ADD COLUMN IF NOT EXISTS usdt_to_syp_rate BIGINT NOT NULL DEFAULT 15200 CHECK (usdt_to_syp_rate > 0),
+  ADD COLUMN IF NOT EXISTS diamond_to_coin_rate NUMERIC(5, 2) NOT NULL DEFAULT 50 CHECK (diamond_to_coin_rate > 0);
+
+ALTER TABLE public.sada_economy_settings
+  ALTER COLUMN weekly_agency_target SET DEFAULT 100000,
+  ALTER COLUMN room_background_price SET DEFAULT 5000,
+  ALTER COLUMN agency_commission_pct SET DEFAULT 15,
+  ALTER COLUMN wheel_entry_fee SET DEFAULT 200;
+ALTER TABLE public.sada_economy_settings
+  DROP CONSTRAINT IF EXISTS sada_economy_settings_wheel_entry_fee_check;
+UPDATE public.sada_economy_settings
+SET wheel_entry_fee = CASE
+  WHEN wheel_entry_fee IN (200, 500, 1000) THEN wheel_entry_fee
+  ELSE 200
+END;
+ALTER TABLE public.sada_economy_settings
+  ADD CONSTRAINT sada_economy_settings_wheel_entry_fee_check
+  CHECK (wheel_entry_fee IN (200, 500, 1000));
 
 INSERT INTO public.sada_economy_settings (id)
 VALUES ('global')
 ON CONFLICT (id) DO NOTHING;
+
+UPDATE public.sada_economy_settings
+SET weekly_agency_target = 100000
+WHERE id = 'global' AND weekly_agency_target = 10000;
+UPDATE public.sada_economy_settings
+SET room_background_price = 5000
+WHERE id = 'global' AND room_background_price = 25000;
+UPDATE public.sada_economy_settings
+SET agency_commission_pct = 15
+WHERE id = 'global' AND agency_commission_pct = 10;
 
 ALTER TABLE public.sada_economy_settings ENABLE ROW LEVEL SECURITY;
 GRANT SELECT ON public.sada_economy_settings TO anon, authenticated, service_role;
@@ -1353,7 +1399,7 @@ BEGIN
   IF auth.uid() IS NULL OR auth.uid()::TEXT IS DISTINCT FROM p_creator_id THEN
     RAISE EXCEPTION 'يجب تسجيل الدخول لإنشاء الجولة.';
   END IF;
-  IF p_entry_fee NOT IN (100, 500, 1000, 5000) THEN
+  IF p_entry_fee NOT IN (200, 500, 1000) THEN
     RAISE EXCEPTION 'قيمة الدخول غير صالحة.';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.sada_rooms WHERE id = p_room_id) THEN

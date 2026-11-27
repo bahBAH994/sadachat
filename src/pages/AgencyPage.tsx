@@ -86,7 +86,7 @@ export const AgencyPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [weeklyAgencyTarget, setWeeklyAgencyTarget] = useState(10000);
+  const [weeklyAgencyTarget, setWeeklyAgencyTarget] = useState(100000);
 
   // Host Center ("مركز المضيف") join application state
   const [agencyInput, setAgencyInput] = useState('');

@@ -3,10 +3,10 @@ import { createDefaultPlatformSettings } from './sadaCatalog';
 import { supabase } from './supabase';
 
 export const GRAND_COMPETITION_PACKAGES = [
-  { coins: 20_000, weight: 1 },
-  { coins: 50_000, weight: 3 },
-  { coins: 100_000, weight: 7 },
-  { coins: 200_000, weight: 16 },
+  { coins: 1_000, weight: 1 },
+  { coins: 2_500, weight: 3 },
+  { coins: 5_000, weight: 7 },
+  { coins: 10_000, weight: 16 },
 ] as const;
 
 export type GrandCompetitionContent = Pick<

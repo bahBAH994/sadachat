@@ -23,16 +23,16 @@ export const DiamondWalletPage: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [diamondToCoinsRate, setDiamondToCoinsRate] = useState(2);
-  const [convertAmount, setConvertAmount] = useState('100');
-  const [withdrawAmount, setWithdrawAmount] = useState('500');
+  const [diamondToCoinsRate, setDiamondToCoinsRate] = useState(0.5);
+  const [convertAmount, setConvertAmount] = useState('1');
+  const [withdrawAmount, setWithdrawAmount] = useState('100000');
   const [withdrawAddress, setWithdrawAddress] = useState('');
   const [eligibility, setEligibility] = useState({
     eligible: false,
     roleLabel: 'عضو',
-    minUsdt: 5,
-    diamondsPerUsdt: 100,
-    coinsPerUsdt: 1000,
+    minUsdt: 10,
+    diamondsPerUsdt: 10000,
+    coinsPerUsdt: 10000,
   });
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [withdrawals, setWithdrawals] = useState<UsdtWithdrawalRequest[]>([]);
@@ -45,8 +45,11 @@ export const DiamondWalletPage: React.FC = () => {
     try {
       const data = await getWalletOverviewFromSupabase(user.id);
       updateLocalUser(data.user);
-      setDiamondToCoinsRate(data.diamondToCoinsRate || 2);
+      setDiamondToCoinsRate(data.diamondToCoinsRate || 0.5);
       setEligibility(data.withdrawalEligibility);
+      setWithdrawAmount(
+        String(data.withdrawalEligibility.minUsdt * data.withdrawalEligibility.diamondsPerUsdt)
+      );
       setTransactions(data.transactions.filter((t) => t.currency === 'diamonds'));
       setWithdrawals(data.usdtWithdrawals.filter((w) => w.sourceCurrency === 'diamonds'));
     } finally {
@@ -167,7 +170,7 @@ export const DiamondWalletPage: React.FC = () => {
               <span>تحويل الألماس إلى كوينز</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              كل 1 ألماسة = {diamondToCoinsRate} كوينز ذهبية (الحد الأدنى للتحويل 10 ألماسات)
+              كل 1 ألماسة = {diamondToCoinsRate} كوينز ذهبية
             </p>
           </div>
 
@@ -180,7 +183,7 @@ export const DiamondWalletPage: React.FC = () => {
             <form onSubmit={handleConvert} className="flex flex-col sm:flex-row gap-2.5">
               <input
                 type="number"
-                min={10}
+                min={1}
                 max={user.diamonds}
                 dir="ltr"
                 value={convertAmount}
@@ -189,7 +192,7 @@ export const DiamondWalletPage: React.FC = () => {
               />
               <button
                 type="submit"
-                disabled={busy || user.diamonds < 10}
+                disabled={busy || user.diamonds < 1}
                 className="emerald-btn rounded-2xl px-6 py-2.5 text-xs font-extrabold cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
               >
                 <Coins className="w-4 h-4" />

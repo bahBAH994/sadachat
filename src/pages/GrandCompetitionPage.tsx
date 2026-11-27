@@ -38,7 +38,7 @@ export const GrandCompetitionPage: React.FC = () => {
   const { user, updateLocalUser } = useAuth();
   const [competition, setCompetition] = useState<GrandCompetitionSettings | null>(null);
   const [userShare, setUserShare] = useState({ participantWeight: 0, sharePercent: 0 });
-  const [selectedPackage, setSelectedPackage] = useState<number>(20_000);
+  const [selectedPackage, setSelectedPackage] = useState<number>(1_000);
   const [purchasing, setPurchasing] = useState(false);
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const userId = user?.id;
@@ -335,9 +335,6 @@ export const GrandCompetitionPage: React.FC = () => {
               >
                 <span className="block text-sm font-black">
                   {subscription.coins.toLocaleString('en-US')}
-                </span>
-                <span className="mt-1 block text-[10px]">
-                  {Math.floor(subscription.coins * 0.8).toLocaleString('en-US')} للجائزة
                 </span>
                 <span className="mt-1 block text-[10px] font-bold">
                   {subscription.weight === 1

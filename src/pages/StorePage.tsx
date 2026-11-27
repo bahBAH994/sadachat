@@ -29,7 +29,11 @@ export const StorePage: React.FC = () => {
   const [luxuryBackgrounds, setLuxuryBackgrounds] = useState<StoreBackgroundItem[]>([]);
   const [ownedBackgrounds, setOwnedBackgrounds] = useState<string[]>([]);
   const [totalRechargedCoins, setTotalRechargedCoins] = useState(0);
-  const [agencyBackgroundPrice, setAgencyBackgroundPrice] = useState(50000);
+  const [agencyBackgroundPrices, setAgencyBackgroundPrices] = useState({
+    classic: 10000,
+    gold: 25000,
+    royal: 50000,
+  });
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
@@ -46,7 +50,7 @@ export const StorePage: React.FC = () => {
       setLuxuryBackgrounds(data.luxuryBackgrounds);
       setOwnedBackgrounds(data.ownedBackgrounds);
       setTotalRechargedCoins(data.totalRechargedCoins);
-      setAgencyBackgroundPrice(data.agencyBackgroundPrice);
+      setAgencyBackgroundPrices(data.agencyBackgroundPrices);
     } catch (error) {
       setFeedback({
         type: 'err',
@@ -488,7 +492,7 @@ export const StorePage: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-black text-white">
-                  خلفيات الوكالات الفخمة ({agencyBackgroundPrice.toLocaleString('en-US')} كوينز)
+                  خلفيات الوكالات الفخمة
                 </h2>
                 <p className="text-xs text-slate-400">
                   اقتنِ خلفيات القصور الفاخرة للغرفة الصوتية وطبّقها مباشرة على غرفتك من هنا أو من الحقيبة.
@@ -502,6 +506,9 @@ export const StorePage: React.FC = () => {
               <div className="sm:col-span-2 lg:col-span-3 h-44 rounded-3xl bg-[#141927] border border-white/10 animate-pulse" />
             ) : luxuryBackgrounds.length > 0 ? luxuryBackgrounds.map((bg) => {
               const isOwned = ownedBackgrounds.includes(bg.id);
+              const backgroundPrice = agencyBackgroundPrices[bg.tier];
+              const tierLabel =
+                bg.tier === 'classic' ? 'كلاسيكية' : bg.tier === 'gold' ? 'ذهبية' : 'ملكية VIP';
               return (
                 <article
                   key={bg.id}
@@ -510,9 +517,14 @@ export const StorePage: React.FC = () => {
                   <div className={`${bg.previewClass} h-32 p-4 text-white flex flex-col justify-between relative overflow-hidden`}>
                     <div className="flex items-center justify-between relative z-10">
                       <span className="text-2xl">{bg.badgeGlyph}</span>
-                      <span className="rounded-full bg-black/50 border border-amber-300/50 px-2.5 py-0.5 text-[11px] font-extrabold text-[#FCE9A6] font-mono-num">
-                        {agencyBackgroundPrice.toLocaleString('en-US')} <CoinIcon className="inline h-3.5 w-3.5 align-[-2px]" />
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="rounded-full bg-black/50 border border-amber-300/50 px-2.5 py-0.5 text-[10px] font-extrabold text-[#FCE9A6]">
+                          الفئة {tierLabel}
+                        </span>
+                        <span className="rounded-full bg-black/50 border border-amber-300/50 px-2.5 py-0.5 text-[11px] font-extrabold text-[#FCE9A6] font-mono-num">
+                          {backgroundPrice.toLocaleString('en-US')} <CoinIcon className="inline h-3.5 w-3.5 align-[-2px]" />
+                        </span>
+                      </div>
                     </div>
                     <h3 className="text-sm font-black text-white relative z-10">{bg.name}</h3>
                   </div>
@@ -550,7 +562,7 @@ export const StorePage: React.FC = () => {
                         <span>
                           {busyId === bg.id
                             ? 'جارٍ الشراء...'
-                            : `شراء بـ ${agencyBackgroundPrice.toLocaleString('en-US')} كوينز`}
+                            : `شراء بـ ${backgroundPrice.toLocaleString('en-US')} كوينز`}
                         </span>
                       </button>
                     )}

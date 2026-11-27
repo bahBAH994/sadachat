@@ -106,26 +106,27 @@ export const WalletPage: React.FC = () => {
   );
   const [adminShamCashAddress, setAdminShamCashAddress] = useState('');
   const [adminShamCashBarcode, setAdminShamCashBarcode] = useState('');
-  const [usdtToCoinsRate, setUsdtToCoinsRate] = useState(1000);
-  const [diamondToCoinsRate, setDiamondToCoinsRate] = useState(2);
+  const [usdtToCoinsRate, setUsdtToCoinsRate] = useState(10000);
+  const [usdtToSypRate, setUsdtToSypRate] = useState(15200);
+  const [diamondToCoinsRate, setDiamondToCoinsRate] = useState(0.5);
   const [rewardTiers, setRewardTiers] = useState<RewardTierInfo[]>([]);
   const [eligibility, setEligibility] = useState({
     eligible: false,
     roleLabel: 'عضو',
-    minUsdt: 5,
-    diamondsPerUsdt: 100,
-    coinsPerUsdt: 1000,
+    minUsdt: 10,
+    diamondsPerUsdt: 10000,
+    coinsPerUsdt: 10000,
   });
 
-  const [convertAmount, setConvertAmount] = useState('50');
-  const [depositUsdt, setDepositUsdt] = useState('50');
+  const [convertAmount, setConvertAmount] = useState('1');
+  const [depositUsdt, setDepositUsdt] = useState('1');
   const [txId, setTxId] = useState('');
   const [proofImage, setProofImage] = useState('');
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [copiedShamCashAddress, setCopiedShamCashAddress] = useState(false);
 
   const [withdrawCurrency, setWithdrawCurrency] = useState<'diamonds' | 'coins'>('diamonds');
-  const [withdrawAmount, setWithdrawAmount] = useState('500');
+  const [withdrawAmount, setWithdrawAmount] = useState('100000');
   const [withdrawAddress, setWithdrawAddress] = useState('');
   const [shamCashDepositAmount, setShamCashDepositAmount] = useState('');
   const [shamCashCurrency, setShamCashCurrency] = useState<'USD' | 'SYP'>('SYP');
@@ -162,9 +163,13 @@ export const WalletPage: React.FC = () => {
         : ''
     );
     setUsdtToCoinsRate(data.usdtToCoinsRate);
-    setDiamondToCoinsRate(data.diamondToCoinsRate || 2);
+    setUsdtToSypRate(data.usdtToSypRate);
+    setDiamondToCoinsRate(data.diamondToCoinsRate || 0.5);
     setRewardTiers(data.rewardTiers);
     setEligibility(data.withdrawalEligibility);
+    setWithdrawAmount(
+      String(data.withdrawalEligibility.minUsdt * data.withdrawalEligibility.diamondsPerUsdt)
+    );
   }, [user?.id, updateLocalUser]);
 
   useEffect(() => {
@@ -182,6 +187,16 @@ export const WalletPage: React.FC = () => {
     const bonus = matchedTier ? Math.round(base * matchedTier.bonusRate) : 0;
     return { base, bonus, total: base + bonus };
   }, [depositNumeric, usdtToCoinsRate, matchedTier]);
+
+  const shamCashDepositUsdt =
+    Math.max(0, Number(shamCashDepositAmount) || 0) /
+    (shamCashCurrency === 'SYP' ? usdtToSypRate : 1);
+  const shamCashDepositSyp = shamCashDepositUsdt * usdtToSypRate;
+  const shamCashDepositCoins = Math.round(shamCashDepositUsdt * usdtToCoinsRate);
+  const shamCashWithdrawalUsdt =
+    Math.max(0, Number(shamCashWithdrawalAmount) || 0) /
+    (shamCashCurrency === 'SYP' ? usdtToSypRate : 1);
+  const shamCashWithdrawalSyp = shamCashWithdrawalUsdt * usdtToSypRate;
 
   const expectedWithdrawUsdt = useMemo(() => {
     const raw = Math.max(0, Number(withdrawAmount) || 0);
@@ -463,11 +478,11 @@ export const WalletPage: React.FC = () => {
             <h2 className="text-sm font-bold">تحويل الألماس إلى كوينز</h2>
           </div>
           <label className="block text-xs text-slate-300">
-            عدد الألماسات المراد تحويلها (الحد الأدنى 10)
+            كمية الألماس المراد تحويلها
           </label>
           <input
             type="number"
-            min={10}
+            min={1}
             max={user.diamonds}
             value={convertAmount}
             onChange={(e) => setConvertAmount(e.target.value)}
@@ -479,7 +494,7 @@ export const WalletPage: React.FC = () => {
           type="submit"
           disabled={
             busyId === 'convert' ||
-            user.diamonds < 10 ||
+            user.diamonds < 1 ||
             (user.gender === 'female' && !user.is_admin && user.femaleVoiceStatus !== 'verified')
           }
           className="gold-btn min-h-[44px] rounded-xl px-5 py-2.5 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
@@ -604,7 +619,9 @@ export const WalletPage: React.FC = () => {
                     اختر مبلغ الشحن بالدولار (USDT) أو أدخل المبلغ يدوياً
                   </label>
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-3">
-                    {[10, 25, 50, 100, 250].map((val) => (
+                    {Array.from(new Set(rewardTiers.map((tier) => tier.minUsdt)))
+                      .sort((a, b) => a - b)
+                      .map((val) => (
                       <button
                         key={val}
                         type="button"
@@ -615,13 +632,16 @@ export const WalletPage: React.FC = () => {
                             : 'bg-[#070913]/80 border-[#D4AF37]/25 text-[#FCE9A6] hover:border-[#D4AF37]'
                         }`}
                       >
-                        ${val}
+                        {val} USDT
+                        <span className="block text-[9px] text-slate-400">
+                          {(val * usdtToSypRate).toLocaleString('en-US')} ل.س
+                        </span>
                       </button>
                     ))}
                   </div>
                   <input
                     type="number"
-                    min={10}
+                    min={1}
                     step="0.01"
                     required
                     value={depositUsdt}
@@ -629,6 +649,10 @@ export const WalletPage: React.FC = () => {
                     dir="ltr"
                     className="w-full rounded-xl bg-[#070913]/85 border border-[#D4AF37]/25 px-3.5 py-2.5 text-sm text-white font-mono-num text-left focus:outline-none focus:border-[#D4AF37]"
                   />
+                  <p className="mt-2 text-[11px] text-[#FCE9A6]">
+                    القيمة التقريبية: {(depositNumeric * usdtToSypRate).toLocaleString('en-US')} ل.س
+                    (1 USDT = {usdtToSypRate.toLocaleString('en-US')} ل.س)
+                  </p>
                 </div>
 
                 {/* Live Reward & Coins Preview */}
@@ -649,7 +673,7 @@ export const WalletPage: React.FC = () => {
                     <p className="text-sm font-bold text-amber-200 mt-0.5">
                       {matchedTier
                         ? matchedTier.label
-                        : 'اشحن 10$ على الأقل للحصول على إطار مؤقت'}
+                        : 'لم تصل بعد إلى شريحة المكافأة التالية'}
                     </p>
                   </div>
                 </div>
@@ -794,7 +818,9 @@ export const WalletPage: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setWithdrawCurrency('diamonds');
-                        setWithdrawAmount('500');
+                        setWithdrawAmount(
+                          String(eligibility.minUsdt * eligibility.diamondsPerUsdt)
+                        );
                       }}
                       className={`min-h-[46px] rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-2 ${
                         withdrawCurrency === 'diamonds'
@@ -809,7 +835,9 @@ export const WalletPage: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setWithdrawCurrency('coins');
-                        setWithdrawAmount('5000');
+                        setWithdrawAmount(
+                          String(eligibility.minUsdt * eligibility.coinsPerUsdt)
+                        );
                       }}
                       className={`min-h-[46px] rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-2 ${
                         withdrawCurrency === 'coins'
@@ -961,6 +989,12 @@ export const WalletPage: React.FC = () => {
                 <option value="SYP">ليرة سورية (SYP)</option>
                 <option value="USD">دولار (USD)</option>
               </select>
+              <p className="mt-2 text-[11px] text-[#FCE9A6]">
+                يعادل {shamCashDepositUsdt.toFixed(2)} USDT ({shamCashDepositSyp.toLocaleString('en-US')} ل.س) · الشحن المتوقع{' '}
+                {shamCashDepositCoins.toLocaleString('en-US')} كوينز
+                {shamCashCurrency === 'SYP' &&
+                  ` (سعر الصرف ${usdtToSypRate.toLocaleString('en-US')} ل.س لكل USDT)`}
+              </p>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -1016,6 +1050,12 @@ export const WalletPage: React.FC = () => {
                 <option value="SYP">ليرة سورية (SYP)</option>
                 <option value="USD">دولار (USD)</option>
               </select>
+              <p className="mt-2 text-[11px] text-[#FCE9A6]">
+                يعادل {shamCashWithdrawalUsdt.toFixed(2)} USDT · المبلغ بالليرة السورية{' '}
+                {shamCashWithdrawalSyp.toLocaleString('en-US')} ل.س
+                {shamCashCurrency === 'SYP' &&
+                  ` (سعر الصرف ${usdtToSypRate.toLocaleString('en-US')} ل.س لكل USDT)`}
+              </p>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">

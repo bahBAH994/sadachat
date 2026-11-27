@@ -5,6 +5,14 @@ export type AssetKey =
   | 'host_female'
   | 'emblem';
 
+export interface UserPreferences {
+  hideOnlineStatus: boolean;
+  roomStealthMode: boolean;
+  friendsOnlyMessages: boolean;
+  giftAndEntranceEffects: boolean;
+  callRingtone: boolean;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -51,6 +59,7 @@ export interface User {
   device_uuid: string;
   createdAt: string;
   lastSeen: string;
+  preferences?: UserPreferences;
 }
 
 export type VipTierKey = 'none' | 'vip1' | 'vip2' | 'vip3' | 'svip';
@@ -637,6 +646,7 @@ export interface StoreBackgroundItem {
   priceCoins: number;
   badgeGlyph: string;
   previewClass: string;
+  tier: 'classic' | 'gold' | 'royal';
 }
 
 export interface UsdtDepositRequest {
