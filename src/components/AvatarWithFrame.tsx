@@ -3,6 +3,7 @@ import { User } from 'lucide-react';
 import { resolveAsset } from '../lib/assets';
 import { getVipTierConfig, parseVipTierKey } from '../lib/sadaCatalog';
 import type { VipTierKey } from '../types';
+import { TransparentAssetImage, TransparentAssetVideo } from './TransparentAssetImage';
 
 const FRAME_CLASSES: Record<string, string> = {
   frame_obsidian: 'ring-2 ring-[#D4AF37]/50 shadow-[0_0_12px_rgba(212,175,55,0.25)]',
@@ -70,6 +71,7 @@ interface AvatarWithFrameProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   customSizeClass?: string;
   isSpeaking?: boolean;
+  animateFrame?: boolean;
   onClick?: () => void;
 }
 
@@ -96,11 +98,15 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   size = 'md',
   customSizeClass,
   isSpeaking = false,
+  animateFrame = true,
   onClick,
 }) => {
   const [failed, setFailed] = useState(false);
   const activeFrameId = frameId || 'frame_obsidian';
-  const frameClass = FRAME_CLASSES[activeFrameId] || FRAME_CLASSES.frame_obsidian;
+  const frameClass = (FRAME_CLASSES[activeFrameId] || FRAME_CLASSES.frame_obsidian)
+    .split(' ')
+    .filter((className) => animateFrame || !className.startsWith('animate-'))
+    .join(' ');
   const frame3D = FRAME_3D_BADGE[activeFrameId];
   const hasCustomFrame = Boolean(frameUrl);
   const ornaments = ORNAMENT_SIZE[size === 'xl' ? 'xl' : size === 'lg' ? 'lg' : 'md'];
@@ -136,7 +142,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
     <div
       onClick={onClick}
       className={`relative inline-flex items-center justify-center shrink-0 ${
-        activeFrameId !== 'frame_obsidian' && resolvedVip === 'none'
+        animateFrame && activeFrameId !== 'frame_obsidian' && resolvedVip === 'none'
           ? 'animate-frame-pulse-glow'
           : ''
       } ${
@@ -170,7 +176,9 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
           }}
         >
           <span
-            className="vip-frame-silver-sheen absolute -inset-y-4 w-5 bg-gradient-to-r from-transparent via-white/95 to-transparent blur-[1px]"
+            className={`absolute -inset-y-4 w-5 bg-gradient-to-r from-transparent via-white/95 to-transparent blur-[1px] ${
+              animateFrame ? 'vip-frame-silver-sheen' : ''
+            }`}
           />
         </span>
       )}
@@ -199,6 +207,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
                     ? '-right-1.5 text-[10px]'
                     : '-right-2 text-xs'
                 }`}
+                style={{ animation: animateFrame ? undefined : 'none' }}
               >
                 🪽
               </span>
@@ -213,6 +222,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
                     ? '-left-1.5 text-[10px]'
                     : '-left-2 text-xs'
                 }`}
+                style={{ animation: animateFrame ? undefined : 'none' }}
               >
                 <span className="inline-block scale-x-[-1]">🪽</span>
               </span>
@@ -240,7 +250,9 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
         <>
           <span
             aria-hidden="true"
-            className="absolute -inset-[3.5px] rounded-full animate-frame-orbit pointer-events-none"
+            className={`absolute -inset-[3.5px] rounded-full pointer-events-none ${
+              animateFrame ? 'animate-frame-orbit' : ''
+            }`}
             style={{
               background:
                 'conic-gradient(from 0deg, #38BDF8, #FEF08A, #F97316, #EF4444, #BAE6FD, #F59E0B, #38BDF8)',
@@ -275,7 +287,9 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
           <span
             aria-hidden="true"
             className={`absolute inset-0 scale-[1.35] rounded-full pointer-events-none opacity-95 ${
-              activeFrameId === 'frame_galaxy_sovereign'
+              !animateFrame
+                ? ''
+                : activeFrameId === 'frame_galaxy_sovereign'
                 ? 'animate-frame-galaxy-ring'
                 : activeFrameId === 'frame_imperial_dragon'
                 ? 'animate-dragon-aura'
@@ -304,18 +318,18 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
               <span aria-hidden="true" className={`absolute -left-7 top-1/2 -translate-y-1/2 -rotate-[28deg] leading-none frame-ornament-phoenix ${ornaments.wing} pointer-events-none z-20`}>🪽</span>
               <span aria-hidden="true" className={`absolute -right-7 top-1/2 -translate-y-1/2 rotate-[28deg] scale-x-[-1] leading-none frame-ornament-phoenix ${ornaments.wing} pointer-events-none z-20`}>🪽</span>
               <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 z-30 leading-none frame-ornament-phoenix ${ornaments.crown} pointer-events-none`}>🔥</span>
-              <span aria-hidden="true" className="absolute -left-2 top-1/4 text-sm animate-frame-spark pointer-events-none z-20">✦</span>
-              <span aria-hidden="true" className="absolute -right-2 bottom-1/4 text-xs animate-frame-spark pointer-events-none z-20">✧</span>
+              <span aria-hidden="true" className={`absolute -left-2 top-1/4 text-sm ${animateFrame ? 'animate-frame-spark' : ''} pointer-events-none z-20`}>✦</span>
+              <span aria-hidden="true" className={`absolute -right-2 bottom-1/4 text-xs ${animateFrame ? 'animate-frame-spark' : ''} pointer-events-none z-20`}>✧</span>
             </>
           )}
 
           {activeFrameId === 'frame_galaxy_sovereign' && size !== 'xs' && size !== 'sm' && (
             <>
-              <span aria-hidden="true" className="absolute -inset-[9px] rounded-full border-2 border-violet-300/90 shadow-[0_0_12px_rgba(168,85,247,0.8)] animate-frame-galaxy-ring pointer-events-none z-0" />
-              <span aria-hidden="true" className="absolute -inset-[13px] rounded-full border border-amber-200/90 shadow-[0_0_14px_rgba(212,175,55,0.85)] animate-frame-galaxy-ring-reverse pointer-events-none z-0" />
+              <span aria-hidden="true" className={`absolute -inset-[9px] rounded-full border-2 border-violet-300/90 shadow-[0_0_12px_rgba(168,85,247,0.8)] ${animateFrame ? 'animate-frame-galaxy-ring' : ''} pointer-events-none z-0`} />
+              <span aria-hidden="true" className={`absolute -inset-[13px] rounded-full border border-amber-200/90 shadow-[0_0_14px_rgba(212,175,55,0.85)] ${animateFrame ? 'animate-frame-galaxy-ring-reverse' : ''} pointer-events-none z-0`} />
               <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 z-30 leading-none frame-ornament-galaxy ${ornaments.crown} pointer-events-none`}>👑</span>
-              <span aria-hidden="true" className="absolute -left-3 top-1/4 text-sm animate-frame-spark pointer-events-none z-20">✦</span>
-              <span aria-hidden="true" className="absolute -right-3 bottom-1/4 text-xs animate-frame-spark pointer-events-none z-20">✧</span>
+              <span aria-hidden="true" className={`absolute -left-3 top-1/4 text-sm ${animateFrame ? 'animate-frame-spark' : ''} pointer-events-none z-20`}>✦</span>
+              <span aria-hidden="true" className={`absolute -right-3 bottom-1/4 text-xs ${animateFrame ? 'animate-frame-spark' : ''} pointer-events-none z-20`}>✧</span>
               <span aria-hidden="true" className="absolute -right-2 top-0 text-[10px] pointer-events-none z-20">🪐</span>
             </>
           )}
@@ -323,7 +337,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
           {activeFrameId === 'frame_imperial_dragon' && size !== 'xs' && size !== 'sm' && (
             <>
               <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 z-30 leading-none frame-ornament-dragon ${ornaments.crown} pointer-events-none`}>🐉</span>
-              <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 -bottom-5 leading-none animate-frame-dragon-tail ${ornaments.tail} pointer-events-none z-20`}>〰️</span>
+              <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 -bottom-5 leading-none ${animateFrame ? 'animate-frame-dragon-tail' : ''} ${ornaments.tail} pointer-events-none z-20`}>〰️</span>
               <span aria-hidden="true" className="absolute -left-2 top-1/3 text-xs frame-ornament-dragon pointer-events-none z-20">✦</span>
               <span aria-hidden="true" className="absolute -right-2 bottom-1/3 text-xs frame-ornament-dragon pointer-events-none z-20">✦</span>
             </>
@@ -339,6 +353,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
           decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setFailed(true)}
+          style={animateFrame ? undefined : { animation: 'none' }}
           className={`relative z-10 ${dimClass} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
         />
       ) : (
@@ -351,22 +366,16 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
 
       {frameUrl && (
         /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(frameUrl) ? (
-          <video
-            src={frameUrl}
-            aria-hidden="true"
-            autoPlay
-            muted
-            loop
-            playsInline
-            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.35] object-contain mix-blend-screen animate-equipped-frame"
-          />
-        ) : (
-          <img
+          <TransparentAssetVideo
             src={frameUrl}
             alt=""
-            aria-hidden="true"
-            loading="lazy"
-            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.35] object-contain mix-blend-screen animate-equipped-frame"
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.55] object-contain"
+          />
+        ) : (
+          <TransparentAssetImage
+            src={frameUrl}
+            alt=""
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.55] object-contain"
           />
         )
       )}

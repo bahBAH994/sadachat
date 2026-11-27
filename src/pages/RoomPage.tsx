@@ -1136,7 +1136,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
           {/* Golden Speaking Waves */}
           {isActiveSpeaker && (
             <>
-              <span className="absolute -inset-1.5 rounded-full border-2 border-[#FCE9A6] pointer-events-none" />
+              <span className="absolute -inset-1.5 rounded-full border-2 border-[#FCE9A6] animate-ping pointer-events-none" />
               <span className="absolute -inset-0.5 rounded-full border border-amber-400/90 shadow-[0_0_16px_rgba(251,191,36,0.9)] pointer-events-none" />
             </>
           )}
@@ -1187,6 +1187,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
               vipTier={resolvedVip}
               size={isHero5 ? 'lg' : 'md'}
               customSizeClass={sizeClass}
+              animateFrame={false}
             />
           ) : (
             <div

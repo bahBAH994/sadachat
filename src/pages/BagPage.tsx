@@ -8,6 +8,7 @@ import {
   type OwnedStoreItem,
   type StoreCategory,
 } from '../lib/sadaStoreService';
+import { TransparentAssetImage, TransparentAssetVideo } from '../components/TransparentAssetImage';
 
 const BAG_TABS: Array<{ id: StoreCategory; label: string }> = [
   { id: 'frames', label: 'إطارات' },
@@ -163,9 +164,7 @@ export const BagPage: React.FC = () => {
             {visibleItems.map((item) => {
               const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(item.assetPath);
               const isFrameOrEntrance = item.category !== 'backgrounds';
-              const artworkClass = `h-full w-full object-contain ${
-                isFrameOrEntrance ? 'mix-blend-screen brightness-110 contrast-125' : ''
-              }`;
+              const artworkClass = 'h-full w-full object-contain';
               const remainingDays = item.expiresAt
                 ? Math.ceil((new Date(item.expiresAt).getTime() - now) / 86_400_000)
                 : null;
@@ -176,21 +175,37 @@ export const BagPage: React.FC = () => {
                 >
                   <div className="flex h-48 items-center justify-center bg-[#0F1117]">
                     {isVideo ? (
-                      <video
-                        src={item.assetUrl}
-                        className={artworkClass}
-                        autoPlay
-                        muted
-                        loop
-                        playsInline
-                      />
+                      isFrameOrEntrance ? (
+                        <TransparentAssetVideo
+                          src={item.assetUrl}
+                          alt={item.name}
+                          className={artworkClass}
+                        />
+                      ) : (
+                        <video
+                          src={item.assetUrl}
+                          className={artworkClass}
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                        />
+                      )
                     ) : (
-                      <img
-                        src={item.assetUrl}
-                        alt={item.name}
-                        className={artworkClass}
-                        loading="lazy"
-                      />
+                      isFrameOrEntrance ? (
+                        <TransparentAssetImage
+                          src={item.assetUrl}
+                          alt={item.name}
+                          className={artworkClass}
+                        />
+                      ) : (
+                        <img
+                          src={item.assetUrl}
+                          alt={item.name}
+                          className={artworkClass}
+                          loading="lazy"
+                        />
+                      )
                     )}
                   </div>
                   <div className="space-y-3 p-4">

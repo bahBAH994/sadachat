@@ -4,6 +4,7 @@ import { fireSvipEntranceConfetti, playVipEntranceSound } from '../lib/sadaAudio
 import type { RoomEntryEvent } from '../types';
 import { AvatarWithFrame, VipTierBadge, VipUserName } from './AvatarWithFrame';
 import { Fluent3DAsset } from './Fluent3DAsset';
+import { TransparentAssetImage, TransparentAssetVideo } from './TransparentAssetImage';
 
 interface VipEntranceOverlayProps {
   entry: RoomEntryEvent | null;
@@ -43,19 +44,16 @@ export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry })
           aria-label={`${entry.displayName} دخل الغرفة`}
         >
           {/(\.mp4|\.webm|\.mov|\.m4v)(?:[?#]|$)/i.test(entry.entranceAssetUrl) ? (
-            <video
-              src={entry.entranceAssetUrl}
-              autoPlay
-              muted
-              loop
-              playsInline
-              className="h-full w-full object-contain mix-blend-screen"
-            />
-          ) : (
-            <img
+            <TransparentAssetVideo
               src={entry.entranceAssetUrl}
               alt=""
-              className="h-full w-full object-contain mix-blend-screen"
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            <TransparentAssetImage
+              src={entry.entranceAssetUrl}
+              alt=""
+              className="h-full w-full object-contain"
             />
           )}
         </motion.div>
