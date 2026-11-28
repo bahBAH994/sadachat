@@ -413,20 +413,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           >
             المشرفين والأعضاء ({memberList.length})
           </button>
-          {isAgencyOwner && (
-            <button
-              type="button"
-              onClick={() => setTab('contests')}
-              className={`min-h-[44px] rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
-                tab === 'contests'
-                  ? 'bg-gradient-to-r from-[#D4AF37] to-[#B58922] text-[#070913]'
-                  : 'text-[#FCE9A6] hover:text-white'
-              }`}
-            >
-              <Trophy className="w-3.5 h-3.5" />
-              مسابقات {placeName}
-            </button>
-          )}
+          
           {canSeeLogs && (
             <button
               type="button"

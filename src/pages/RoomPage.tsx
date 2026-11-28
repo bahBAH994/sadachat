@@ -976,8 +976,8 @@ const RoomChatInput = memo<RoomChatInputProps>(
 
         const container = roomContainerRef.current;
         if (container) {
-          container.style.top = `${viewport?.offsetTop || 0}px`;
-          container.style.height = `${height}px`;
+          container.style.top = "0px"; const kb = Math.max(0, window.innerHeight - height); container.style.paddingBottom = `${kb}px`;
+          container.style.height = "100svh";
           container.dataset.roomKeyboardOpen = String(keyboardOpen);
         }
       };

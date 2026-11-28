@@ -391,30 +391,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
               />
             )}
           </div>
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 z-30 scale-[1.54] overflow-visible pointer-events-none"
-          >
-            {[
-              { left: '10%', top: '24%' },
-              { right: '8%', top: '16%' },
-              { right: '16%', bottom: '10%' },
-            ].map((position, index) => (
-              <span
-                key={index}
-                className="absolute animate-frame-spark text-[9px] leading-none"
-                style={{
-                  ...position,
-                  color: frameColor,
-                  textShadow: `0 0 8px ${frameColor}, 0 0 14px ${frameColor}`,
-                  animationDelay: `${index * 0.35}s`,
-                }}
-              >
-                ✦
-              </span>
-            ))}
-          </span>
-        </>
+          </>
       )}
 
       {/* VIP Corner Emblem Badge for md/lg/xl */}

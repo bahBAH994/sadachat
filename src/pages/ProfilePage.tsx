@@ -824,20 +824,7 @@ export const ProfilePage: React.FC = () => {
           <span className="text-xs font-black text-[#FCE9A6]">عضوية VIP الملكية</span>
           <CrownIcon className="h-4 w-4 text-[#D4AF37]" />
         </div>
-        <div className="grid grid-cols-4 gap-1.5 text-center">
-          {[
-            ['VIP 1', '100,000'],
-            ['VIP 2', '250,000'],
-            ['VIP 3', '500,000'],
-            ['SVIP', '1,000,000'],
-          ].map(([label, amount]) => (
-            <div key={label} className="rounded-lg border border-[#D4AF37]/20 bg-black/20 py-1">
-              <span className="block text-[10px] font-black text-[#FCE9A6]">{label}</span>
-              <span className="block text-[9px] font-mono-num text-slate-300">{amount}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+        <div className="grid grid-cols-4 gap-1.5 text-center">{[["VIP 1","100,000"],["VIP 2","200,000"],["VIP 3","300,000"],["SVIP","500,000"],["SVIP 1","600,000"],["SVIP 2","800,000"],["SVIP 3","1,000,000"]].map(([l,a])=>(<div key={l} className="rounded-lg border border-[#D4AF37]/20 bg-black/20 py-1"><span className="block text-[10px] font-black text-[#FCE9A6]">{l}</span><span className="block text-[9px] font-mono-num text-slate-300">{a}</span></div>))}</div></section>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y">
       <div className="max-w-3xl mx-auto px-4 pt-3 pb-6 space-y-4">
