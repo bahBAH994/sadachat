@@ -1,3 +1,4 @@
+import { Keyboard } from '@capacitor/keyboard';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
@@ -954,7 +955,7 @@ const RoomChatInput = memo<RoomChatInputProps>(
     setShowEmojiPicker,
   }) => {
     const [chatText, setChatText] = useState('');
-    const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+    const [isKeyboardOpen, setIsKeyboardOpen] = useState(false); const [nativeKbHeight, setNativeKbHeight] = useState(0);
 
     useEffect(() => {
       insertEmojiRef.current = (emoji) => setChatText((current) => `${current}${emoji}`);
@@ -971,13 +972,13 @@ const RoomChatInput = memo<RoomChatInputProps>(
       const updateKeyboardState = () => {
         const height = viewport?.height ?? window.innerHeight;
         maxViewportHeight = Math.max(maxViewportHeight, height);
-        const keyboardOpen = maxViewportHeight - height > 120;
+        const keyboardOpen = nativeKbHeight > 0 || (maxViewportHeight - height > 120);
         setIsKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
 
         const container = roomContainerRef.current;
         if (container) {
           container.style.top = "0px";
-          container.style.height = `${height}px`; window.scrollTo(0, 0);
+          container.style.height = "100dvh";
           container.dataset.roomKeyboardOpen = String(keyboardOpen);
         }
       };
@@ -990,14 +991,14 @@ const RoomChatInput = memo<RoomChatInputProps>(
         }, 350);
       };
 
-      viewport?.addEventListener('resize', updateKeyboardState);
+      let kh1:any, kh2:any; Keyboard.addListener("keyboardWillShow", (info) => { setNativeKbHeight(info.keyboardHeight); setIsKeyboardOpen(true); }).then(h => kh1 = h); Keyboard.addListener("keyboardWillHide", () => { setNativeKbHeight(0); setIsKeyboardOpen(false); }).then(h => kh2 = h); viewport?.addEventListener('resize', updateKeyboardState);
       viewport?.addEventListener('scroll', updateKeyboardState);
       window.addEventListener('resize', updateKeyboardState);
       window.addEventListener('orientationchange', resetAfterOrientationChange);
       updateKeyboardState();
 
       return () => {
-        viewport?.removeEventListener('resize', updateKeyboardState);
+        kh1?.remove?.(); kh2?.remove?.(); viewport?.removeEventListener('resize', updateKeyboardState);
         viewport?.removeEventListener('scroll', updateKeyboardState);
         window.removeEventListener('resize', updateKeyboardState);
         window.removeEventListener('orientationchange', resetAfterOrientationChange);
@@ -1027,7 +1028,7 @@ const RoomChatInput = memo<RoomChatInputProps>(
     return (
       <form
         onSubmit={handleSubmit}
-        className={isKeyboardOpen ? "fixed inset-x-3 bottom-2 z-[90] flex items-center gap-1.5 rounded-full bg-slate-950/95 border border-amber-300/45 px-3 py-1.5 shadow-2xl backdrop-blur-xl" : "flex-1 min-w-0 flex items-center gap-1 rounded-full bg-black/15 border border-white/20 px-3 py-1"}
+        style={isKeyboardOpen ? { bottom: `${Math.max(nativeKbHeight, 260) + 6}px` } : undefined} className={isKeyboardOpen ? "fixed inset-x-3 z-[90] flex items-center gap-1.5 rounded-full bg-slate-950/95 border border-amber-300/45 px-3 py-1.5 shadow-2xl backdrop-blur-xl" : "flex-1 min-w-0 flex items-center gap-1 rounded-full bg-black/15 border border-white/20 px-3 py-1"}
       >
         <input
           ref={inputRef}
