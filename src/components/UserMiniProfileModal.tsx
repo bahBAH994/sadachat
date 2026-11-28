@@ -257,18 +257,8 @@ export const UserMiniProfileModal: React.FC = () => {
               {loading && !fetchedUser ? 'جارٍ تحميل الملف الشخصي...' : profile.bio}
             </p>
             <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
-              {profile.isHost && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-0.5">
-                  <UserCheck className="w-3 h-3" />
-                  <span>{profile.hostAgencyName ? `مضيف · ${profile.hostAgencyName}` : 'مضيف رسمي'}</span>
-                </span>
-              )}
-              {profile.activeEntryName && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 px-2.5 py-0.5">
-                  <Sparkles className="w-3 h-3 text-amber-600" />
-                  <span>{profile.activeEntryName}</span>
-                </span>
-              )}
+              
+              
               {profile.age && (
                 <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 text-amber-800 px-2.5 py-0.5 font-mono-num">
                   {profile.age} سنة

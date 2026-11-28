@@ -59,7 +59,7 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full min-h-[100dvh] bg-[#0b0e17] text-white flex items-center justify-center p-4 sm:p-6">
+    <div className="relative w-full min-h-[100dvh] bg-[#0b0e17] text-white flex items-start justify-center pt-7 pb-10 px-4 sm:px-6 overflow-y-auto">
       <div
         className="absolute inset-0 bg-cover bg-center opacity-20 pointer-events-none"
         style={{ backgroundImage: `url(${resolveAsset('royal_stage')})` }}

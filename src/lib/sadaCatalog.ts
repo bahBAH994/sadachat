@@ -459,7 +459,7 @@ export function getUserVipTierInfo(
       ...overrideCfg,
       score,
       nextTier,
-      progressPct: overrideKey === 'svip' ? 100 : 50,
+      progressPct: overrideKey === 'svip3' ? 100 : 50,
       coinsToNext: nextTier ? Math.max(0, nextTier.minScore - score) : 0,
     };
   }
@@ -508,7 +508,7 @@ export function parseVipTierKey(
 ): VipTierKey {
   if (vipTierOrKey) {
     const clean = vipTierOrKey.trim().toLowerCase();
-    if (clean === 'svip' || clean.includes('svip') || clean.includes('إمبراطوري')) return 'svip';
+    if (clean === 'svip3' || clean.includes('svip 3') || clean.includes('svip3')) return 'svip3'; if (clean === 'svip2' || clean.includes('svip 2') || clean.includes('svip2')) return 'svip2'; if (clean === 'svip1' || clean.includes('svip 1') || clean.includes('svip1')) return 'svip1'; if (clean === 'svip' || clean.includes('svip')) return 'svip';
     if (clean === 'vip3' || clean.includes('vip 3') || clean.includes('vip3')) return 'vip3';
     if (clean === 'vip2' || clean.includes('vip 2') || clean.includes('vip2')) return 'vip2';
     if (clean === 'vip1' || clean.includes('vip 1') || clean.includes('vip1')) return 'vip1';

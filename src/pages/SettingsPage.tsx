@@ -191,7 +191,7 @@ export const SettingsPage: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => navigate('/messages')}
+          onClick={() => window.alert('مركز الدعم الفني والمساعدة في صَدَى:\nلأي استفسار أو بلاغ أو تفعيل، تواصل مباشرةً مع الإدارة العليا عبر غرفة الدعم الرسمية أو البريد: support@sadachat.app')}
           className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-[#D4AF37]/25 bg-[#171A22] px-4 text-right text-sm font-extrabold text-[#FCE9A6]"
         >
           <Headphones className="h-5 w-5 text-[#D4AF37]" />

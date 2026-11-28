@@ -781,7 +781,7 @@ export const ProfilePage: React.FC = () => {
             <span className="text-[11px] font-extrabold text-slate-200">المتجر</span>
           </button>
           <button type="button" onClick={() => navigate('/bag')} className="flex flex-col items-center gap-1 cursor-pointer">
-            <div className="w-10 h-10 rounded-2xl bg-amber-400/10 border border-amber-300/25 flex items-center justify-center text-[#FCE9A6]"><Briefcase className="w-5 h-5" /></div>
+            <div className="w-10 h-10 rounded-2xl bg-amber-400/10 border border-amber-300/25 flex items-center justify-center text-[#FCE9A6]"><svg viewBox="0 0 24 24" className="w-5 h-5" fill="none"><defs><linearGradient id="bagGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#FEF08A"/><stop offset="50%" stopColor="#F59E0B"/><stop offset="100%" stopColor="#B45309"/></linearGradient></defs><path d="M8 7V6a4 4 0 0 1 8 0v1" stroke="#FEF08A" strokeWidth="2" strokeLinecap="round"/><rect x="3" y="7" width="18" height="14" rx="4" fill="url(#bagGold)"/><path d="M3 12h18" stroke="#78350F" strokeWidth="1.5" strokeOpacity="0.45"/><rect x="10" y="10.5" width="4" height="3" rx="1" fill="#FFFBEB"/></svg></div>
             <span className="text-[11px] font-extrabold text-slate-200">الحقيبة</span>
           </button>
           <button type="button" onClick={() => navigate('/diamond-wallet')} className="flex flex-col items-center gap-1 cursor-pointer">

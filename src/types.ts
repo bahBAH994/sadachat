@@ -62,7 +62,7 @@ export interface User {
   preferences?: UserPreferences;
 }
 
-export type VipTierKey = 'none' | 'vip1' | 'vip2' | 'vip3' | 'svip';
+export type VipTierKey = 'none' | 'vip1' | 'vip2' | 'vip3' | 'svip' | 'svip1' | 'svip2' | 'svip3';
 
 export interface RoomEntryEvent {
   userId: string;

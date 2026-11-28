@@ -10,7 +10,7 @@ interface VipEntranceOverlayProps {
   entry: RoomEntryEvent | null;
 }
 
-export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry }) => {
+export const VipEntranceOverlay: React.FC<VipEntranceOverlayProps> = ({ entry }) => { if (!entry?.entranceAssetUrl) return null;
   const vipLevel = entry?.vipLevel || 'none';
 
   useEffect(() => {
