@@ -976,8 +976,8 @@ const RoomChatInput = memo<RoomChatInputProps>(
 
         const container = roomContainerRef.current;
         if (container) {
-          container.style.top = "0px"; container.style.paddingBottom = "0px";
-          container.style.height = `${height}px`;
+          container.style.top = "0px";
+          container.style.height = "100svh";
           container.dataset.roomKeyboardOpen = String(keyboardOpen);
         }
       };
@@ -1027,7 +1027,7 @@ const RoomChatInput = memo<RoomChatInputProps>(
     return (
       <form
         onSubmit={handleSubmit}
-        className="flex-1 min-w-0 flex items-center gap-1 rounded-full bg-black/15 border border-white/20 px-3 py-1"
+        className={isKeyboardOpen ? "fixed inset-x-3 bottom-2 z-[90] flex items-center gap-1.5 rounded-full bg-slate-950/95 border border-amber-300/45 px-3 py-1.5 shadow-2xl backdrop-blur-xl" : "flex-1 min-w-0 flex items-center gap-1 rounded-full bg-black/15 border border-white/20 px-3 py-1"}
       >
         <input
           ref={inputRef}
