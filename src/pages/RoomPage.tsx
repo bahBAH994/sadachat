@@ -976,8 +976,8 @@ const RoomChatInput = memo<RoomChatInputProps>(
 
         const container = roomContainerRef.current;
         if (container) {
-          container.style.top = "0px"; const kb = Math.max(0, window.innerHeight - height); container.style.paddingBottom = `${kb}px`;
-          container.style.height = "100svh";
+          container.style.top = "0px"; container.style.paddingBottom = "0px";
+          container.style.height = `${height}px`;
           container.dataset.roomKeyboardOpen = String(keyboardOpen);
         }
       };
@@ -1172,7 +1172,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
           )}
 
           {/* TOP 1 Winged Golden Crown Aura */}
-          {isTop1 && !frameUrl && (
+          {false && isTop1 && !frameUrl && (
             <span
               aria-hidden="true"
               className="absolute -inset-2 pointer-events-none flex items-center justify-between text-amber-300 text-xs"
@@ -1290,7 +1290,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
           </AnimatePresence>
 
           {/* TOP 1 Crest Pill */}
-          {isTop1 && !frameUrl && (
+          {false && isTop1 && !frameUrl && (
             <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 text-[#070913] text-[7px] font-extrabold leading-tight shadow z-10 whitespace-nowrap">
               TOP1
             </span>
@@ -2822,7 +2822,7 @@ export const RoomPage: React.FC = () => {
               type="button"
               onClick={() => setShowWheelModal(true)}
               className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-rose-700/80 to-amber-700/80 border border-amber-300/50 px-2 py-1 text-[10px] font-extrabold text-white cursor-pointer"
-              title="دولاب الإقصاء الجماعي بالكوينز"
+              title="دولاب الإقصاء الجماعي بالكوينز" style={{marginInline:"auto"}}
             >
               <WheelIcon className="w-3 h-3 text-amber-200" />
               <span>دولاب الإقصاء</span>

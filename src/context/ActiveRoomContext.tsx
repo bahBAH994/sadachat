@@ -270,7 +270,7 @@ export const ActiveRoomProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const userRef = useRef(user);
   userRef.current = user;
 
-  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(() => safeGetItem('sada_persist_room_id'));
   const [room, setRoom] = useState<Room | null>(null);
   const roomRef = useRef(room);
   roomRef.current = room;

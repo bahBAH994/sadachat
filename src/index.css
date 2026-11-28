@@ -849,3 +849,7 @@ a[href*="netlify.com"][aria-label*="Netlify" i] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* sada-symmetric-fix */
+html, body, #root { width: 100%; max-width: 100vw; overflow-x: hidden; margin: 0 auto; transform: none !important; }
+main, section, header, nav { box-sizing: border-box; }
