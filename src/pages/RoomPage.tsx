@@ -1305,7 +1305,7 @@ const RoomSeatItem = memo<RoomSeatItemProps>(
         </div>
 
         {/* Speaker Name & Role Micro-Tag */}
-        <div className="relative z-30 mt-3.5 flex w-full max-w-[66px] items-center justify-center gap-0.5 mx-auto rounded-full bg-black/65 border border-white/10 px-1.5 py-0.5 text-center">
+        <div className="relative z-30 mt-2 flex w-full max-w-[62px] items-center justify-center gap-0.5 mx-auto rounded-full bg-black/65 border border-white/10 px-1.5 py-0.5 text-center">
           {seat.userId ? (
             <>
               {isHost && <CrownIcon className="w-2.5 h-2.5 shrink-0" />}
@@ -2502,7 +2502,7 @@ export const RoomPage: React.FC = () => {
       ? 'grid-cols-3 gap-6'
       : micSeats.length === 12
       ? 'grid-cols-4 gap-x-4 gap-y-6'
-      : 'grid-cols-6 gap-x-2.5 gap-y-5';
+      : 'grid-cols-6 gap-x-2.5 gap-y-4';
   const renderMicSeat = (seat: RoomSeat) => {
     const seatLookup = seat.userId ? userProfileLookup.get(seat.userId) : undefined;
     return (

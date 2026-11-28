@@ -356,11 +356,11 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
           referrerPolicy="no-referrer"
           onError={() => setFailed(true)}
           style={animateFrame ? undefined : { animation: 'none' }}
-          className={`relative z-10 ${dimClass} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
+          className={`relative z-10 ${dimClass} ${hasCustomFrame ? "scale-[0.88]" : ""} rounded-full object-cover bg-slate-900 ${vipRingVisualClass}`}
         />
       ) : (
         <div
-          className={`relative z-10 ${dimClass} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${vipRingVisualClass}`}
+          className={`relative z-10 ${dimClass} ${hasCustomFrame ? "scale-[0.88]" : ""} rounded-full bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center text-[#F3D37A] ${vipRingVisualClass}`}
         >
           <User className="w-1/2 h-1/2" />
         </div>
@@ -370,7 +370,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
         <>
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.82] flex items-center justify-center"
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full scale-[1.54] flex items-center justify-center"
             style={{
               filter: `drop-shadow(0 0 4px ${frameColor}77)`,
             }}
@@ -393,7 +393,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
           </div>
           <span
             aria-hidden="true"
-            className="absolute inset-0 z-30 scale-[1.82] overflow-visible pointer-events-none"
+            className="absolute inset-0 z-30 scale-[1.54] overflow-visible pointer-events-none"
           >
             {[
               { left: '10%', top: '24%' },
